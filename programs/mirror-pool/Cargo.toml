@@ -23,4 +23,5 @@ solana-sha256-hasher = "3"
 [dev-dependencies]
 litesvm = "0.6"
 solana-sdk = "2"
+solana-client = "2"
 sha2 = "0.10"

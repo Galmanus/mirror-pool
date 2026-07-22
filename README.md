@@ -116,6 +116,32 @@ credibly claim privacy against an attack you never ran.
   the tracer's root-hit rate to 0 (or dissolves *which* origin across many, 2.9
   bits of ambiguity). This is the axis the field admits it cannot close.
 
+## Cost — the cheapest anonymity on Solana
+
+Because riverrun hides *behavior* and not funds, its on-chain footprint is tiny:
+an execution writes a **17-byte nullifier account** and emits an event. No value
+moves; no ZK is verified on-chain in the MVP. Deployed and exercised on **devnet**
+(program `BFy2ehVxpBrtwMCWwufpfbbsoWtZVYVaZBzDE2eAG7az`):
+
+| operation | cost |
+|---|---|
+| `execute` (the action / withdrawal) — writes the nullifier | **~0.00101 SOL** |
+| `commit` — fee only | ~0.000005 SOL |
+| `initialize` — one-time pool account (85 bytes) | ~0.00148 SOL |
+
+A full commit + execute is **~0.001 SOL per member per action** — on the order of
+$0.0002. That is the whole design bet: privacy *for behavior* is cheap precisely
+because nothing of value moves and nothing heavy is verified on-chain. Approaches
+that hide funds or verify ZK on-chain cost orders of magnitude more per operation.
+
+**Measured live on devnet, not estimated.** A full `initialize + commit + execute`
+run (plus a rejected double-spend) cost **0.002507 SOL** total by wallet-balance
+delta, matching the rent math above — so per action (commit + execute) is
+**~0.00102 SOL**. The nullifier anti-replay was verified on a real cluster: the
+double-spend attempt was rejected on-chain
+([execute tx](https://explorer.solana.com/tx/coUCBWh4dsbRsUZHHZy62bK28JCfrF47RzhxPhSdSq1mpHRkucuxq5EiwSL8j1azxqPZdcetpMCB9rnAukYSbzX?cluster=devnet)).
+Reproduce: `cargo run --manifest-path programs/mirror-pool/Cargo.toml --example devnet_demo`.
+
 ## Workspace
 
 | crate | what it is | status |
@@ -123,7 +149,7 @@ credibly claim privacy against an attack you never ran.
 | `mirror-core` | the behavioral pool + its post-quantum primitives (commitment, Merkle set, nullifier, membership, `BehaviorPool`) | 27 tests + demo |
 | `mirror-eval` | adversarial harness for the behavioral channel — clustering attacker → chance | 4 tests + exhibit |
 | `mirror-trace` | the `provenance-tracer`: backward funding-graph adversary + circularity defense + live-mainnet adapter | 7 tests + 2 exhibits |
-| `programs/mirror-pool` | the on-chain Solana program: commitment accumulator, per-round nullifier registry (PDA-per-nullifier anti-replay), action settlement | builds to `.so`; e2e green |
+| `programs/mirror-pool` | the on-chain Solana program: commitment accumulator, per-round nullifier registry (PDA-per-nullifier anti-replay), action settlement | builds to `.so`; e2e green; **deployed + exercised live on devnet** |
 
 ```bash
 cargo test --workspace                                            # 38 tests green
