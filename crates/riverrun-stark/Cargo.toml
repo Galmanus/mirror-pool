@@ -3,10 +3,10 @@
 # post-quantum, transparent STARK proof of anonymous set membership. It is
 # self-contained (no workspace inheritance, no heavy dependencies) so it builds
 # instantly; the Winterfell-based AIR is added when the relation — already
-# specified and tested in `mirror-core::membership::check_relation` — is
+# specified and tested in `riverrun-core::membership::check_relation` — is
 # arithmetized over a hash-friendly field.
 [package]
-name = "mirror-stark"
+name = "riverrun-stark"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"

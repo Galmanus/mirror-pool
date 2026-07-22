@@ -12,7 +12,7 @@
 //!
 //! The *unprotected* trace lets each participant act on their own fingerprint,
 //! so actions carry identity-correlated timing and size. The *protected* trace
-//! is what `mirror-pool` produces: the coordinator fires all `k` actions inside
+//! is what `riverrun` produces: the coordinator fires all `k` actions inside
 //! one tight window with identical size, and the acting key is unlinked from the
 //! member — so no action carries any per-identity signal.
 
@@ -124,7 +124,7 @@ impl Population {
             .collect()
     }
 
-    /// Protected trace: `mirror-pool`. Every action has the identical round size
+    /// Protected trace: `riverrun`. Every action has the identical round size
     /// and a coordinator-scheduled time drawn from one tight, identity-independent
     /// window. Nothing about `(time, size)` correlates with the participant.
     ///

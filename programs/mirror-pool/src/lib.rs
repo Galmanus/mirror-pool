@@ -1,4 +1,4 @@
-//! # mirror-pool on-chain program
+//! # riverrun on-chain program
 //!
 //! The settlement and anti-replay layer of *Tornado for behavior* on Solana.
 //!
@@ -17,7 +17,7 @@
 //! anti-replay canonical and tamper-evident on-chain. The commitment accumulator
 //! is an *ordered* hash accumulator (a tamper-evident commitment to insertion
 //! order and count); the canonical membership Merkle tree lives off-chain in
-//! `mirror-core`, rebuildable from the `Committed` events.
+//! `riverrun-core`, rebuildable from the `Committed` events.
 
 use anchor_lang::prelude::*;
 use solana_sha256_hasher::hashv;
@@ -25,7 +25,7 @@ use solana_sha256_hasher::hashv;
 declare_id!("BFy2ehVxpBrtwMCWwufpfbbsoWtZVYVaZBzDE2eAG7az");
 
 #[program]
-pub mod mirror_pool_program {
+pub mod riverrun_program {
     use super::*;
 
     /// Create a pool owned by `authority`.

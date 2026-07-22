@@ -1,5 +1,5 @@
 [package]
-name = "mirror-trace"
+name = "riverrun-trace"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -11,7 +11,7 @@ name = "provenance-tracer"
 path = "src/main.rs"
 
 # The on-chain adapter is an optional binary: it pulls real mainnet funding
-# graphs over RPC. Kept out of the pure lib so `mirror-trace` stays
+# graphs over RPC. Kept out of the pure lib so `riverrun-trace` stays
 # dependency-free and fully testable offline.
 [[bin]]
 name = "onchain-trace"

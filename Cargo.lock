@@ -271,29 +271,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mirror-core"
-version = "0.1.0"
-dependencies = [
- "blake3",
- "thiserror",
-]
-
-[[package]]
-name = "mirror-eval"
-version = "0.1.0"
-dependencies = [
- "mirror-core",
-]
-
-[[package]]
-name = "mirror-trace"
-version = "0.1.0"
-dependencies = [
- "serde_json",
- "ureq",
-]
-
-[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -344,6 +321,29 @@ dependencies = [
  "libc",
  "untrusted",
  "windows-sys",
+]
+
+[[package]]
+name = "riverrun-core"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "thiserror",
+]
+
+[[package]]
+name = "riverrun-eval"
+version = "0.1.0"
+dependencies = [
+ "riverrun-core",
+]
+
+[[package]]
+name = "riverrun-trace"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "ureq",
 ]
 
 [[package]]

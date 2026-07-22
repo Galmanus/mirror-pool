@@ -1,18 +1,18 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/mirror-core",
-    "crates/mirror-eval",
-    "crates/mirror-trace",
+    "crates/riverrun-core",
+    "crates/riverrun-eval",
+    "crates/riverrun-trace",
 ]
-# `crates/mirror-stark` (post-quantum STARK membership, research/paper track) is
+# `crates/riverrun-stark` (post-quantum STARK membership, research/paper track) is
 # intentionally excluded from the default workspace: it pulls the heavy Winterfell
 # toolchain and is not on the critical path for the benchmark deliverable. It
 # builds on its own when needed.
-exclude = ["crates/mirror-stark", "programs/mirror-pool"]
+exclude = ["crates/riverrun-stark", "programs/mirror-pool"]
 
 # The on-chain Solana program and the round coordinator join the workspace as they
-# land. mirror-core is pure Rust and builds standalone so the cryptographic core
+# land. riverrun-core is pure Rust and builds standalone so the cryptographic core
 # can be developed and tested without the heavy Solana toolchain.
 
 [workspace.package]

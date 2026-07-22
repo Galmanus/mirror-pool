@@ -1,5 +1,5 @@
 [package]
-name = "mirror-core"
+name = "riverrun-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

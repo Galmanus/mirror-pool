@@ -1,4 +1,4 @@
-//! # mirror-trace
+//! # riverrun-trace
 //!
 //! The **provenance-tracer**: an adversarial on-chain de-anonymizer, and the
 //! measuring stick it implies.
@@ -10,7 +10,7 @@
 //! attributable origin (a CEX, a doxxed funder). That backward walk is the whole
 //! ballgame, and it is a *graph* property no AUC captures.
 //!
-//! `mirror-trace` makes it a first-class, measured axis. The tracer (see
+//! `riverrun-trace` makes it a first-class, measured axis. The tracer (see
 //! [`tracer::Tracer`]) walks the funding graph backward and reports, per target:
 //! does it reach a labeled root (**provenance**), and if so how many and how
 //! concentrated (**attribution**), and does it sit in a cycle (**structural

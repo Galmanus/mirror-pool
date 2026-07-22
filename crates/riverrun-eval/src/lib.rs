@@ -1,6 +1,6 @@
-//! Adversarial evaluation harness for `mirror-pool`.
+//! Adversarial evaluation harness for `riverrun`.
 //!
-//! The thesis of `mirror-pool` is that a *synchronized* round of *identical*
+//! The thesis of `riverrun` is that a *synchronized* round of *identical*
 //! actions, submitted by keys unlinked from member commitments, strips the
 //! behavioral signals modern chain-clustering relies on. This harness makes that
 //! falsifiable: it builds a population of participants with distinct behavioral

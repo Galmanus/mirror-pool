@@ -1,5 +1,5 @@
 [package]
-name = "mirror-eval"
+name = "riverrun-eval"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -7,8 +7,8 @@ repository.workspace = true
 description = "Adversarial evaluation harness for mirror-pool: runs real chain-clustering attacks against a simulated pool and measures attribution success."
 
 [dependencies]
-mirror-core = { path = "../mirror-core" }
+riverrun-core = { path = "../riverrun-core" }
 
 [[bin]]
-name = "mirror-eval"
+name = "riverrun-eval"
 path = "src/main.rs"

@@ -1,12 +1,12 @@
-//! # mirror-stark (research / paper track)
+//! # riverrun-stark (research / paper track)
 //!
 //! Placeholder for the **post-quantum, transparent STARK** proof of anonymous
-//! set membership that upgrades `mirror-pool`'s membership seam from a
+//! set membership that upgrades `riverrun`'s membership seam from a
 //! transparent *reference* proof (which carries the witness) to a *succinct
 //! zero-knowledge* one.
 //!
 //! The statement to prove is already specified and unit-tested in
-//! [`mirror_core::membership::check_relation`]:
+//! [`riverrun_core::membership::check_relation`]:
 //!
 //! > *"I know a `secret` and an `action` such that `commit(secret, action)` is a
 //! > leaf under the public set root `R`, and my nullifier for this round is

@@ -1,9 +1,14 @@
-# mirror-pool
+# riverrun
+
+> The submission for the **`mirror-pool`** bounty ("Tornado cash for synchronized
+> actions"). *riverrun* is the first word of Joyce's *Finnegans Wake* — the river
+> that flows in a circle back to its own beginning. That circle is the system's
+> core defense: a funding trail with no origin to trace.
 
 **Tornado Cash for behavioral patterns and actions — not funds.**
 
 Tornado Cash breaks the link between a *deposit* and a *withdrawal* of money.
-`mirror-pool` breaks the link between a **committed intent** and an **executed
+`riverrun` breaks the link between a **committed intent** and an **executed
 action**: a swap, a claim, a vote, a withdrawal from a protocol. Amounts are
 neither hidden nor the point — what is severed is the **actor ↔ action** link, the
 thing modern chain-analysis clusters on. Post-quantum and transparent: built from
@@ -12,6 +17,34 @@ hashes, no trusted setup, no ceremony.
 Everything here is Rust, MIT, and runs today. The privacy claims are not
 asserted — they are checked by adversaries shipped in the same repo, one of them
 proven on live Solana mainnet.
+
+---
+
+## What you can actually do with it — and why it matters to a real person
+
+On a public chain, *everything you do is watched and tied back to you* — not by
+your name, but by your **behavior**: when you act, how much, what you buy, who you
+follow. That fingerprint lets an employer, a stalker, a scammer, a data broker, or
+a hostile government profile you from your on-chain life. Today, strong on-chain
+privacy is a luxury for the technical and the wealthy.
+
+`riverrun` gives that privacy to an ordinary person. You do the *same* action —
+get paid, save, claim an airdrop, vote in a DAO, trade — but the link between
+**you** and **what you did** is cut. You act from inside a crowd wearing the same
+mask.
+
+- **A worker paid in crypto** is no longer profiled by their salary and every
+  purchase that follows it.
+- **A saver** isn't marked as a target the moment a scammer sees their balance
+  move.
+- **An activist or journalist** can transact without that transaction becoming a
+  trail back to them.
+- **A DAO voter** votes without fear of retaliation.
+- **Anyone** gets the financial privacy that used to require a specialist — with
+  one honest promise: *what you do with your money is your business again.*
+
+That is the point. The cryptography below exists to deliver **that feeling** to a
+person who will never read it.
 
 ---
 

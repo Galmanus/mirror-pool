@@ -38,7 +38,7 @@ fn nullifier_pda(pool: &Pubkey, nullifier: &[u8; 32]) -> (Pubkey, u8) {
 
 fn load() -> (LiteSVM, Keypair) {
     let mut svm = LiteSVM::new();
-    let so = concat!(env!("CARGO_MANIFEST_DIR"), "/target/deploy/mirror_pool_program.so");
+    let so = concat!(env!("CARGO_MANIFEST_DIR"), "/target/deploy/riverrun_program.so");
     svm.add_program_from_file(PROGRAM_ID, so)
         .expect("load program .so (run `cargo build-sbf` first)");
     let authority = Keypair::new();

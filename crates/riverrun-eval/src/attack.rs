@@ -1,6 +1,6 @@
 //! The clustering attacker.
 //!
-//! This is the adversary `mirror-pool` must defeat, modeled as the strongest
+//! This is the adversary `riverrun` must defeat, modeled as the strongest
 //! realistic version: it already holds an accurate behavioral profile of every
 //! member (habitual relative timing and position size — the co-buy-timing and
 //! sizing-fingerprint signals). Given a round's observed actions it recovers the

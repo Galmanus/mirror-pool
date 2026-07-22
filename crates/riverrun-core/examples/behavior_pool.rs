@@ -6,11 +6,11 @@
 //! executed action back to the member who committed it. Then two guards fire: a
 //! double-execution and a tampered action, both rejected.
 //!
-//! Run: `cargo run -p mirror-core --example behavior_pool`
+//! Run: `cargo run -p riverrun-core --example behavior_pool`
 
-use mirror_core::commitment::Secret;
-use mirror_core::nullifier::RoundId;
-use mirror_core::pool::{ActionSpec, BehaviorPool};
+use riverrun_core::commitment::Secret;
+use riverrun_core::nullifier::RoundId;
+use riverrun_core::pool::{ActionSpec, BehaviorPool};
 
 fn main() {
     // A public action. Amount/target are NOT hidden — the *author* is.
@@ -30,7 +30,7 @@ fn main() {
         })
         .collect();
 
-    println!("mirror-pool — Tornado for behavior (not funds)\n");
+    println!("riverrun — Tornado for behavior (not funds)\n");
     println!("committed members : {}", pool.len());
     println!("set root          : {}\n", hex8(&pool.root().unwrap()));
 

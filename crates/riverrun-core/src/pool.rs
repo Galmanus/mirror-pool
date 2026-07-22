@@ -1,7 +1,7 @@
 //! The behavioral pool — **Tornado Cash for actions, not funds.**
 //!
 //! Tornado breaks the link between a *deposit* and a *withdrawal* of funds.
-//! `mirror-pool` breaks the link between a **committed intent** and an
+//! `riverrun` breaks the link between a **committed intent** and an
 //! **executed action** — a swap, a claim, a vote, a withdrawal from some
 //! protocol. Amounts are neither hidden nor the point; what is severed is the
 //! **actor ↔ action** link.

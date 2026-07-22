@@ -1,18 +1,18 @@
-//! `mirror-eval` — run the adversarial evaluation and print the exhibit.
+//! `riverrun-eval` — run the adversarial evaluation and print the exhibit.
 //!
 //! For a range of pool sizes it reports the clustering attacker's attribution
-//! accuracy against the unprotected trace vs the `mirror-pool` (protected) trace,
+//! accuracy against the unprotected trace vs the `riverrun` (protected) trace,
 //! alongside the chance baseline `1/k`. The story is the two columns: unprotected
 //! stays high, protected sits on chance.
 
-use mirror_eval::run_experiment;
+use riverrun_eval::run_experiment;
 
 fn main() {
     const SEED: u64 = 0x_C0FF_EE_D1_5EA5E; // fixed seed → reproducible
     const ROUNDS: usize = 4000;
     let pool_sizes = [4usize, 8, 16, 32, 64];
 
-    println!("mirror-pool — adversarial evaluation");
+    println!("riverrun — adversarial evaluation");
     println!("same clustering attacker, {ROUNDS} rounds per pool size\n");
     println!(
         "{:>6}  {:>18}  {:>18}  {:>10}",
@@ -31,6 +31,6 @@ fn main() {
     }
     println!(
         "\nRead: the clustering attacker deanonymizes the unprotected trace, but\n\
-         mirror-pool drives it to chance — attribution is no better than guessing."
+         riverrun drives it to chance — attribution is no better than guessing."
     );
 }

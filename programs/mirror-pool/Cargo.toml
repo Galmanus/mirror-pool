@@ -1,13 +1,13 @@
 [package]
-name = "mirror-pool-program"
+name = "riverrun-program"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "On-chain Solana program for mirror-pool: commitment set, per-round nullifier anti-replay, and action settlement — the anti-replay and coordination layer of Tornado-for-behavior."
+description = "On-chain Solana program for riverrun: commitment set, per-round nullifier anti-replay, and action settlement — the anti-replay and coordination layer of Tornado-for-behavior."
 
 [lib]
 crate-type = ["cdylib", "lib"]
-name = "mirror_pool_program"
+name = "riverrun_program"
 
 [features]
 default = []

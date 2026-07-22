@@ -2,8 +2,8 @@
 //! the exhibit: the funding-graph leak the field leaves open, and how circularity
 //! closes it.
 
-use mirror_trace::rng::SplitMix64;
-use mirror_trace::{evaluate, scenario, SchemeStats};
+use riverrun_trace::rng::SplitMix64;
+use riverrun_trace::{evaluate, scenario, SchemeStats};
 
 fn row(name: &str, s: SchemeStats) {
     let depth = if s.mean_nearest_depth.is_nan() {

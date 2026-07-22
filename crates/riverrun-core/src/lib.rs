@@ -1,6 +1,6 @@
-//! # mirror-core
+//! # riverrun-core
 //!
-//! Hash-based, post-quantum anonymity-set primitives for `mirror-pool`.
+//! Hash-based, post-quantum anonymity-set primitives for `riverrun`.
 //!
 //! Every primitive here is built from a single collision-resistant hash
 //! (BLAKE3), which is what makes the whole construction **post-quantum** (no
@@ -32,10 +32,10 @@ pub type Hash = [u8; 32];
 /// that, e.g., a commitment can never collide with or be reinterpreted as a
 /// nullifier or a Merkle node.
 pub(crate) mod domain {
-    pub const COMMITMENT: &[u8] = b"mirror-pool/commitment/v1";
-    pub const NULLIFIER: &[u8] = b"mirror-pool/nullifier/v1";
-    pub const MERKLE_LEAF: &[u8] = b"mirror-pool/merkle-leaf/v1";
-    pub const MERKLE_NODE: &[u8] = b"mirror-pool/merkle-node/v1";
+    pub const COMMITMENT: &[u8] = b"riverrun/commitment/v1";
+    pub const NULLIFIER: &[u8] = b"riverrun/nullifier/v1";
+    pub const MERKLE_LEAF: &[u8] = b"riverrun/merkle-leaf/v1";
+    pub const MERKLE_NODE: &[u8] = b"riverrun/merkle-node/v1";
 }
 
 /// Domain-separated hash of a sequence of byte slices.

@@ -2,7 +2,7 @@
 //!
 //! Pulls a target's backward funding graph over JSON-RPC (system-program SOL
 //! transfers), labels high-activity hubs as *heuristic* attributable origins, and
-//! runs the same [`mirror_trace::tracer::Tracer`] used on the synthetic exhibit.
+//! runs the same [`riverrun_trace::tracer::Tracer`] used on the synthetic exhibit.
 //!
 //! Honesty notes, stated up front because they matter for how to read the output:
 //!   * Root labels here are an **activity heuristic** (an address whose recent
@@ -20,8 +20,8 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::Duration;
 
-use mirror_trace::graph::ProvenanceGraph;
-use mirror_trace::tracer::Tracer;
+use riverrun_trace::graph::ProvenanceGraph;
+use riverrun_trace::tracer::Tracer;
 use serde_json::{json, Value};
 
 const SYSTEM_PROGRAM: &str = "11111111111111111111111111111111";
