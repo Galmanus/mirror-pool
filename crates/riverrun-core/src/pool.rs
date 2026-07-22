@@ -201,10 +201,14 @@ mod tests {
 
     #[test]
     fn two_members_same_action_are_exchangeable() {
-        // The core unlinkability property: two members commit the *identical*
-        // action; both execute in the same round. The public transcript differs
-        // only in the nullifier — which is unlinkable to either commitment — so
-        // no observer can say which member produced which execution.
+        // Tests the *statement-level* exchangeability the design targets: two
+        // members commit the identical action and execute in the same round, and
+        // the public statement (root, action) is identical while only the
+        // nullifier differs. NOTE: this asserts the statement layer only. The
+        // shipped reference `Execution` still carries the witness (secret + leaf
+        // index), so it is NOT unlinkable on the wire — real hiding requires the
+        // succinct STARK backend (`riverrun-stark`) to replace the reference
+        // proof. See the Security status section in the README.
         let mut pool = BehaviorPool::new();
         let (sa, sb, act) = (secret(1), secret(2), action(77));
         let ia = pool.commit(&sa, &act);

@@ -48,8 +48,11 @@ pub use rescue::{Hash, Rescue128};
 /// hash-based and post-quantum.
 type StarkHash = Blake3_256<BaseElement>;
 
-/// Proof options: 28 queries at blow-up factor 8 → ~128-bit conjectured security,
-/// no field extension. Transparent (no setup).
+/// Proof options: 28 queries at blow-up factor 8, no grinding, no field extension
+/// → only **~84 bits** of conjectured security (28 × log2(8)), NOT production
+/// strength. A production deployment must raise this (more queries, grinding, or
+/// a field extension) to ~128 bits, and use the full-round Rescue parameters.
+/// These example-grade parameters are for demonstrating the proof end-to-end.
 fn proof_options() -> ProofOptions {
     ProofOptions::new(
         28,

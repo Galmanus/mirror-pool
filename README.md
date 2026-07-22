@@ -165,7 +165,25 @@ cargo test --manifest-path programs/mirror-pool/Cargo.toml --test e2e      # on-
 cargo test --manifest-path crates/riverrun-stark/Cargo.toml                # post-quantum STARK membership
 ```
 
-## Honest limitations
+## Security status & honest limitations
+
+> **Research prototype — NOT production-ready, NOT audited.** An internal
+> adversarial audit (see below) found two critical gaps that mean the *shipped*
+> code does not yet protect a real user:
+> 1. **The end-to-end flow is not zero-knowledge yet.** The `BehaviorPool`
+>    commit→execute→settle path uses a transparent *reference* proof that carries
+>    the secret (and the leaf index) in cleartext. The post-quantum STARK that
+>    delivers real hiding exists and is tested, but is **not yet wired into the
+>    flow** — so an `Execution` published today is fully linkable.
+> 2. **The on-chain program does not verify membership.** `execute` enforces
+>    per-round nullifier anti-replay only; it checks no membership proof, so any
+>    signer can submit an execution and nullifiers are front-runnable.
+>
+> Closing these (wire the STARK + bind commitment/nullifier in one AIR; verify the
+> proof on-chain), plus anti-Sybil on `commit`, decentralized round progression,
+> 128-bit STARK parameters, and a multisig/renounced upgrade authority, is what
+> production would require. Do not deploy this to guard real funds or identities
+> until then.
 
 A threat model that hides its assumptions is theater.
 
