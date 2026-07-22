@@ -1,0 +1,26 @@
+[package]
+name = "mirror-trace"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The provenance-tracer: an adversarial on-chain de-anonymizer that measures how far a target's funding graph traces back to a labeled root — the axis every noise-based privacy tool leaves open."
+
+[[bin]]
+name = "provenance-tracer"
+path = "src/main.rs"
+
+# The on-chain adapter is an optional binary: it pulls real mainnet funding
+# graphs over RPC. Kept out of the pure lib so `mirror-trace` stays
+# dependency-free and fully testable offline.
+[[bin]]
+name = "onchain-trace"
+path = "src/bin/onchain.rs"
+required-features = ["onchain"]
+
+[features]
+onchain = ["ureq", "serde_json"]
+
+[dependencies]
+ureq = { version = "2", features = ["json"], optional = true }
+serde_json = { version = "1", optional = true }

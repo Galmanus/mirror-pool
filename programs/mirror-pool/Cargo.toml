@@ -1,0 +1,26 @@
+[package]
+name = "mirror-pool-program"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "On-chain Solana program for mirror-pool: commitment set, per-round nullifier anti-replay, and action settlement — the anti-replay and coordination layer of Tornado-for-behavior."
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "mirror_pool_program"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+idl-build = ["anchor-lang/idl-build"]
+
+[dependencies]
+anchor-lang = "1"
+solana-sha256-hasher = "3"
+
+[dev-dependencies]
+litesvm = "0.6"
+solana-sdk = "2"
+sha2 = "0.10"

@@ -1,0 +1,18 @@
+# Rust build artifacts
+/target
+**/target
+
+# Compiled on-chain programs
+*.so
+
+# The program's upgrade-authority keypair — SECRET, never commit.
+programs/*/program-keypair.json
+**/*-keypair.json
+
+# Local validator ledger / test artifacts
+test-ledger/
+.anchor/
+
+# Editor / OS
+.DS_Store
+*.swp

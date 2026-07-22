@@ -1,0 +1,13 @@
+[package]
+name = "mirror-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Hash-based, post-quantum anonymity-set primitives for mirror-pool: commitments, Merkle set, nullifiers, and membership proofs."
+
+[dependencies]
+blake3.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
