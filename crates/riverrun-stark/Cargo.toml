@@ -1,16 +1,17 @@
-# Research / paper track — intentionally excluded from the default workspace
-# (see the root Cargo.toml `exclude`). This crate is a placeholder for the
-# post-quantum, transparent STARK proof of anonymous set membership. It is
-# self-contained (no workspace inheritance, no heavy dependencies) so it builds
-# instantly; the Winterfell-based AIR is added when the relation — already
-# specified and tested in `riverrun-core::membership::check_relation` — is
-# arithmetized over a hash-friendly field.
+# Post-quantum, transparent STARK proof of anonymous set membership.
+# Excluded from the default workspace (pulls the heavy Winterfell toolchain);
+# builds and tests standalone:
+#   cargo test --manifest-path crates/riverrun-stark/Cargo.toml
+#
+# The Rescue-Prime Merkle-path AIR is adapted from the Winterfell v0.13 `merkle`
+# example (MIT, Facebook/Meta) — see src/air.rs, src/prover.rs, src/utils/.
 [package]
 name = "riverrun-stark"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "Post-quantum, transparent STARK proof of anonymous set membership for mirror-pool (research/paper track)."
+description = "Post-quantum, transparent STARK proof of anonymous set membership for riverrun (Rescue-Prime Merkle path, no trusted setup)."
 
 [dependencies]
-# winterfell = "0.13"   # added when the Rescue-Prime Merkle-path AIR lands
+winterfell = "0.13"
+core-utils = { package = "winter-utils", version = "0.13" }

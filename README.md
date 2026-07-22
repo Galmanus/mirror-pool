@@ -150,6 +150,7 @@ Reproduce: `cargo run --manifest-path programs/mirror-pool/Cargo.toml --example 
 | `mirror-eval` | adversarial harness for the behavioral channel — clustering attacker → chance | 4 tests + exhibit |
 | `mirror-trace` | the `provenance-tracer`: backward funding-graph adversary + circularity defense + live-mainnet adapter | 7 tests + 2 exhibits |
 | `programs/mirror-pool` | the on-chain Solana program: commitment accumulator, per-round nullifier registry (PDA-per-nullifier anti-replay), action settlement | builds to `.so`; e2e green; **deployed + exercised live on devnet** |
+| `crates/riverrun-stark` | the post-quantum, transparent **STARK proof of set membership** (Rescue-Prime + FRI, no trusted setup) | 2 tests; prove + verify green (excluded from default build — pulls Winterfell) |
 
 ```bash
 cargo test --workspace                                            # 38 tests green
@@ -161,18 +162,22 @@ cargo run -p mirror-trace --features onchain --bin onchain-trace  # live mainnet
 # on-chain program (needs the Solana SBF toolchain):
 cargo build-sbf --manifest-path programs/mirror-pool/Cargo.toml            # → deployable .so
 cargo test --manifest-path programs/mirror-pool/Cargo.toml --test e2e      # on-chain lifecycle e2e
+cargo test --manifest-path crates/riverrun-stark/Cargo.toml                # post-quantum STARK membership
 ```
 
 ## Honest limitations
 
 A threat model that hides its assumptions is theater.
 
-- **Membership proofs use a transparent reference backend** (it carries the
-  witness). It is *sound* — the verifier accepts only valid witnesses — and drives
-  the full commit→execute→settle protocol end to end, but it is not yet
-  succinct/zero-knowledge on the wire. The post-quantum STARK backend
-  (`crates/mirror-stark`, research track) upgrades exactly that seam, proving the
-  identical relation with `action` public and `secret` private.
+- **The post-quantum STARK membership proof is implemented and tested**
+  (`riverrun-stark`): a transparent, hash-based (Rescue-Prime + FRI) STARK that
+  proves set membership in zero knowledge — knowledge of a leaf preimage under the
+  public root, *without revealing which leaf* — with no trusted setup. What remains
+  is *wiring and binding*: the `BehaviorPool` flow still drives the end-to-end
+  protocol with the sound transparent reference proof, and folding the commitment
+  `H(secret‖action)` and the revealed nullifier into the *same* AIR (one proof
+  witnessing membership **and** the nullifier) plus on-chain verification are the
+  next increments.
 - **The mainnet provenance trace is shallow** — SOL-only, depth-bounded. It
   *under*-reports the leak. Hub labels are an activity heuristic standing in for a
   real tag database (Arkham/Chainalysis); no CEX addresses are fabricated.
@@ -185,11 +190,11 @@ A threat model that hides its assumptions is theater.
 
 ## Roadmap / research directions
 
-- Live-cluster / Surfpool soak of the on-chain program (the in-process e2e
-  already passes; a devnet deploy + soak is the next step) and on-chain
-  verification of the membership proof.
-- Post-quantum STARK membership (`mirror-stark`): succinct, zero-knowledge,
-  transparent.
+- Bind the commitment and nullifier into the STARK AIR (one proof for the full
+  relation), wire `riverrun-stark` into the pool flow, and verify the proof
+  on-chain.
+- Longer-running / Surfpool soak of the on-chain program (already deployed and
+  exercised on devnet; in-process e2e passes).
 - **LWE-hard cover** — anchor indistinguishability on Learning-With-Errors so
   separating real from cover is provably as hard as worst-case lattice problems
   (measured → *provable* privacy). Paper track.
