@@ -3,16 +3,24 @@ name = "riverrun-stark-verifier"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "Probe: can the Winterfell STARK verifier be built for Solana SBF at all?"
+description = "On-chain STARK membership verifier for riverrun — measures whether Winterfell verification fits Solana SBF, and at what cost."
 
 [lib]
 crate-type = ["cdylib", "lib"]
 name = "riverrun_stark_verifier"
 
+[features]
+default = ["custom-heap"]
+no-entrypoint = []
+# suppress solana-program's default 32 KB bump allocator so ours (256 KB) wins
+custom-heap = []
+
 [dependencies]
 solana-program = "2"
-winter-verifier = { version = "0.13", default-features = false }
-winter-air = { version = "0.13", default-features = false }
-winter-math = { version = "0.13", default-features = false }
-winter-crypto = { version = "0.13", default-features = false }
-winter-utils = { version = "0.13", default-features = false }
+riverrun-stark = { path = "../../crates/riverrun-stark" }
+
+[dev-dependencies]
+litesvm = "0.6"
+winterfell = "0.13"
+solana-compute-budget = "2"
+solana-sdk = "2"
