@@ -106,10 +106,28 @@ order of magnitude as the 20–35% those heuristics reach on Tornado. A result o
 95% would have been a reason to distrust the tool rather than the pool.
 
 **What is not in it.** Every heuristic in that body of work is *behavioural* —
-address reuse, deposit/withdrawal timing, FIFO ordering, wallet fingerprints. The
-funding graph, conditioned on as a provenance partition, is a different axis, and
-none of this has been run on Solana. The programme exists; it stopped at
+address reuse, deposit/withdrawal timing, FIFO ordering, wallet fingerprints —
+and none of it has been run on Solana. The programme exists; it stopped at
 Ethereum, and it stopped at behaviour.
+
+**Credit where it is due, including to a competitor.** Within this bounty, the
+funding-graph channel is not unmeasured. [`supersonic-tx` PR
+#4](https://github.com/solanabr/supersonic-tx/pull/4) (@gustavo-f0ntz) measures
+funding provenance on real mainnet data as a residual **adversary advantage** of
+**+0.27…+0.51** for durable P2P payees, alongside the finding that **63.4% of
+real mainnet transfer destinations already have on-chain history** (n=1181), and
+leaves it honestly open. That work reached the same channel from the decoy side.
+
+The two measurements are complementary rather than competing, and it is worth
+being precise about the difference. Theirs asks: *how much better than chance can
+an adversary pick the real leg out of a decoy bundle, given provenance?* — an
+advantage, measured against deployed selection code. This one asks: *what is the
+whole depositor population of a live anonymity pool actually worth, in members,
+once provenance partitions it?* — an effective set size, measured against a
+deployed pool. Different object, different metric, same channel, and neither
+subsumes the other.
+
+No other `mirror-pool` submission measures this channel.
 
 ## The ruler
 
