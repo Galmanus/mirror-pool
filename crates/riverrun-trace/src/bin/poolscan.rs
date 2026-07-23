@@ -45,12 +45,12 @@ use riverrun_trace::tracer::Tracer;
 const DEFAULT_POOL: &str = "9fhQBbumKEFuXtMBDw8AaQyAjCorLGJQiS3skWZdQyQD";
 
 const DEFAULT_SAMPLE: usize = 20;
-const POOL_SIG_SCAN: usize = 400;
+const POOL_SIG_SCAN: usize = 1000;
 const DEPTH: usize = 3;
 const NODES_PER_TARGET: usize = 14;
 const FUNDERS_PER_ADDR: usize = 4;
 const SCAN_TX_PER_ADDR: usize = 6;
-const TX_BUDGET: usize = 2600;
+const TX_BUDGET: usize = 6000;
 
 /// One depositor's backward trace.
 struct Traced {

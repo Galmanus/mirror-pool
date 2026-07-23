@@ -65,6 +65,52 @@ the provenance class of the *acting* identity. A fresh withdrawal wallet has to
 be funded from somewhere, which is what makes that assumption cheap — but it is
 an assumption.
 
+## Where this sits in the literature
+
+Two things here are borrowed, and saying so is the point: the metric is standard,
+and the research programme is established. What is new is the channel and the
+chain.
+
+**The metric is Serjantov & Danezis (2002).** "Towards an Information Theoretic
+Metric for Anonymity" (PET 2002, that year's Award for Outstanding Paper in
+Privacy Enhancing Technologies) defines the *effective anonymity set size* as the
+entropy of the probability distribution linking subjects to the observed event,
+rather than the raw count of subjects. `effective_k` is exactly that, conditioned
+on the adversary observing the actor's provenance class: the adversary sees class
+`c` with probability `n_c/n` and is left with a uniform posterior over its `n_c`
+members, so the conditional entropy is `Σ_c (n_c/n)·log2(n_c)` — the formula
+above — and `2^H` is the group size the member is actually hidden in.
+
+Díaz et al. proposed normalising that entropy by the maximum the system could
+provide. We deliberately do not, following Danezis's objection that the
+normalised form measures fulfilled potential rather than anonymity: a set of one
+scores a perfect 1.0 while providing none.
+
+**The programme is established — on Ethereum.** Measuring the gap between a
+mixer's advertised anonymity set and its true one is a research line with real
+results:
+
+- **Tutela** (Stanford, arXiv 2201.06811) reports the true size of each Tornado
+  Cash pool by excluding compromised deposits.
+- **Béres et al.**, *Blockchain is Watching You*, profiles Ethereum users by
+  quasi-identifiers and applies them to Tornado Cash.
+- A **cross-chain study** (arXiv 2510.09433, October 2025) links **5.1–12.6%** of
+  Tornado withdrawals to their deposits via address reuse and transactional
+  linkage, and a further **15–22 percentage points** with a FIFO temporal-matching
+  heuristic — over $2.3B of withdrawals connected to identifiable deposits.
+- **Du et al.** (IEEE TIFS, 2024) correlate mixing addresses with graph neural
+  networks.
+
+That literature is also a sanity check on the number above. Our 37% is the same
+order of magnitude as the 20–35% those heuristics reach on Tornado. A result of
+95% would have been a reason to distrust the tool rather than the pool.
+
+**What is not in it.** Every heuristic in that body of work is *behavioural* —
+address reuse, deposit/withdrawal timing, FIFO ordering, wallet fingerprints. The
+funding graph, conditioned on as a provenance partition, is a different axis, and
+none of this has been run on Solana. The programme exists; it stopped at
+Ethereum, and it stopped at behaviour.
+
 ## The ruler
 
 Residual anonymity is the class size, averaged over which class the actor came

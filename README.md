@@ -306,12 +306,31 @@ below is a trust assumption rather than a proof.
 >    of the mempool. **This is a named trust assumption, not soundness:** a
 >    dishonest verifier can attest to a membership proof that does not exist.
 >
->    Why not verify on-chain: a riverrun STARK is **12,057 bytes** (4-leaf set) to
->    **16,536 bytes** (64-leaf), against Solana's **1,232-byte** transaction limit.
->    On-chain verification means chunk-uploading the proof into a ~16 KB account —
->    rent-exempt cost ~0.115 SOL, against ~0.001 SOL for an entire action today —
->    before a single compute unit is spent on FRI. The SBF compute cost of the
->    verifier itself is **not measured**.
+>    Why not verify on-chain — and the honest correction. An earlier version of
+>    this README said on-chain STARK verification does not fit on Solana. **That
+>    was wrong, and it has been done**, including with Winterfell, the library
+>    this repo uses:
+>
+>    - *Full L1 On-Chain ZK-STARK+PQC Verification on Solana* ([eprint
+>      2025/1741](https://eprint.iacr.org/2025/1741)) adapts Winterfell 0.12 with
+>      SHA-256 routed to the `hashv` syscall, inlining suppressed in the FRI
+>      hotspots for SBF stack limits, and a custom bump allocator. Measured on
+>      devnet over n=100: `verify_stark` **mean 1.10M CU, max 1.19M**, inside the
+>      1.4M budget, for a **4,437-byte** proof (~249 CU per proof byte).
+>    - **murkl** ships a Circle STARK verifier as a general-purpose CPI target:
+>      ~8.7 KB proof, **~31k CU**, M31/QM31, 128-bit post-quantum.
+>    - **mosaic** (wienerlabs) implements FRI-STARK verification **chunked across
+>      transactions** with a resumable verifier and a checkpoint state machine,
+>      validated end to end on SBF.
+>
+>    So the blocker is not feasibility, it is *this repo's choices*. Our proof is
+>    **12,057–16,536 bytes** against a 1,232-byte transaction limit, because the
+>    AIR is a Rescue-Prime Merkle path over the 128-bit field rather than a
+>    minimal AIR over a 31-bit one. Chunk-uploading 16 KB costs ~0.115 SOL of rent
+>    against ~0.001 SOL for an entire action today. The path forward is a smaller
+>    field and a cheaper hash — Circle STARK over M31, or Winterfell driven
+>    through the `hashv` syscall — not a claim that it cannot be done. The SBF
+>    compute cost of *our* verifier is not measured.
 >
 > 3. **The anonymity set is priced, not protected.** `commit` charges an
 >    `entry_fee` and `execute` refuses to settle below a `k_min` floor, so
@@ -364,13 +383,15 @@ ours.
 
 ## Roadmap / research directions
 
-- **Verify the proof on-chain.** `execute` now demands a named verifier's
-  attestation, which removes the anyone-can-settle and nullifier-front-running
-  holes, but the chain still takes that verifier's word for it. Removing the
-  trusted party means either chunk-uploading the 12–16 KB STARK and verifying FRI
-  across transactions, or adding a pairing-based verifier through the
-  `alt_bn128` syscalls and giving up the post-quantum property on-chain. This is
-  the top of the list, and the tradeoff is genuinely open.
+- **Verify the proof on-chain, and stop trusting the verifier.** This is the top
+  of the list, and the prior art says how. eprint 2025/1741 verifies a Winterfell
+  STARK on Solana L1 at ~1.1M CU for a 4.4 KB proof; murkl does a Circle STARK at
+  ~31k CU over M31; mosaic chunks FRI verification across transactions with a
+  resumable verifier. The work for riverrun is to get our proof small and cheap
+  enough to follow them: **move off the 128-bit field**, which is what makes both
+  the proof (12–16 KB) and the per-operation cost large. A Circle STARK over M31
+  with a keccak or `hashv`-routed transcript is the concrete target. Nothing here
+  needs a trusted setup.
 - An independent review of the hand-rolled AIR. Negative tests passing is
   necessary, not sufficient.
 - Longer-running / Surfpool soak of the on-chain program (already deployed and
