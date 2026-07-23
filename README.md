@@ -366,6 +366,14 @@ below is a trust assumption rather than a proof.
 >    funded, and funding is what `pool-provenance` reads — the live scan already
 >    reports shared-funder collisions across a real depositor population.
 >
+>    The better construction is known and not implemented here. Anonymous
+>    Self-Credentials ([eprint 2025/618](https://eprint.iacr.org/2025/618)) gets
+>    Sybil resistance cryptographically rather than economically: one nullifier
+>    per verifier, so a master identity registers exactly one pseudonym per pool,
+>    with nullifiers across pools unlinkable. One seat per identity, enforced,
+>    instead of one seat per fee paid. See
+>    [docs/RELATED_WORK.md](docs/RELATED_WORK.md).
+>
 > Closing #2 properly (verify a proof on-chain, whether chunked STARK or a
 > pairing-based verifier via `alt_bn128`), plus decentralized round progression,
 > 128-bit STARK parameters, and a multisig/renounced upgrade authority, is what
@@ -405,6 +413,21 @@ ours.
 - **Consensus forces one settlement.** Value moves one way; you cannot make the
   ledger a cycle. Circularity and exchangeability live on the attribution/ownership
   layer the analyst reads, not the value layer consensus enforces.
+
+## Related work
+
+riverrun's *goal* is not new — hiding which member of a set acted is anonymous
+authentication, and PrivDID, anonymous credentials and PLUME's deterministic
+nullifiers all live there. The effective-k metric is Serjantov & Danezis (2002).
+Measuring advertised-versus-true anonymity is an established programme on
+Ethereum (Tutela, Béres et al., the 2025 cross-chain Tornado study). On-chain
+STARK verification on Solana has been done, including with Winterfell.
+
+What is narrowly different here is the payload — behaviour rather than value —
+and that the funding graph is measured rather than assumed away, on riverrun's
+own constructions as well as other people's. The full accounting, including what
+the literature says this repo's anti-Sybil *should* be:
+**[docs/RELATED_WORK.md](docs/RELATED_WORK.md)**.
 
 ## Roadmap / research directions
 
