@@ -51,14 +51,14 @@ cargo run --quiet --release -p riverrun-eval
 stage "4/6  adversary 2 — the funding graph, and the ruler"
 note "Every pool reports 1/k. This is what k is worth once the adversary sorts the"
 note "set by where the money came from. Same metric, applied to riverrun itself."
-cargo run --quiet --release -p riverrun-trace --bin provenance-tracer
+cargo run --quiet --release -p riverrun-trace --features onchain --bin riverrun -- exhibit
 
 if [[ $LIVE -eq 1 ]]; then
   stage "5/6  the same ruler, against a live pool on Solana mainnet"
   note "Real depositors of a live Tornado-style SOL privacy pool. Aggregates only:"
   note "no depositor is named. Public RPC, so this takes a few minutes."
-  cargo run --quiet --release --features onchain -p riverrun-trace --bin pool-provenance \
-    -- 9fhQBbumKEFuXtMBDw8AaQyAjCorLGJQiS3skWZdQyQD 15
+  cargo run --quiet --release --features onchain -p riverrun-trace --bin riverrun \
+    -- audit 9fhQBbumKEFuXtMBDw8AaQyAjCorLGJQiS3skWZdQyQD 15
 else
   stage "5/6  the live mainnet measurement  (skipped)"
   note "Re-run with ./demo.sh --live to measure a real pool over the network."

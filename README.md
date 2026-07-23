@@ -59,7 +59,7 @@ samples the pool's current depositors, and tells you the anonymity **you
 personally** would get — because the advertised number is the pool's, not yours.
 
 ```bash
-cargo run --features onchain --bin preflight -- <YOUR_WALLET> <POOL_PROGRAM_ID>
+cargo run --features onchain --bin riverrun -- preflight <YOUR_WALLET> [POOL]
 ```
 
 Against a real wallet and the live Privacy Cash pool: *"7 of 9 depositors share
@@ -89,7 +89,7 @@ Solana mainnet**, sampling 30 real depositors:
 | **worst case** | **1** — one depositor alone in their provenance class |
 
 ```bash
-cargo run --features onchain --bin pool-provenance -- <POOL_PROGRAM_ID> 30
+cargo run --features onchain --bin riverrun -- audit <POOL> 30
 ```
 
 This is not a flaw in that pool: no deposit-pool design controls where its users'
@@ -358,9 +358,11 @@ cargo run --manifest-path crates/riverrun-pool-zk/Cargo.toml \
   --example behavior_pool --release                                # the mechanism
 cargo run -p riverrun-eval                                        # behavioral deanon → chance
 cargo run -p riverrun-trace --bin provenance-tracer                                       # provenance: field vs circularity
-cargo run -p riverrun-trace --features onchain --bin onchain-trace  # live mainnet trace, one wallet
-cargo run -p riverrun-trace --features onchain --bin pool-provenance \
-  -- 9fhQBbumKEFuXtMBDw8AaQyAjCorLGJQiS3skWZdQyQD 30    # effective k of a live pool
+# the unified CLI — one binary, four verbs (needs --features onchain for live data):
+cargo run -p riverrun-trace --features onchain --bin riverrun -- help
+cargo run -p riverrun-trace --features onchain --bin riverrun -- preflight <WALLET>  # your anonymity before you act
+cargo run -p riverrun-trace --features onchain --bin riverrun -- audit <POOL> 30      # a pool's effective k
+cargo run -p riverrun-trace --features onchain --bin riverrun -- trace <WALLET>       # one wallet's provenance
 
 # on-chain program (needs the Solana SBF toolchain):
 cargo build-sbf --manifest-path programs/mirror-pool/Cargo.toml            # → deployable .so
@@ -377,7 +379,7 @@ This repo is two things with two different maturity levels, and collapsing them
 would be dishonest in both directions.
 
 **Runnable today, against mainnet, by anyone: the measurement tooling.**
-`provenance-tracer`, `onchain-trace` and `pool-provenance` are finished tools.
+The `riverrun` CLI (`preflight` / `audit` / `trace` / `exhibit`) is a finished tool.
 They take a pool program or an address, read public chain data, and return
 numbers. They do not depend on riverrun's cryptography and work against any
 construction in this class — including the other repos in this bounty when they

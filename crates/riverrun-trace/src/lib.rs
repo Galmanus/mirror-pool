@@ -24,6 +24,8 @@
 pub mod graph;
 pub mod rng;
 #[cfg(feature = "onchain")]
+pub mod cli;
+#[cfg(feature = "onchain")]
 pub mod rpc;
 pub mod scenario;
 pub mod tracer;
