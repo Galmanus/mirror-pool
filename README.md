@@ -19,6 +19,34 @@ claims, the repo ships the adversaries that check them — one of them run again
 live Solana mainnet. Where a claim doesn't hold yet, it's written down in
 [Security status](#security-status--honest-limitations).
 
+## Your k is not your k
+
+Every pool in this space reports `1/k`. That number counts members. It says
+nothing about where those members' money came from, and on a public ledger that
+is public. Sort a set into classes by funding provenance and learning the actor's
+class leaves only that class to guess within.
+
+Nobody had measured it. Run against a **live Tornado-style SOL privacy pool on
+Solana mainnet**, sampling 30 real depositors:
+
+| | |
+|---|---|
+| reach an attributable origin | **11 / 30 (37%)**, mean **1.18 hops** |
+| **advertised k** | **30** |
+| **effective k** | **6.5** |
+| **worst case** | **1** — one depositor alone in their provenance class |
+
+```bash
+cargo run --features onchain --bin pool-provenance -- <POOL_PROGRAM_ID> 30
+```
+
+This is not a flaw in that pool: no deposit-pool design controls where its users'
+money came from, which is exactly why the channel goes unmeasured and keeps
+working. It applies to riverrun too — so the same ruler runs over riverrun's own
+constructions, where the same 2000 members are worth **500** under the
+construction the field ships and **2000** under circularity. Method, caveats and
+the arithmetic that was wrong the first time: **[docs/EFFECTIVE_K.md](docs/EFFECTIVE_K.md)**.
+
 ---
 
 ## What you can actually do with it — and why it matters to a real person
@@ -139,20 +167,22 @@ assumptions, nothing to trust.
 The discipline: **build the attacker; the defense is its dual.** You cannot
 credibly claim privacy against an attack you never ran.
 
-- **Behavioral channel** (`cargo run -p mirror-eval`). A clustering attacker that
+- **Behavioral channel** (`cargo run -p riverrun-eval`). A clustering attacker that
   fingerprints wallets by co-buy timing and position sizing — the real Solana
   signal. Against a synchronized round of identical actions it collapses to
   chance: **12.5% attribution at k=8, 1.5% at k=64** (= `1/k`). Same attacker,
   same population; the only difference is the pool.
 
-- **Provenance channel** (`cargo run -p mirror-trace`). The leak every noise tool
+- **Provenance channel** (`cargo run -p riverrun-trace --bin provenance-tracer`). The leak every noise tool
   leaves open: trace a wallet's funding *backward* and reach an attributable
   origin. The `provenance-tracer` measures it, and — proven on **live mainnet** —
   a shallow, SOL-only walk names an origin for a real user wallet in **two hops**.
   The repo also ships the *defense*: a cyclic-provenance construction that drives
   the tracer's root-hit rate to 0 (or dissolves *which* origin across many, 2.9
   bits of ambiguity). This axis is hard for every noise-based design, riverrun
-  included — the contribution here is measuring it rather than assuming it away.
+  included — the contribution here is measuring it rather than assuming it away,
+  and the same ruler now runs against **live pools**, not only this repo's
+  constructions. See [Your k is not your k](#your-k-is-not-your-k).
 
 ## Cost — cheap by construction
 
@@ -192,8 +222,8 @@ Reproduce: `cargo run --manifest-path programs/mirror-pool/Cargo.toml --example 
 | crate | what it is | status |
 |---|---|---|
 | `riverrun-core` | the post-quantum primitives and the membership *relation* (commitment, Merkle set, nullifier). Specification only — nothing here proves anything | 19 tests |
-| `mirror-eval` | adversarial harness for the behavioral channel — clustering attacker → chance | 4 tests + exhibit |
-| `mirror-trace` | the `provenance-tracer`: backward funding-graph adversary + circularity defense + live-mainnet adapter | 7 tests + 2 exhibits |
+| `riverrun-eval` | adversarial harness for the behavioral channel — clustering attacker → chance | 4 tests + exhibit |
+| `riverrun-trace` | the `provenance-tracer`: backward funding-graph adversary + circularity defense + live-mainnet adapter | 7 tests + 2 exhibits |
 | `programs/mirror-pool` | the on-chain Solana program: commitment accumulator, per-round nullifier registry (PDA-per-nullifier anti-replay), published root, verifier-attested settlement | builds to `.so`; 8 e2e tests green; **deployed + exercised live on devnet** (that deployment predates the attestation change) |
 | `crates/riverrun-stark` | the post-quantum, transparent **STARK proving the whole relation** — membership, nullifier and action in one proof (Rescue-Prime + FRI, no trusted setup) | 15 tests green (excluded — pulls Winterfell) |
 | `crates/riverrun-pool-zk` | **the** pool: commit → execute → settle driven by the STARK. `Execution` carries an opaque proof + public data only, never the secret | 7 tests + demo (excluded — pulls Winterfell) |
@@ -202,9 +232,11 @@ Reproduce: `cargo run --manifest-path programs/mirror-pool/Cargo.toml --example 
 cargo test --workspace                                            # 30 tests green
 cargo run --manifest-path crates/riverrun-pool-zk/Cargo.toml \
   --example behavior_pool --release                                # the mechanism
-cargo run -p mirror-eval                                          # behavioral deanon → chance
-cargo run -p mirror-trace                                         # provenance: field vs circularity
-cargo run -p mirror-trace --features onchain --bin onchain-trace  # live mainnet trace
+cargo run -p riverrun-eval                                        # behavioral deanon → chance
+cargo run -p riverrun-trace --bin provenance-tracer                                       # provenance: field vs circularity
+cargo run -p riverrun-trace --features onchain --bin onchain-trace  # live mainnet trace, one wallet
+cargo run -p riverrun-trace --features onchain --bin pool-provenance \
+  -- 9fhQBbumKEFuXtMBDw8AaQyAjCorLGJQiS3skWZdQyQD 30    # effective k of a live pool
 
 # on-chain program (needs the Solana SBF toolchain):
 cargo build-sbf --manifest-path programs/mirror-pool/Cargo.toml            # → deployable .so
@@ -213,13 +245,27 @@ cargo test --manifest-path crates/riverrun-stark/Cargo.toml                # STA
 cargo test --manifest-path crates/riverrun-pool-zk/Cargo.toml              # the pool driven by the STARK
 ```
 
-**60 tests green** in total: 30 host + 15 STARK + 7 pool-zk + 8 on-chain e2e.
+**64 tests green** in total: 34 host + 15 STARK + 7 pool-zk + 8 on-chain e2e.
 
 ## Security status & honest limitations
 
-> **Research prototype — NOT production-ready, NOT audited.** An internal
-> adversarial audit (see below) found gaps that mean the *shipped* code does not
-> yet protect a real user. Current state:
+This repo is two things with two different maturity levels, and collapsing them
+would be dishonest in both directions.
+
+**Runnable today, against mainnet, by anyone: the measurement tooling.**
+`provenance-tracer`, `onchain-trace` and `pool-provenance` are finished tools.
+They take a pool program or an address, read public chain data, and return
+numbers. They do not depend on riverrun's cryptography and work against any
+construction in this class — including the other repos in this bounty when they
+ship theirs. If you take one thing from here, take the ruler.
+
+**Research, and not to be deployed: the pool itself.** The cryptography is
+implemented and tested, but the AIR is hand-rolled and unaudited, and one gap
+below is a trust assumption rather than a proof.
+
+> **The pool is a research prototype — NOT production-ready, NOT audited.** An
+> internal adversarial audit (see below) found gaps that mean the *shipped* pool
+> does not yet protect a real user. Current state:
 > 1. **In `riverrun-pool-zk`, membership and the nullifier are now one proof.**
 >    The `Execution` carries an opaque STARK plus public data only — the secret
 >    never leaves the prover — and the AIR witnesses both membership under the root
