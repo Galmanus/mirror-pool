@@ -12,25 +12,26 @@ fn row(name: &str, s: SchemeStats) {
         format!("{:5.1}", s.mean_nearest_depth)
     };
     println!(
-        "{:<26}  {:>11.1}%  {:>9}  {:>13.2}  {:>9.1}%",
+        "{:<26}  {:>11.1}%  {:>9}  {:>13.2}  {:>9.1}%  {:>11.0}",
         name,
         s.root_hit_rate * 100.0,
         depth,
         s.mean_attribution_bits,
         s.cyclic_rate * 100.0,
+        s.effective_k.effective,
     );
 }
 
 fn main() {
-    const SEED: u64 = 0x_C0FF_EE_D1_5EA5E;
+    const SEED: u64 = 0x000C_0FFE_ED15_EA5E;
     const N: usize = 2000;
 
     println!("provenance-tracer — the funding-graph leak every noise tool leaves open\n");
     println!(
-        "{:<26}  {:>12}  {:>9}  {:>13}  {:>10}",
-        "construction", "root-hit", "depth", "attrib.(bits)", "in-cycle"
+        "{:<26}  {:>12}  {:>9}  {:>13}  {:>10}  {:>11}",
+        "construction", "root-hit", "depth", "attrib.(bits)", "in-cycle", "effective k"
     );
-    println!("{}", "-".repeat(78));
+    println!("{}", "-".repeat(92));
 
     let mut rng = SplitMix64::new(SEED);
     row(
@@ -47,7 +48,12 @@ fn main() {
     );
 
     println!(
-        "\nRead: the field's decoys still trace back to one origin (root-hit ~100%,\n\
+        "\nEvery row is the same {N} members. `effective k` is what those members are\n\
+         worth once the adversary sorts them by where their funding came from —\n\
+         the ruler applied to riverrun itself, not only to other people's pools.\n"
+    );
+    println!(
+        "Read: the field's decoys still trace back to one origin (root-hit ~100%,\n\
          0 bits of doubt). Circularity dissolves it two ways — a root that could be\n\
          any of many (high attribution entropy), or no attributable root at all —\n\
          and puts the target inside a cycle with no source to name.\n\

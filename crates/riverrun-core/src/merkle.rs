@@ -125,7 +125,7 @@ impl MerkleTree {
         let mut level = self.leaves.clone();
         let mut idx = index;
         while level.len() > 1 {
-            let sibling = if idx % 2 == 0 {
+            let sibling = if idx.is_multiple_of(2) {
                 level[idx + 1]
             } else {
                 level[idx - 1]
@@ -151,7 +151,7 @@ pub fn verify(root: &Hash, commitment: &Commitment, proof: &InclusionProof) -> b
     let mut acc = hash_leaf(commitment);
     let mut idx = proof.index;
     for sibling in &proof.siblings {
-        acc = if idx % 2 == 0 {
+        acc = if idx.is_multiple_of(2) {
             hash_node(&acc, sibling)
         } else {
             hash_node(sibling, &acc)

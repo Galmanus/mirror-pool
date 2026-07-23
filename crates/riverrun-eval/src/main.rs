@@ -8,7 +8,7 @@
 use riverrun_eval::run_experiment;
 
 fn main() {
-    const SEED: u64 = 0x_C0FF_EE_D1_5EA5E; // fixed seed → reproducible
+    const SEED: u64 = 0x000C_0FFE_ED15_EA5E; // fixed seed → reproducible
     const ROUNDS: usize = 4000;
     let pool_sizes = [4usize, 8, 16, 32, 64];
 

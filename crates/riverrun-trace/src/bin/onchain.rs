@@ -9,188 +9,44 @@
 //!     signature count hits our sampling cap is treated as an exchange-like hub).
 //!     A production analyst plugs in a maintained tag database (Arkham,
 //!     Chainalysis); we do not fabricate specific CEX addresses.
-//!   * We follow **system-program SOL transfers only**, top-level instructions,
-//!     bounded in depth/fanout — a deliberately shallow trace. A real analyst
-//!     goes deeper and also follows SPL token flows. So this *under*-reports the
-//!     leak; the true funding-graph exposure is at least this bad.
+//!   * We follow **system-program SOL transfers only** (top-level *and* inner —
+//!     a pool deposit is a CPI, so an analyst who reads only the message sees an
+//!     empty graph), bounded in depth and fan-out. A real analyst goes deeper and
+//!     also follows SPL token flows. So this *under*-reports the leak; the true
+//!     funding-graph exposure is at least this bad.
 //!
 //! Usage: `onchain-trace [TARGET_ADDRESS]`  (discovers a live target if omitted)
 //! RPC endpoint via `SOLANA_RPC` env, default mainnet-beta.
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::time::Duration;
 
 use riverrun_trace::graph::ProvenanceGraph;
+use riverrun_trace::rpc::{incoming_funders, system_transfers, Rpc, HUB_THRESHOLD, SYSTEM_PROGRAM};
 use riverrun_trace::tracer::Tracer;
-use serde_json::{json, Value};
 
-const SYSTEM_PROGRAM: &str = "11111111111111111111111111111111";
-const SIG_LIMIT: usize = 1000; // getSignaturesForAddress hard cap
-const HUB_THRESHOLD: usize = 1000; // only a *cap-hitting* address counts as a hub root
 const MAX_DEPTH: usize = 3;
 const NODE_CAP: usize = 40;
 const TX_FETCH_CAP: usize = 80;
 const FUNDERS_PER_ADDR: usize = 5;
 const SCAN_TX_PER_ADDR: usize = 12; // bound getTransaction calls spent per address
 
-struct Rpc {
-    agent: ureq::Agent,
-    url: String,
-    calls: usize,
-}
-
-impl Rpc {
-    fn new() -> Self {
-        let url = std::env::var("SOLANA_RPC")
-            .unwrap_or_else(|_| "https://api.mainnet-beta.solana.com".to_string());
-        let agent = ureq::AgentBuilder::new()
-            .timeout(Duration::from_secs(20))
-            .build();
-        Self {
-            agent,
-            url,
-            calls: 0,
-        }
-    }
-
-    fn call(&mut self, method: &str, params: Value) -> Option<Value> {
-        self.calls += 1;
-        std::thread::sleep(Duration::from_millis(130)); // be polite to public RPC
-        let body = json!({"jsonrpc":"2.0","id":1,"method":method,"params":params});
-        for attempt in 0..2 {
-            match self.agent.post(&self.url).send_json(body.clone()) {
-                Ok(resp) => {
-                    if let Ok(v) = resp.into_json::<Value>() {
-                        return Some(v.get("result")?.clone());
-                    }
-                    return None;
-                }
-                Err(ureq::Error::Status(429, _)) if attempt == 0 => {
-                    std::thread::sleep(Duration::from_millis(800));
-                }
-                Err(_) => return None,
-            }
-        }
-        None
-    }
-}
-
-/// Incoming SOL funders of `addr` (sources of system transfers whose destination
-/// is `addr`), plus whether `addr` looks like a high-activity hub.
-fn incoming_funders(rpc: &mut Rpc, addr: &str, tx_budget: &mut usize) -> (Vec<String>, bool) {
-    let sigs = rpc.call(
-        "getSignaturesForAddress",
-        json!([addr, {"limit": SIG_LIMIT}]),
-    );
-    let sig_arr = sigs.as_ref().and_then(|v| v.as_array());
-    let sig_count = sig_arr.map(|a| a.len()).unwrap_or(0);
-    let is_hub = sig_count >= HUB_THRESHOLD;
-    if is_hub {
-        // Roots are terminal — don't spend budget expanding a hub.
-        return (Vec::new(), true);
-    }
-
-    let mut funders = Vec::new();
-    let signatures: Vec<String> = sig_arr
-        .into_iter()
-        .flatten()
-        .filter_map(|s| {
-            s.get("signature")
-                .and_then(|x| x.as_str())
-                .map(String::from)
-        })
-        .collect();
-
-    let mut scanned = 0usize;
-    for sig in signatures {
-        if *tx_budget == 0 || funders.len() >= FUNDERS_PER_ADDR || scanned >= SCAN_TX_PER_ADDR {
-            break;
-        }
-        scanned += 1;
-        *tx_budget -= 1;
-        let tx = rpc.call(
-            "getTransaction",
-            json!([sig, {"encoding":"jsonParsed","maxSupportedTransactionVersion":0}]),
-        );
-        let Some(tx) = tx else { continue };
-        let instrs = tx
-            .pointer("/transaction/message/instructions")
-            .and_then(|v| v.as_array());
-        let Some(instrs) = instrs else { continue };
-        for ix in instrs {
-            let is_transfer = ix.pointer("/parsed/type").and_then(|v| v.as_str())
-                == Some("transfer")
-                && ix.get("program").and_then(|v| v.as_str()) == Some("system");
-            if !is_transfer {
-                continue;
-            }
-            let info = ix.pointer("/parsed/info");
-            let dest = info
-                .and_then(|i| i.get("destination"))
-                .and_then(|v| v.as_str());
-            let src = info.and_then(|i| i.get("source")).and_then(|v| v.as_str());
-            if dest == Some(addr) {
-                if let Some(s) = src {
-                    if s != addr && !funders.contains(&s.to_string()) {
-                        funders.push(s.to_string());
-                    }
-                }
-            }
-        }
-    }
-    (funders, false)
-}
-
-/// Recent signature count for an address (bounded by our sampling cap).
-fn sig_count(rpc: &mut Rpc, addr: &str) -> usize {
-    rpc.call(
-        "getSignaturesForAddress",
-        json!([addr, {"limit": SIG_LIMIT}]),
-    )
-    .and_then(|v| v.as_array().map(|a| a.len()))
-    .unwrap_or(0)
-}
-
 /// Find a live *non-hub* target with incoming transfers, so the backward trace
 /// has somewhere to walk. Scans recent system-program transfers and accepts the
 /// first destination that has history but is not itself a high-activity hub.
 fn discover_target(rpc: &mut Rpc, tx_budget: &mut usize) -> Option<String> {
-    let sigs = rpc.call(
-        "getSignaturesForAddress",
-        json!([SYSTEM_PROGRAM, {"limit": 30}]),
-    )?;
-    for s in sigs.as_array()? {
+    for sig in rpc.signatures(SYSTEM_PROGRAM, 30) {
         if *tx_budget == 0 {
             break;
         }
         *tx_budget -= 1;
-        let sig = s.get("signature")?.as_str()?;
-        let tx = rpc.call(
-            "getTransaction",
-            json!([sig, {"encoding":"jsonParsed","maxSupportedTransactionVersion":0}]),
-        )?;
-        let Some(instrs) = tx
-            .pointer("/transaction/message/instructions")
-            .and_then(|v| v.as_array())
-        else {
+        let Some(tx) = rpc.transaction(&sig) else {
             continue;
         };
-        for ix in instrs {
-            let is_transfer = ix.pointer("/parsed/type").and_then(|v| v.as_str())
-                == Some("transfer")
-                && ix.get("program").and_then(|v| v.as_str()) == Some("system");
-            if !is_transfer {
-                continue;
-            }
-            if let Some(d) = ix
-                .pointer("/parsed/info/destination")
-                .and_then(|v| v.as_str())
-            {
-                let c = sig_count(rpc, d);
-                // history, but not a hub → a plausible user wallet to trace.
-                if (1..HUB_THRESHOLD).contains(&c) {
-                    return Some(d.to_string());
-                }
+        for (_, dest, _) in system_transfers(&tx) {
+            let c = rpc.sig_count(&dest);
+            // history, but not a hub → a plausible user wallet to trace.
+            if (1..HUB_THRESHOLD).contains(&c) {
+                return Some(dest);
             }
         }
     }
@@ -234,7 +90,8 @@ fn main() {
         if depth > MAX_DEPTH || addr_of.len() >= NODE_CAP || tx_budget == 0 {
             continue;
         }
-        let (funders, is_hub) = incoming_funders(&mut rpc, &addr, &mut tx_budget);
+        let (funders, is_hub) =
+            incoming_funders(&mut rpc, &addr, &mut tx_budget, FUNDERS_PER_ADDR, SCAN_TX_PER_ADDR);
         if is_hub {
             hubs.insert(addr.clone());
             eprintln!("  hub (heuristic root): {addr}");

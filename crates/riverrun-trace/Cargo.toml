@@ -18,6 +18,13 @@ name = "onchain-trace"
 path = "src/bin/onchain.rs"
 required-features = ["onchain"]
 
+# Population mode: measure the funding-graph exposure of a real, live anonymity
+# set rather than a single wallet.
+[[bin]]
+name = "pool-provenance"
+path = "src/bin/poolscan.rs"
+required-features = ["onchain"]
+
 [features]
 onchain = ["ureq", "serde_json"]
 
