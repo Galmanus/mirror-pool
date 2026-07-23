@@ -1,23 +1,25 @@
 # riverrun
 
 ```
-                    ___________________________
-                ,-'''                           '''-.
-             ,-'          r i v e r r u n            '-.
-           ,'        __                         __       ',
-         ,'        ,'  '.       ------>       ,'  '.       ',
-        /         /      \                   /      \        \
-       ;         ;        ;   no origin     ;        ;        :
-       |    ^    |        |   no source     |        |    |   |
-       :         :        :   to trace      :        :    v   ;
-        \         \      /                   \      /        /
-         ',        '.__,'      <------         '.__,'       ,'
-           ',                 the cycle                   ,'
-             '-.          that has no end             ,-'
-                '-.___                         ___,-'
-                      '''---.___________.---'''
-        riverrun, past Eve and Adam's, by a commodius vicus of
-                          r e c i r c u l a t i o n
+                     ~~≈≈≈≈≈≋≋≋≋≋≋≋≋≋≋≈≈≈≈≈~~
+                 ~≈≈"                        "≈≈~
+              ~≈"        · · >  flow  > · ·        "≈~
+            ≈"      ~≈≈≋≋≋≋≋≋≋≋≋≋≋≋≋≋≋≋≋≋≋≋≈≈~      "≈
+          ≈'     ≈≈"                          "≈≈     '≈
+         ≈'    ≈"          r i v e r r u n       "≈    '≈
+        ≈'   ≈"      ()                      ()     "≈   '≈
+       ≈'   ≈'      (  )    no origin        (  )     '≈   '≈
+       ≈    ≈       ()          to           ()        ≈    ≈
+       ^    ≈       ()       trace           ()        ≈    v
+       ≈    ≈'      (  )    no source        (  )     '≈    ≈
+       '≈   '≈       ()                      ()      ≈'   ,≈
+        '≈   "≈,          the tide that         ,≈"   ,≈'
+         '≈    "≈≈,      turns back on        ,≈≈"    ≈'
+           ≈,      "≈≈≈≋≋≋≋≋≋≋≋≋≋≋≋≋≋≋≋≋≈≈≈"      ,≈
+            '≈≈       · · <  flow  < · ·        ≈≈'
+               ~≈≈,                        ,≈≈~
+                   ~~≈≈≈≈≈≋≋≋≋≋≋≋≋≋≋≋≈≈≈≈≈~~
+      riverrun, past Eve and Adam's, by a commodius vicus of recirculation
 ```
 
 > The submission for the **`mirror-pool`** bounty ("Tornado cash for synchronized
