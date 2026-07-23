@@ -228,8 +228,22 @@ Reproduce: `cargo run --manifest-path programs/mirror-pool/Cargo.toml --example 
 | `crates/riverrun-stark` | the post-quantum, transparent **STARK proving the whole relation** — membership, nullifier and action in one proof (Rescue-Prime + FRI, no trusted setup) | 15 tests green (excluded — pulls Winterfell) |
 | `crates/riverrun-pool-zk` | **the** pool: commit → execute → settle driven by the STARK. `Execution` carries an opaque proof + public data only, never the secret | 7 tests + demo (excluded — pulls Winterfell) |
 
+**Everything this repo claims, in one command:**
+
 ```bash
-cargo test --workspace                                            # 30 tests green
+./demo.sh          # offline stages, ~1 min
+./demo.sh --live   # also measures a live mainnet pool, ~5 min
+```
+
+It runs the suites, the mechanism, both adversaries, the ruler, and — if the SBF
+toolchain is present — builds the on-chain program and runs its e2e tests. Every
+stage prints numbers; where a number is a floor rather than a result, the stage
+says so.
+
+Or piece by piece:
+
+```bash
+cargo test --workspace                                            # 34 tests green
 cargo run --manifest-path crates/riverrun-pool-zk/Cargo.toml \
   --example behavior_pool --release                                # the mechanism
 cargo run -p riverrun-eval                                        # behavioral deanon → chance
