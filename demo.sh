@@ -38,6 +38,11 @@ note "Same action, distinct nullifiers, one root, and no way back to a committer
 cargo run --quiet --release --manifest-path crates/riverrun-pool-zk/Cargo.toml \
   --example behavior_pool
 
+stage "2b/6  what one execution costs"
+note "The last column is the one that decides deployability: a pairing-based"
+note "prover needs a ceremony-produced key shipped to every client; this needs none."
+cargo run --quiet --release --manifest-path crates/riverrun-stark/Cargo.toml --example bench
+
 stage "3/6  adversary 1 — the behavioural channel"
 note "A clustering attacker that fingerprints wallets by co-buy timing and position"
 note "sizing, run against the same population with and without a synchronized round."

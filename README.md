@@ -184,6 +184,31 @@ credibly claim privacy against an attack you never ran.
   and the same ruler now runs against **live pools**, not only this repo's
   constructions. See [Your k is not your k](#your-k-is-not-your-k).
 
+## What one execution costs
+
+`cargo run --release --manifest-path crates/riverrun-stark/Cargo.toml --example bench`
+
+| set size | proof | prove | verify | setup artifacts |
+|---:|---:|---:|---:|---:|
+| 4 | 11,929 B | **2.0 ms** | 0.20 ms | **0 bytes** |
+| 64 | 17,045 B | **3.7 ms** | 0.35 ms | **0 bytes** |
+| 16,384 | 19,064 B | **8.1 ms** | 0.43 ms | **0 bytes** |
+
+An anonymity set of **16,384 members** proves in **8 milliseconds**. Proof size
+grows logarithmically — 4096× the members costs 1.6× the proof.
+
+The column that decides whether this is deployable is the last one. A
+pairing-based system needs a proving key produced by a ceremony and shipped to
+every client; for a Merkle circuit of this depth that is tens of megabytes of
+setup which must exist, be trusted, and be distributed before anyone can prove
+anything. riverrun's prover is the code. For the audience the brief names —
+agents, market makers, ordinary users proving before each action — that is the
+difference between a tool that ships and one that needs an install.
+
+The honest other side: 12–19 KB does not fit in a 1,232-byte Solana transaction,
+which is why the proof is verified off-chain today. Both halves of that trade are
+in Security status.
+
 ## How this compares
 
 Honest placement, because a reader deserves to know what riverrun is *not*. Every
@@ -197,6 +222,14 @@ for.
 | **MPC / FHE** ([Arcium](https://www.arcium.com/), Umbra) | shared encrypted state, balances, amounts | via the MXE network | no | depends on the primitive |
 | **Confidential Transfers** (Token-2022) | amounts and balances | native, protocol level | no | no (ElGamal) |
 | **riverrun** | the **actor↔action link** — who did it, not what or how much | **no**, a named verifier attests | no | yes (hash-based) |
+
+Efficiency cuts both ways and it is worth being exact about which way. On
+**verification compute**, a small-field STARK is the cheapest thing on this list:
+murkl verifies at ~31k CU, against ~250k CU for a Groth16 verifier — 8× cheaper,
+post-quantum, and with no ceremony. On **proof size**, Groth16's 256 bytes beats
+every STARK here by two orders of magnitude, and that is what buys it a
+single-transaction verification path. On **prover cost and setup**, riverrun wins
+outright: 8 ms for a 16,384-member set and nothing to distribute.
 
 Read the last row honestly. riverrun is the only one whose payload is *behaviour*
 rather than value, which is what the `mirror-pool` brief asks for, and it needs no
