@@ -48,6 +48,33 @@ person who will never read it.
 
 ---
 
+## Who this is for
+
+Anyone who doesn't want to be an open book on-chain:
+
+- **Algotraders** who don't want their strategies reverse-engineered.
+- **Whales** who don't want every move shadowed and front-run.
+- **Market makers** protecting flow and inventory.
+- **Protocols & agents** that need to operate without broadcasting their playbook.
+- **Everyday users** who simply don't want to be clustered, profiled, and tracked.
+
+riverrun protects the **behavior** layer for all of them — the actor↔action link —
+which is orthogonal to, and composes with, value/recipient confidentiality.
+
+### Where it composes (roadmap — not yet built)
+
+riverrun is designed to be the behavioral-privacy layer of a confidential
+settlement rail. The author's payments rail, **Vineland** — a non-custodial dollar
+layer on Stellar with a *live* zero-knowledge **confidential-compliance** layer
+(amounts and recipients hidden, with selective disclosure to a regulator key) — is
+the intended integration target: Vineland hides *how much* and *to whom*; riverrun
+adds *who* and *what behavior*. Together they are a full private settlement rail
+for the audience above. This composition is a **roadmap item, not yet built** — and
+crucially it must preserve Vineland's *provable-compliance / selective-disclosure*
+framing rather than become pure hiding. See Security status.
+
+---
+
 ## The mechanism
 
 The flow mirrors Tornado, but the payload is a **behavior**, not a fund transfer:
