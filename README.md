@@ -184,6 +184,31 @@ credibly claim privacy against an attack you never ran.
   and the same ruler now runs against **live pools**, not only this repo's
   constructions. See [Your k is not your k](#your-k-is-not-your-k).
 
+## How this compares
+
+Honest placement, because a reader deserves to know what riverrun is *not*. Every
+row here is a real system, and each is better than riverrun at what it was built
+for.
+
+| approach | hides | on-chain verification | trusted setup | post-quantum |
+|---|---|---|---|---|
+| **Groth16 on Solana** (`groth16-solana`, Light/Helius) | whatever the circuit says | yes, ~250k CU, 256-byte proof | **yes, a ceremony** | no (BN254) |
+| **Circle STARK** ([murkl](https://github.com/exidz/murkl)) | transfers, in anonymous pools | yes, ~31k CU, ~8.7 KB proof | no | yes |
+| **MPC / FHE** ([Arcium](https://www.arcium.com/), Umbra) | shared encrypted state, balances, amounts | via the MXE network | no | depends on the primitive |
+| **Confidential Transfers** (Token-2022) | amounts and balances | native, protocol level | no | no (ElGamal) |
+| **riverrun** | the **actor↔action link** — who did it, not what or how much | **no**, a named verifier attests | no | yes (hash-based) |
+
+Read the last row honestly. riverrun is the only one whose payload is *behaviour*
+rather than value, which is what the `mirror-pool` brief asks for, and it needs no
+ceremony. It is also the only one that does not verify its proof on-chain, and
+that is a real deficit, not a design preference — see Security status for the
+correction on why, and the roadmap for the path.
+
+The comparison that matters most is with the Circle STARK work: it demonstrates
+that transparent, post-quantum, on-chain verification is *available today* on
+Solana at 31k CU. riverrun proves a different statement, but there is no excuse
+left for proving it off-chain forever.
+
 ## Cost — cheap by construction
 
 Because riverrun hides *behavior* and not funds, its on-chain footprint is tiny:
