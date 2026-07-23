@@ -182,3 +182,58 @@ pub fn incoming_funders(
     }
     (funders, false)
 }
+
+/// Trace one wallet's funding graph backward and return its **provenance class**:
+/// the sorted set of attributable-origin (hub) addresses it reaches, joined by
+/// '+', or the sentinel "rootless" if it reaches none. This is the key two
+/// wallets share when the same adversary cannot separate them by provenance.
+///
+/// Bounded like everything else here — depth, fan-out, transactions — so the
+/// class it returns is a floor: a deeper trace can only merge a rootless wallet
+/// into a rooted class, never the reverse.
+pub fn provenance_class(
+    rpc: &mut Rpc,
+    target: &str,
+    tx_budget: &mut usize,
+    depth: usize,
+    nodes_per_target: usize,
+    funders_per_addr: usize,
+    scan_tx_per_addr: usize,
+) -> String {
+    use std::collections::{BTreeSet, HashSet, VecDeque};
+
+    let mut roots: BTreeSet<String> = BTreeSet::new();
+    let mut visited: HashSet<String> = HashSet::new();
+    let mut nodes = 0usize;
+    let mut queue: VecDeque<(String, usize)> = VecDeque::new();
+    queue.push_back((target.to_string(), 0));
+    visited.insert(target.to_string());
+
+    while let Some((addr, d)) = queue.pop_front() {
+        if d >= depth || nodes >= nodes_per_target || *tx_budget == 0 {
+            continue;
+        }
+        let (funders, is_hub) =
+            incoming_funders(rpc, &addr, tx_budget, funders_per_addr, scan_tx_per_addr);
+        if is_hub && addr != target {
+            roots.insert(addr.clone());
+            continue;
+        }
+        for f in funders {
+            nodes += 1;
+            if !visited.contains(&f) && nodes < nodes_per_target {
+                visited.insert(f.clone());
+                queue.push_back((f, d + 1));
+            }
+            if nodes >= nodes_per_target {
+                break;
+            }
+        }
+    }
+
+    if roots.is_empty() {
+        "rootless".to_string()
+    } else {
+        roots.into_iter().collect::<Vec<_>>().join("+")
+    }
+}

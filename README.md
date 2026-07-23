@@ -19,6 +19,26 @@ claims, the repo ships the adversaries that check them — one of them run again
 live Solana mainnet. Where a claim doesn't hold yet, it's written down in
 [Security status](#security-status--honest-limitations).
 
+## Pre-flight: know your anonymity before you act
+
+The measurement above audits pools. Its dual **protects users**: before you
+deposit into *any* pool on Solana, `preflight` traces your own funding graph,
+samples the pool's current depositors, and tells you the anonymity **you
+personally** would get — because the advertised number is the pool's, not yours.
+
+```bash
+cargo run --features onchain --bin preflight -- <YOUR_WALLET> <POOL_PROGRAM_ID>
+```
+
+Against a real wallet and the live Privacy Cash pool: *"7 of 9 depositors share
+your provenance class — OK"*, or, for a wallet alone in its class, *"EXPOSED: the
+pool's size is irrelevant to you; fund a fresh wallet from a source other
+depositors use, or wait for a same-origin crowd."* It is protocol-agnostic — it
+reads public chain data, not the pool's internals — so it works against any pool
+program, including the other repos in this bounty. That is the leverage: auditing
+pools reaches auditors; protecting a user at the moment they act reaches every
+user of every privacy protocol on Solana. **[docs/PREFLIGHT.md](docs/PREFLIGHT.md)**.
+
 ## Your k is not your k
 
 Every pool in this space reports `1/k`. That number counts members. It says

@@ -108,6 +108,118 @@ pub fn effective_k(class_sizes: &[usize]) -> EffectiveK {
     }
 }
 
+/// A pre-flight anonymity assessment for **one wallet about to act**.
+///
+/// The tracer and `effective_k` audit a pool *after the fact*. This is the
+/// defensive dual: before a user deposits into any pool, it tells them what
+/// anonymity they personally will get there, given their own funding history and
+/// the pool's current depositors — because the pool's advertised k is not it.
+///
+/// Protocol-agnostic: it takes the user's provenance class and the classes of the
+/// pool's current depositors, nothing about how the pool works.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Preflight {
+    /// How many of the pool's current depositors share the user's provenance
+    /// class — the crowd the user would actually be hidden in, *including*
+    /// themselves once they join.
+    pub personal_k: usize,
+    /// The advertised size: the pool's current depositor count plus the user.
+    pub advertised_k: usize,
+    /// The pool's effective k as it stands, before the user joins.
+    pub pool_effective_k: f64,
+    pub verdict: Verdict,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Verdict {
+    /// The user would be alone or nearly alone in their provenance class: the
+    /// pool gives them essentially no anonymity, whatever it advertises.
+    Exposed,
+    /// The user's class is much smaller than the advertised set.
+    Weak,
+    /// The user's class is a healthy fraction of the set.
+    Ok,
+}
+
+/// Assess what anonymity `user_class` gets among depositors whose provenance
+/// classes are `population`. A class is any hashable key (e.g. the sorted set of
+/// attributable origins a wallet reaches, or a sentinel for "rootless").
+pub fn preflight<K: PartialEq>(user_class: &K, population: &[K]) -> Preflight {
+    let advertised_k = population.len() + 1;
+    // the user joins their own class; personal_k counts everyone in it, self too
+    let shared = population.iter().filter(|c| *c == user_class).count();
+    let personal_k = shared + 1;
+
+    // pool effective k over the existing population's class distribution
+    let mut sizes: Vec<usize> = Vec::new();
+    let mut seen: Vec<(&K, usize)> = Vec::new();
+    for c in population {
+        if let Some(e) = seen.iter_mut().find(|(k, _)| *k == c) {
+            e.1 += 1;
+        } else {
+            seen.push((c, 1));
+        }
+    }
+    for (_, n) in &seen {
+        sizes.push(*n);
+    }
+    let pool_effective_k = effective_k(&sizes).effective;
+
+    // verdict on the user's personal crowd relative to the whole set
+    let frac = personal_k as f64 / advertised_k as f64;
+    let verdict = if personal_k <= 1 {
+        Verdict::Exposed
+    } else if frac < 0.25 {
+        Verdict::Weak
+    } else {
+        Verdict::Ok
+    };
+
+    Preflight { personal_k, advertised_k, pool_effective_k, verdict }
+}
+
+#[cfg(test)]
+mod preflight_tests {
+    use super::{preflight, Verdict};
+
+    #[test]
+    fn a_user_alone_in_their_class_is_exposed() {
+        // Everyone in the pool traces to hub A; the user traces to hub B alone.
+        let pop = vec!["A", "A", "A", "A"];
+        let p = preflight(&"B", &pop);
+        assert_eq!(p.personal_k, 1);
+        assert_eq!(p.advertised_k, 5);
+        assert_eq!(p.verdict, Verdict::Exposed);
+    }
+
+    #[test]
+    fn a_user_in_the_dominant_class_is_ok() {
+        let pop = vec!["A", "A", "A", "A"];
+        let p = preflight(&"A", &pop);
+        assert_eq!(p.personal_k, 5, "the four plus the user");
+        assert_eq!(p.verdict, Verdict::Ok);
+    }
+
+    #[test]
+    fn a_small_minority_class_is_weak() {
+        // user shares a class with one other, among a set of 8
+        let pop = vec!["A", "A", "A", "A", "A", "A", "A", "B"];
+        let p = preflight(&"B", &pop);
+        assert_eq!(p.personal_k, 2);
+        assert_eq!(p.advertised_k, 9);
+        assert_eq!(p.verdict, Verdict::Weak, "2 of 9 is under a quarter");
+    }
+
+    #[test]
+    fn rootless_users_pool_together() {
+        // "rootless" is itself a class: unattributable wallets hide in each other.
+        let pop = vec!["rootless", "rootless", "rootless", "A"];
+        let p = preflight(&"rootless", &pop);
+        assert_eq!(p.personal_k, 4);
+        assert_eq!(p.verdict, Verdict::Ok);
+    }
+}
+
 /// Run the tracer over every target of a scheme and aggregate.
 pub fn evaluate(scheme: &Scheme) -> SchemeStats {
     let tracer = Tracer::new(&scheme.graph);

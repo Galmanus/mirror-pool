@@ -25,6 +25,12 @@ name = "pool-provenance"
 path = "src/bin/poolscan.rs"
 required-features = ["onchain"]
 
+# The defensive dual: check one wallet's anonymity in a pool *before* it acts.
+[[bin]]
+name = "preflight"
+path = "src/bin/preflight.rs"
+required-features = ["onchain"]
+
 [features]
 onchain = ["ureq", "serde_json"]
 
