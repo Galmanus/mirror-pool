@@ -93,28 +93,32 @@ The flow mirrors Tornado, but the payload is a **behavior**, not a fund transfer
    action. The public transcript is `{root, action, nullifier}` with no link back
    to a commitment.
 
-Run it — `cargo run -p mirror-core --example behavior_pool`:
+Run it — `cargo run --manifest-path crates/riverrun-pool-zk/Cargo.toml --example behavior_pool --release`:
 
 ```
-committed members : 5
-set root          : 2976a5c8dd79af48…
+committed members : 4
+set root          : 25c8d68dde1c377d…
 
 synchronized round — public transcript the observer sees:
-#     action (public)       nullifier
-------------------------------------------------
-1     61ff9ae885391e85…     7c854b8fb313f8ea…
-2     61ff9ae885391e85…     75d8860a57408da4…
-...
-5     61ff9ae885391e85…     0549d58e2b5be44c…
+#     action (public)       nullifier           proof
+------------------------------------------------------------------
+1     5741524448544957…     f581d90d496307d1…   12503 B
+2     5741524448544957…     89df1399c83ef190…   11445 B
+3     5741524448544957…     5b1bfe289200b40e…   11605 B
+4     5741524448544957…     4cabddd8e0f0a6b3…   11767 B
 
-An observer's chance of mapping any execution to its author is 1/5.
+An observer's chance of mapping any execution to its author is 1/4.
 double execution, same round  -> NullifierSpent
-tampered action after proof   -> ActionMismatch
+action the member never committed -> BadProof
 ```
 
-Same action, distinct nullifiers, one root. The nullifier is `H(secret‖round)` —
-unlinkable to any commitment. Grow the set to `k` and the actor↔action link is
-`1/k`, by construction. (`crates/mirror-core/src/pool.rs`)
+Both guards are enforced by the proof, not by a field comparison: the leaf is
+`Rescue(secret, action)` and the action is a public input, so swapping the action
+makes the STARK fail to verify.
+
+Same action, distinct nullifiers, one root. The nullifier is `Rescue(secret‖round)`
+— unlinkable to any commitment. Grow the set to `k` and the actor↔action link is
+`1/k`, by construction. (`crates/riverrun-pool-zk/src/lib.rs`)
 
 ## Why post-quantum and transparent
 
@@ -187,16 +191,17 @@ Reproduce: `cargo run --manifest-path programs/mirror-pool/Cargo.toml --example 
 
 | crate | what it is | status |
 |---|---|---|
-| `mirror-core` | the behavioral pool + its post-quantum primitives (commitment, Merkle set, nullifier, membership, `BehaviorPool`) | 27 tests + demo |
+| `riverrun-core` | the post-quantum primitives and the membership *relation* (commitment, Merkle set, nullifier). Specification only — nothing here proves anything | 19 tests |
 | `mirror-eval` | adversarial harness for the behavioral channel — clustering attacker → chance | 4 tests + exhibit |
 | `mirror-trace` | the `provenance-tracer`: backward funding-graph adversary + circularity defense + live-mainnet adapter | 7 tests + 2 exhibits |
 | `programs/mirror-pool` | the on-chain Solana program: commitment accumulator, per-round nullifier registry (PDA-per-nullifier anti-replay), published root, verifier-attested settlement | builds to `.so`; 8 e2e tests green; **deployed + exercised live on devnet** (that deployment predates the attestation change) |
 | `crates/riverrun-stark` | the post-quantum, transparent **STARK proving the whole relation** — membership, nullifier and action in one proof (Rescue-Prime + FRI, no trusted setup) | 15 tests green (excluded — pulls Winterfell) |
-| `crates/riverrun-pool-zk` | the pool with the STARK **wired in**: `Execution` carries an opaque proof + public data only, never the secret | 7 tests green (excluded — pulls Winterfell) |
+| `crates/riverrun-pool-zk` | **the** pool: commit → execute → settle driven by the STARK. `Execution` carries an opaque proof + public data only, never the secret | 7 tests + demo (excluded — pulls Winterfell) |
 
 ```bash
-cargo test --workspace                                            # 38 tests green
-cargo run -p mirror-core --example behavior_pool                  # the mechanism
+cargo test --workspace                                            # 30 tests green
+cargo run --manifest-path crates/riverrun-pool-zk/Cargo.toml \
+  --example behavior_pool --release                                # the mechanism
 cargo run -p mirror-eval                                          # behavioral deanon → chance
 cargo run -p mirror-trace                                         # provenance: field vs circularity
 cargo run -p mirror-trace --features onchain --bin onchain-trace  # live mainnet trace
@@ -208,7 +213,7 @@ cargo test --manifest-path crates/riverrun-stark/Cargo.toml                # STA
 cargo test --manifest-path crates/riverrun-pool-zk/Cargo.toml              # the pool driven by the STARK
 ```
 
-**68 tests green** in total: 38 host + 15 STARK + 7 pool-zk + 8 on-chain e2e.
+**60 tests green** in total: 30 host + 15 STARK + 7 pool-zk + 8 on-chain e2e.
 
 ## Security status & honest limitations
 
@@ -222,9 +227,10 @@ cargo test --manifest-path crates/riverrun-pool-zk/Cargo.toml              # the
 >    secret. Pairing a valid membership proof with a chosen nullifier no longer
 >    verifies, so "one action per member per round" is enforced cryptographically.
 >    Two things this does **not** mean: the AIR is hand-rolled and unaudited
->    (passing negative tests are necessary, not sufficient, for soundness), and
->    `riverrun-core`'s original pool still uses the transparent reference proof
->    that carries the secret.
+>    (passing negative tests are necessary, not sufficient, for soundness).
+>    There is no longer a second, non-hiding pool: the reference proof that
+>    carried the witness in the clear has been deleted, and `riverrun-core` is now
+>    primitives and the relation only.
 >
 >    The **action is bound too**: the leaf is `Rescue(secret, action)` and the
 >    action is a public input of the same proof, so a member executes the intent

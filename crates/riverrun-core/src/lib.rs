@@ -16,6 +16,16 @@
 //!   know a `secret` whose commitment is in the set with root `R`, and my
 //!   nullifier for this round is `n`"* — without revealing which leaf.
 //!
+//! This crate is the **specification**, not the protocol: it defines the
+//! primitives and the relation, and nothing here produces a proof. The pool that
+//! actually runs commit → execute → settle lives in `riverrun-pool-zk`, driven by
+//! the post-quantum STARK in `riverrun-stark`. There used to be a second pool
+//! here backed by a "reference proof" that carried the witness in the clear; it
+//! was useful to exercise the protocol before the STARK existed, and it is gone
+//! now that the STARK does the job — shipping a non-hiding pool next to a hiding
+//! one in a privacy repo is a footgun regardless of how loudly the README says
+//! which is which.
+//!
 //! All domain separation is explicit: each hash use is prefixed with a unique,
 //! versioned tag so a value in one role can never be reinterpreted in another.
 
@@ -23,7 +33,6 @@ pub mod commitment;
 pub mod membership;
 pub mod merkle;
 pub mod nullifier;
-pub mod pool;
 
 /// A 32-byte digest — the output of every hash in this crate.
 pub type Hash = [u8; 32];

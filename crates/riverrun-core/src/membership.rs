@@ -20,11 +20,11 @@
 //! arithmetizes, so the transparent, post-quantum prover proves *this* and
 //! nothing more.
 //!
-//! The [`Prover`]/[`Verifier`] traits are the seam the STARK backend plugs into.
-//! The MVP ships the relation + a [`ReferenceProver`] that carries the witness
-//! (correct, but not hiding — used to drive coordination and the adversarial
-//! evaluation harness end-to-end); the STARK backend replaces it with a proof
-//! that is succinct and zero-knowledge while enforcing the identical relation.
+//! Nothing here proves anything. The proof that enforces this relation without
+//! revealing the witness is the STARK in `riverrun-stark`, whose AIR binds the
+//! same two constraints (nullifier from the proving secret, membership under the
+//! public root) plus the committed action, with public inputs
+//! `{root, nullifier, round, action}`.
 
 use crate::{
     commitment::{commit, Commitment, Secret},
@@ -58,7 +58,8 @@ pub struct MembershipWitness {
 ///
 /// Returns `true` iff the witness satisfies every constraint the statement
 /// asserts. This is the single source of truth for what the STARK circuit must
-/// enforce; the reference and STARK provers agree with it by construction.
+/// enforce. It takes the witness as input, so it is emphatically **not** a
+/// proof system — it is the relation the prover has to satisfy.
 ///
 /// Constraints:
 /// 1. **Nullifier binding:** `nullifier(secret, round_id) == statement.nullifier`.
@@ -74,98 +75,6 @@ pub fn check_relation(statement: &MembershipStatement, witness: &MembershipWitne
     }
     let commitment: Commitment = commit(&witness.secret, &witness.identity);
     merkle_verify(&statement.root, &commitment, &witness.inclusion)
-}
-
-/// A membership proof. The MVP's [`ReferenceProof`] is transparent (carries the
-/// witness); the STARK backend's proof is an opaque, succinct byte string.
-pub trait MembershipProof {
-    /// Serialize the proof for on-chain submission or transport.
-    fn to_bytes(&self) -> Vec<u8>;
-}
-
-/// Produces membership proofs for a statement + witness.
-pub trait Prover {
-    type Proof: MembershipProof;
-    fn prove(
-        &self,
-        statement: &MembershipStatement,
-        witness: &MembershipWitness,
-    ) -> Result<Self::Proof, ProveError>;
-}
-
-/// Verifies membership proofs against a statement — without the witness.
-pub trait Verifier {
-    type Proof: MembershipProof;
-    fn verify(&self, statement: &MembershipStatement, proof: &Self::Proof) -> bool;
-}
-
-#[derive(Debug, PartialEq, Eq, thiserror::Error)]
-pub enum ProveError {
-    #[error("witness does not satisfy the membership relation")]
-    InvalidWitness,
-}
-
-// --- Reference backend (MVP) -------------------------------------------------
-//
-// The reference proof simply carries the witness. It is *sound* (the verifier
-// re-runs `check_relation`, so it accepts only valid witnesses) and lets the
-// coordinator and the adversarial evaluation harness run the full protocol
-// end-to-end today. It is explicitly **not zero-knowledge** — the witness is
-// present in the proof. Swapping in the STARK backend upgrades exactly this seam
-// to succinct + zero-knowledge while keeping `check_relation` as the contract.
-
-/// A transparent, non-hiding proof: the witness itself. Placeholder for the
-/// STARK proof, used to exercise the protocol end-to-end in the MVP.
-#[derive(Clone, Debug)]
-pub struct ReferenceProof {
-    pub witness: MembershipWitness,
-}
-
-impl MembershipProof for ReferenceProof {
-    fn to_bytes(&self) -> Vec<u8> {
-        // Not a stable wire format — the STARK proof defines that. Enough for
-        // in-process transport in tests and the eval harness.
-        let mut out = Vec::with_capacity(64 + 32 * self.witness.inclusion.siblings.len());
-        out.extend_from_slice(self.witness.secret.as_bytes());
-        out.extend_from_slice(&self.witness.identity);
-        out.extend_from_slice(&(self.witness.inclusion.index as u64).to_le_bytes());
-        for s in &self.witness.inclusion.siblings {
-            out.extend_from_slice(s);
-        }
-        out
-    }
-}
-
-/// The MVP prover.
-#[derive(Default)]
-pub struct ReferenceProver;
-
-impl Prover for ReferenceProver {
-    type Proof = ReferenceProof;
-    fn prove(
-        &self,
-        statement: &MembershipStatement,
-        witness: &MembershipWitness,
-    ) -> Result<Self::Proof, ProveError> {
-        if !check_relation(statement, witness) {
-            return Err(ProveError::InvalidWitness);
-        }
-        Ok(ReferenceProof {
-            witness: witness.clone(),
-        })
-    }
-}
-
-/// The MVP verifier: re-checks the relation. (The STARK verifier will instead
-/// check a succinct proof without ever seeing the witness.)
-#[derive(Default)]
-pub struct ReferenceVerifier;
-
-impl Verifier for ReferenceVerifier {
-    type Proof = ReferenceProof;
-    fn verify(&self, statement: &MembershipStatement, proof: &Self::Proof) -> bool {
-        check_relation(statement, &proof.witness)
-    }
 }
 
 #[cfg(test)]
@@ -223,15 +132,6 @@ mod tests {
     }
 
     #[test]
-    fn reference_prover_and_verifier_round_trip() {
-        let members: Vec<Member> = (0..4).map(|i| member(i as u8)).collect();
-        let round = RoundId::from_bytes([7u8; 32]);
-        let (st, w) = setup(&members, 2, round);
-        let proof = ReferenceProver.prove(&st, &w).unwrap();
-        assert!(ReferenceVerifier.verify(&st, &proof));
-    }
-
-    #[test]
     fn wrong_nullifier_breaks_relation() {
         let members: Vec<Member> = (0..4).map(|i| member(i as u8)).collect();
         let round = RoundId::from_bytes([7u8; 32]);
@@ -239,10 +139,6 @@ mod tests {
         // Claim a different member's nullifier.
         st.nullifier = nullifier(&members[3].secret, &round);
         assert!(!check_relation(&st, &w));
-        assert_eq!(
-            ReferenceProver.prove(&st, &w).unwrap_err(),
-            ProveError::InvalidWitness
-        );
     }
 
     #[test]
