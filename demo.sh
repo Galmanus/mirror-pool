@@ -18,7 +18,7 @@ LIVE=0
 [[ "${1:-}" == "--live" ]] && LIVE=1
 
 stage "1/6  the whole test suite"
-note "34 host + 15 STARK + 7 pool-zk. The on-chain e2e needs the SBF toolchain and runs in stage 6."
+note "34 host + 23 STARK + 7 pool-zk. The on-chain e2e needs the SBF toolchain and runs in stage 6."
 suite() { # <label> <extra cargo args...>
   local label="$1"; shift
   local out; out=$(cargo test --quiet "$@" 2>/dev/null)

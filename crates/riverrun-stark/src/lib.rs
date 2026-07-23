@@ -134,6 +134,15 @@ impl MembershipSet {
         *self.tree.root()
     }
 
+    /// Whether `leaf` really is the leaf at `index` of this set. Used by the
+    /// in-the-clear relation checks; a proof never gets to look.
+    pub fn contains(&self, leaf: Hash, index: usize) -> bool {
+        match self.tree.prove(index) {
+            Ok((l, _)) => l.to_bytes() == leaf.to_bytes(),
+            Err(_) => false,
+        }
+    }
+
     /// Prove membership of the leaf whose preimage is `value` at `index`, and
     /// return the proof **as opaque bytes**. Unlike a witness-carrying proof, the
     /// secret `value` and the leaf `index` are not serialized into these bytes.
@@ -217,6 +226,100 @@ pub fn leaf_of(value: [BaseElement; 2], action: [BaseElement; 2]) -> Hash {
 /// match.
 pub fn nullifier(secret: [BaseElement; 2], round: BaseElement) -> Hash {
     Rescue128::digest(&[secret[0], secret[1], round])
+}
+
+// --- The ricorso: the set is reborn each cycle ------------------------------
+//
+// Finnegans Wake runs on Vico's cycle, and its fourth age is the *ricorso*, the
+// return that begins it again. riverrun already borrows the book's circularity
+// for the funding graph. This is the other half, and it closes a leak the repo
+// had not named: a member's leaf is fixed forever, so per-round nullifiers unlink
+// one execution from another while the leaf itself links the member across every
+// round, and a set that only grows is a public record of who joined when.
+//
+// Under the ricorso the member holds a different leaf each cycle and proves the
+// new one descends from some leaf under the previous root, without revealing
+// which. History stops accumulating.
+//
+// Status: the relation is implemented and tested **in the clear** here, the way
+// `riverrun-core::membership::check_relation` specifies the execution relation.
+// The STARK that proves it without the witness is specified in
+// `docs/RICORSO.md` and is not built. That is the same order 1c was done in, and
+// the same honesty: a relation you can check is not a proof you can publish.
+
+/// Domain tag separating the per-cycle secret from every other use of Rescue.
+const DOM_CYCLE: BaseElement = BaseElement::new(0x_5249_434F_5253_4F);
+/// Domain tag for the migration nullifier. It must differ from [`DOM_CYCLE`]:
+/// sharing one would make publishing a migration nullifier hand out the next
+/// cycle's secret, and with it the member's next leaf.
+const DOM_MIGRATE: BaseElement = BaseElement::new(0x_4D49_4752_4154_45);
+
+/// The member's secret for cycle `c`: `Rescue(v0, v1, c, DOM_CYCLE)`.
+///
+/// Deriving per-cycle secrets from one master secret is what lets a member hold
+/// an unlinkable leaf each cycle while still being able to prove, cycle after
+/// cycle, that they are the same member.
+pub fn cycle_secret(secret: [BaseElement; 2], cycle: BaseElement) -> Hash {
+    Rescue128::digest(&[secret[0], secret[1], cycle, DOM_CYCLE])
+}
+
+/// The member's leaf in cycle `c`: `Rescue(cycle_secret(v, c), action)`.
+pub fn cycle_leaf(
+    secret: [BaseElement; 2],
+    cycle: BaseElement,
+    action: [BaseElement; 2],
+) -> Hash {
+    let s = cycle_secret(secret, cycle).to_elements();
+    leaf_of(s, action)
+}
+
+/// Spent once per member per cycle, so one seat cannot become many at a rebirth.
+pub fn migration_nullifier(secret: [BaseElement; 2], cycle: BaseElement) -> Hash {
+    Rescue128::digest(&[secret[0], secret[1], cycle, DOM_MIGRATE])
+}
+
+/// Everything a migration publishes. The witness — the secret and the leaf index
+/// — is not in here; it is what the STARK would hide.
+#[derive(Clone, Debug)]
+pub struct Migration {
+    pub old_root: Hash,
+    pub new_leaf: Hash,
+    pub nullifier: Hash,
+    pub old_cycle: BaseElement,
+    pub new_cycle: BaseElement,
+    pub action: [BaseElement; 2],
+}
+
+/// Evaluate the migration relation in the clear.
+///
+/// True iff, for this witness: the member's leaf for `old_cycle` sits under
+/// `old_root`, the announced `new_leaf` is their leaf for `new_cycle`, and the
+/// announced `nullifier` is their migration nullifier for `new_cycle` — all from
+/// the same secret, which is what stops a member migrating under one identity
+/// and spending another's nullifier.
+///
+/// This takes the witness as input, so it is emphatically **not** a proof
+/// system. It is the specification the AIR has to enforce.
+pub fn check_migration(
+    m: &Migration,
+    secret: [BaseElement; 2],
+    index: usize,
+    old_set: &MembershipSet,
+) -> bool {
+    if m.new_cycle == m.old_cycle {
+        return false; // a rebirth has to move the cycle forward
+    }
+    if old_set.root().to_bytes() != m.old_root.to_bytes() {
+        return false;
+    }
+    if cycle_leaf(secret, m.new_cycle, m.action).to_bytes() != m.new_leaf.to_bytes() {
+        return false;
+    }
+    if migration_nullifier(secret, m.new_cycle).to_bytes() != m.nullifier.to_bytes() {
+        return false;
+    }
+    // membership of the *old* leaf, checked against the set the root came from
+    old_set.contains(cycle_leaf(secret, m.old_cycle, m.action), index)
 }
 
 /// Verify an opaque membership-proof byte string against a public `root`.
