@@ -69,10 +69,17 @@ pub mod riverrun_program {
 
     /// Create a pool owned by `authority`, naming the `verifier` key whose
     /// attestation every execution must carry.
-    pub fn initialize(ctx: Context<Initialize>, verifier: Pubkey) -> Result<()> {
+    pub fn initialize(
+        ctx: Context<Initialize>,
+        verifier: Pubkey,
+        entry_fee: u64,
+        k_min: u32,
+    ) -> Result<()> {
         let pool = &mut ctx.accounts.pool;
         pool.authority = ctx.accounts.authority.key();
         pool.verifier = verifier;
+        pool.entry_fee = entry_fee;
+        pool.k_min = k_min;
         pool.accumulator = [0u8; 32];
         pool.membership_root = [0u8; 32];
         pool.member_count = 0;
@@ -85,6 +92,12 @@ pub mod riverrun_program {
     /// attest to executions that were never proven, so this is the recovery path.
     pub fn set_verifier(ctx: Context<AdvanceRound>, verifier: Pubkey) -> Result<()> {
         ctx.accounts.pool.verifier = verifier;
+        Ok(())
+    }
+
+    /// Reprice a seat in the anonymity set. Authority-gated.
+    pub fn set_entry_fee(ctx: Context<AdvanceRound>, entry_fee: u64) -> Result<()> {
+        ctx.accounts.pool.entry_fee = entry_fee;
         Ok(())
     }
 
@@ -106,6 +119,24 @@ pub mod riverrun_program {
     /// ordered accumulator and bump the member count. The commitment is emitted so
     /// off-chain clients can rebuild the canonical membership tree.
     pub fn commit(ctx: Context<Commit>, commitment: [u8; 32]) -> Result<()> {
+        // Anti-Sybil, such as it is: a seat costs something. Permissionless
+        // commit means k is buyable, and a fee does not stop an attacker with
+        // money — it only makes inflating k to k+m cost m·fee instead of m·0.
+        // The honest claim is "priced", not "prevented".
+        let fee = ctx.accounts.pool.entry_fee;
+        if fee > 0 {
+            anchor_lang::system_program::transfer(
+                CpiContext::new(
+                    ctx.accounts.system_program.key(),
+                    anchor_lang::system_program::Transfer {
+                        from: ctx.accounts.committer.to_account_info(),
+                        to: ctx.accounts.pool.to_account_info(),
+                    },
+                ),
+                fee,
+            )?;
+        }
+
         let pool = &mut ctx.accounts.pool;
         let index = pool.member_count;
         pool.accumulator = hashv(&[&pool.accumulator, &commitment]).to_bytes();
@@ -134,6 +165,9 @@ pub mod riverrun_program {
     ) -> Result<()> {
         let pool = &ctx.accounts.pool;
         require!(round == pool.round, PoolError::RoundMismatch);
+        // A set of one is not an anonymity set: the action belongs to that member
+        // by elimination. Refuse to settle below the floor.
+        require!(pool.member_count >= pool.k_min, PoolError::AnonymitySetTooSmall);
         require!(pool.membership_root != [0u8; 32], PoolError::RootNotPublished);
         require!(root == pool.membership_root, PoolError::RootMismatch);
 
@@ -233,6 +267,11 @@ fn verify_attestation(
 #[account]
 pub struct Pool {
     pub authority: Pubkey,
+    /// What one seat in the anonymity set costs, in lamports. Priced, not
+    /// prevented — see `commit`.
+    pub entry_fee: u64,
+    /// Executions are refused while the set has fewer than this many members.
+    pub k_min: u32,
     /// The key whose Ed25519 attestation every execution must carry. It attests
     /// that it checked the off-chain membership proof; it is trusted to do so.
     pub verifier: Pubkey,
@@ -248,7 +287,7 @@ pub struct Pool {
 }
 
 impl Pool {
-    pub const SPACE: usize = 8 + 32 + 32 + 32 + 32 + 4 + 8 + 1;
+    pub const SPACE: usize = 8 + 32 + 32 + 32 + 32 + 4 + 8 + 1 + 8 + 4;
 }
 
 /// Marker account whose mere existence means "this nullifier is spent."
@@ -281,9 +320,11 @@ pub struct Initialize<'info> {
 pub struct Commit<'info> {
     #[account(mut, seeds = [b"pool", pool.authority.as_ref()], bump = pool.bump)]
     pub pool: Account<'info, Pool>,
-    /// Anyone may commit into the pool; the committer pays for the (no new
-    /// account) transaction. The pool grows permissionlessly.
+    /// Anyone may commit into the pool — it grows permissionlessly — but a seat
+    /// costs `entry_fee`, which this account pays.
+    #[account(mut)]
     pub committer: Signer<'info>,
+    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
@@ -360,6 +401,8 @@ pub enum PoolError {
     RootNotPublished,
     #[msg("the execution's root is not the root published for this round")]
     RootMismatch,
+    #[msg("the anonymity set is below the pool's floor: an execution here would not be private")]
+    AnonymitySetTooSmall,
     #[msg("the commitment set is full")]
     PoolFull,
     #[msg("round counter overflow")]

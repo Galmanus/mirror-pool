@@ -80,6 +80,8 @@ fn main() {
             data: {
                 let mut d = disc("initialize").to_vec();
                 d.extend_from_slice(verifier.pubkey().as_ref());
+                d.extend_from_slice(&5_000_000u64.to_le_bytes()); // entry fee: 0.005 SOL a seat
+                d.extend_from_slice(&1u32.to_le_bytes()); // k_min for the demo
                 d
             },
         };
@@ -112,7 +114,8 @@ fn main() {
         program_id: PROGRAM_ID,
         accounts: vec![
             AccountMeta::new(pool, false),
-            AccountMeta::new_readonly(authority.pubkey(), true),
+            AccountMeta::new(authority.pubkey(), true),
+            AccountMeta::new_readonly(system_program::ID, false),
         ],
         data,
     };
@@ -120,8 +123,8 @@ fn main() {
 
     // read the pool's current round
     let pool_data = rpc.get_account_data(&pool).unwrap();
-    let round = u64::from_le_bytes(pool_data[140..148].try_into().unwrap());
-    let member_count = u32::from_le_bytes(pool_data[136..140].try_into().unwrap());
+    let round = u64::from_le_bytes(pool_data[152..160].try_into().unwrap());
+    let member_count = u32::from_le_bytes(pool_data[148..152].try_into().unwrap());
     println!("  (pool now: round={round}, members={member_count})");
 
     // 3. execute via a fresh relayer key (no member signs) — unique nullifier

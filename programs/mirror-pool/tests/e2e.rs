@@ -19,6 +19,14 @@ use litesvm::LiteSVM;
 
 const PROGRAM_ID: Pubkey = solana_sdk::pubkey!("BFy2ehVxpBrtwMCWwufpfbbsoWtZVYVaZBzDE2eAG7az");
 
+/// What one seat in the anonymity set costs. Anti-Sybil is not a solved problem
+/// here either — a fee prices set inflation, it does not prevent it. What it
+/// buys is that inflating k to k+m costs m·fee instead of m·0.
+const ENTRY_FEE: u64 = 5_000_000; // 0.005 SOL
+/// The anonymity-set floor: below this many members, an execution is not private
+/// enough to be worth settling, so the program refuses.
+const K_MIN: u32 = 2;
+
 /// Anchor instruction discriminator: first 8 bytes of sha256("global:<name>").
 fn disc(name: &str) -> [u8; 8] {
     let mut h = Sha256::new();
@@ -116,19 +124,42 @@ fn ed25519_ix_sourced_from(
     Instruction { program_id: solana_sdk::ed25519_program::ID, accounts: vec![], data }
 }
 
+/// `commit` now moves lamports, so the committer must be writable and the pool
+/// must be too.
+fn commit_ix(pool: Pubkey, committer: &Keypair, commitment: [u8; 32]) -> Instruction {
+    let mut data = disc("commit").to_vec();
+    data.extend_from_slice(&commitment);
+    Instruction {
+        program_id: PROGRAM_ID,
+        accounts: vec![
+            AccountMeta::new(pool, false),
+            AccountMeta::new(committer.pubkey(), true),
+            AccountMeta::new_readonly(system_program::ID, false),
+        ],
+        data,
+    }
+}
+
 fn pool_member_count(svm: &LiteSVM, pool: &Pubkey) -> u32 {
     let data = svm.get_account(pool).unwrap().data;
-    u32::from_le_bytes(data[136..140].try_into().unwrap())
+    u32::from_le_bytes(data[148..152].try_into().unwrap())
 }
 
 fn pool_round(svm: &LiteSVM, pool: &Pubkey) -> u64 {
     let data = svm.get_account(pool).unwrap().data;
-    u64::from_le_bytes(data[140..148].try_into().unwrap())
+    u64::from_le_bytes(data[152..160].try_into().unwrap())
 }
 
-/// Set up an initialized pool with a published root, returning everything the
-/// execute tests need.
+/// An initialized pool with a published root and enough members to clear the
+/// anonymity floor — the ordinary state an execution happens in.
 fn pool_ready() -> (LiteSVM, Keypair, Keypair, Pubkey, [u8; 32]) {
+    let (mut svm, authority, verifier, pool, root) = pool_ready_with(K_MIN);
+    svm.expire_blockhash();
+    (svm, authority, verifier, pool, root)
+}
+
+/// The same, with a chosen number of members, so the floor itself can be tested.
+fn pool_ready_with(members: u32) -> (LiteSVM, Keypair, Keypair, Pubkey, [u8; 32]) {
     let (mut svm, authority) = load();
     let verifier = Keypair::new();
     let (pool, _) = pool_pda(&authority.pubkey());
@@ -136,6 +167,8 @@ fn pool_ready() -> (LiteSVM, Keypair, Keypair, Pubkey, [u8; 32]) {
 
     let mut data = disc("initialize").to_vec();
     data.extend_from_slice(verifier.pubkey().as_ref());
+    data.extend_from_slice(&ENTRY_FEE.to_le_bytes());
+    data.extend_from_slice(&K_MIN.to_le_bytes());
     let ix = Instruction {
         program_id: PROGRAM_ID,
         accounts: vec![
@@ -158,6 +191,14 @@ fn pool_ready() -> (LiteSVM, Keypair, Keypair, Pubkey, [u8; 32]) {
         data,
     };
     assert!(send(&mut svm, &[&authority], ix), "publish_root should succeed");
+
+    for i in 0..members {
+        svm.expire_blockhash();
+        assert!(
+            send(&mut svm, &[&authority], commit_ix(pool, &authority, [(i + 1) as u8; 32])),
+            "commit should succeed"
+        );
+    }
 
     (svm, authority, verifier, pool, root)
 }
@@ -208,6 +249,55 @@ fn relayer(svm: &mut LiteSVM) -> Keypair {
 /// the membership proof itself. See the README's Security status.
 mod attestation {
     use super::*;
+
+    #[test]
+    fn joining_the_set_costs_the_entry_fee() {
+        // Permissionless commit means k is buyable: an attacker who can create
+        // members for free owns the anonymity set. The fee makes each seat cost
+        // something, and the lamports land in the pool rather than nowhere.
+        let (mut svm, authority, _v, pool, _root) = pool_ready_with(0);
+        let before = svm.get_account(&pool).unwrap().lamports;
+
+        assert!(send(&mut svm, &[&authority], commit_ix(pool, &authority, [1u8; 32])));
+
+        let after = svm.get_account(&pool).unwrap().lamports;
+        assert_eq!(after - before, ENTRY_FEE, "the seat is paid for, into the pool");
+    }
+
+    #[test]
+    fn an_execution_below_the_anonymity_floor_is_rejected() {
+        // A pool with one member offers that member nothing: the action is theirs
+        // by elimination. The program refuses to settle it.
+        let (mut svm, authority, verifier, pool, root) = pool_ready_with(K_MIN - 1);
+
+        let relayer = relayer(&mut svm);
+        let (action, nf) = ([7u8; 32], [0xC1; 32]);
+        let msg = attestation_message(&pool, &root, &action, &nf, 0);
+        let err = send_many(
+            &mut svm,
+            &[&relayer],
+            &[
+                ed25519_ix(&verifier, &msg, false),
+                execute_ix(pool, &relayer, root, action, nf, 0),
+            ],
+        )
+        .expect_err("a set of one is not an anonymity set");
+        assert!(err.contains("AnonymitySetTooSmall"), "got: {err}");
+
+        // one more member and the same execution settles
+        svm.expire_blockhash();
+        assert!(send(&mut svm, &[&authority], commit_ix(pool, &authority, [0x9u8; 32])));
+        svm.expire_blockhash();
+        send_many(
+            &mut svm,
+            &[&relayer],
+            &[
+                ed25519_ix(&verifier, &msg, false),
+                execute_ix(pool, &relayer, root, action, nf, 0),
+            ],
+        )
+        .expect("at k_min the execution settles");
+    }
 
     #[test]
     fn an_attested_execution_succeeds_and_still_cannot_be_replayed() {
@@ -357,23 +447,16 @@ mod attestation {
 
 #[test]
 fn full_lifecycle() {
-    let (mut svm, authority, verifier, pool, root) = pool_ready();
+    let (mut svm, authority, verifier, pool, root) = pool_ready_with(0);
     assert_eq!(pool_member_count(&svm, &pool), 0);
     assert_eq!(pool_round(&svm, &pool), 0);
 
     // commit two members
     for c in [[1u8; 32], [2u8; 32]] {
-        let mut data = disc("commit").to_vec();
-        data.extend_from_slice(&c);
-        let ix = Instruction {
-            program_id: PROGRAM_ID,
-            accounts: vec![
-                AccountMeta::new(pool, false),
-                AccountMeta::new_readonly(authority.pubkey(), true),
-            ],
-            data,
-        };
-        assert!(send(&mut svm, &[&authority], ix), "commit should succeed");
+        assert!(
+            send(&mut svm, &[&authority], commit_ix(pool, &authority, c)),
+            "commit should succeed"
+        );
     }
     assert_eq!(pool_member_count(&svm, &pool), 2, "two members committed");
 

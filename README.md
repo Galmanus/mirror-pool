@@ -224,7 +224,7 @@ Reproduce: `cargo run --manifest-path programs/mirror-pool/Cargo.toml --example 
 | `riverrun-core` | the post-quantum primitives and the membership *relation* (commitment, Merkle set, nullifier). Specification only — nothing here proves anything | 19 tests |
 | `riverrun-eval` | adversarial harness for the behavioral channel — clustering attacker → chance | 4 tests + exhibit |
 | `riverrun-trace` | the `provenance-tracer`: backward funding-graph adversary + circularity defense + live-mainnet adapter | 7 tests + 2 exhibits |
-| `programs/mirror-pool` | the on-chain Solana program: commitment accumulator, per-round nullifier registry (PDA-per-nullifier anti-replay), published root, verifier-attested settlement | builds to `.so`; 8 e2e tests green; **deployed + exercised live on devnet** (that deployment predates the attestation change) |
+| `programs/mirror-pool` | the on-chain Solana program: commitment accumulator, per-round nullifier registry (PDA-per-nullifier anti-replay), published root, verifier-attested settlement, entry fee + anonymity-set floor | builds to `.so`; 10 e2e tests green; **deployed + exercised live on devnet** (that deployment predates the attestation change) |
 | `crates/riverrun-stark` | the post-quantum, transparent **STARK proving the whole relation** — membership, nullifier and action in one proof (Rescue-Prime + FRI, no trusted setup) | 15 tests green (excluded — pulls Winterfell) |
 | `crates/riverrun-pool-zk` | **the** pool: commit → execute → settle driven by the STARK. `Execution` carries an opaque proof + public data only, never the secret | 7 tests + demo (excluded — pulls Winterfell) |
 
@@ -245,7 +245,7 @@ cargo test --manifest-path crates/riverrun-stark/Cargo.toml                # STA
 cargo test --manifest-path crates/riverrun-pool-zk/Cargo.toml              # the pool driven by the STARK
 ```
 
-**64 tests green** in total: 34 host + 15 STARK + 7 pool-zk + 8 on-chain e2e.
+**66 tests green** in total: 34 host + 15 STARK + 7 pool-zk + 10 on-chain e2e.
 
 ## Security status & honest limitations
 
@@ -299,11 +299,19 @@ below is a trust assumption rather than a proof.
 >    before a single compute unit is spent on FRI. The SBF compute cost of the
 >    verifier itself is **not measured**.
 >
+> 3. **The anonymity set is priced, not protected.** `commit` charges an
+>    `entry_fee` and `execute` refuses to settle below a `k_min` floor, so
+>    inflating the set from k to k+m costs m·fee instead of nothing and a set of
+>    one cannot be settled against. That prices Sybil inflation; it does not
+>    prevent it. An attacker with money still buys k. What is new here is that the
+>    same repo can *measure* the cheap version of that attack: sybils have to be
+>    funded, and funding is what `pool-provenance` reads — the live scan already
+>    reports shared-funder collisions across a real depositor population.
+>
 > Closing #2 properly (verify a proof on-chain, whether chunked STARK or a
-> pairing-based verifier via `alt_bn128`), plus binding the action into the AIR,
-> anti-Sybil on `commit`, decentralized round progression, 128-bit STARK
-> parameters, and a multisig/renounced upgrade authority, is what production would
-> require. Do not deploy this to guard real funds or identities until then.
+> pairing-based verifier via `alt_bn128`), plus decentralized round progression,
+> 128-bit STARK parameters, and a multisig/renounced upgrade authority, is what
+> production would require. Do not deploy this to guard real funds or identities until then.
 
 A threat model is only useful if its assumptions are on the table, so here are
 ours.
