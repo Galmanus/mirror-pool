@@ -14,9 +14,10 @@ neither hidden nor the point — what is severed is the **actor ↔ action** lin
 thing modern chain-analysis clusters on. Post-quantum and transparent: built from
 hashes, no trusted setup, no ceremony.
 
-Everything here is Rust, MIT, and runs today. The privacy claims are not
-asserted — they are checked by adversaries shipped in the same repo, one of them
-proven on live Solana mainnet.
+Everything here is Rust, MIT, and runs today. Rather than assert the privacy
+claims, the repo ships the adversaries that check them — one of them run against
+live Solana mainnet. Where a claim doesn't hold yet, it's written down in
+[Security status](#security-status--honest-limitations).
 
 ---
 
@@ -120,9 +121,14 @@ unlinkable to any commitment. Grow the set to `k` and the actor↔action link is
 The whole core — commitment, Merkle set, nullifier, membership relation — is built
 from one collision-resistant hash. No pairings, no trusted setup, no per-circuit
 ceremony. That makes it **post-quantum** (hash-based) and **transparent** (nothing
-to trust), unlike Groth16 mixers whose ceremony is itself a liability. Privacy
-meant to outlast a quantum adversary cannot rest on elliptic-curve pairings; it
-can rest on hashes.
+to trust).
+
+That's a tradeoff, not a free win. Pairing-based systems (Groth16) are mature,
+battle-tested and produce far smaller proofs — for most applications they're the
+right call. What they ask for in exchange is a per-circuit ceremony and security
+resting on elliptic curves. For privacy meant to outlast a quantum adversary,
+riverrun takes the other side of that trade: bigger proofs, hash-based
+assumptions, nothing to trust.
 
 ## The privacy is proven by adversaries in this repo
 
@@ -141,9 +147,10 @@ credibly claim privacy against an attack you never ran.
   a shallow, SOL-only walk names an origin for a real user wallet in **two hops**.
   The repo also ships the *defense*: a cyclic-provenance construction that drives
   the tracer's root-hit rate to 0 (or dissolves *which* origin across many, 2.9
-  bits of ambiguity). This is the axis the field admits it cannot close.
+  bits of ambiguity). This axis is hard for every noise-based design, riverrun
+  included — the contribution here is measuring it rather than assuming it away.
 
-## Cost — the cheapest anonymity on Solana
+## Cost — cheap by construction
 
 Because riverrun hides *behavior* and not funds, its on-chain footprint is tiny:
 an execution writes a **17-byte nullifier account** and emits an event. No value
@@ -158,8 +165,10 @@ moves; no ZK is verified on-chain in the MVP. Deployed and exercised on **devnet
 
 A full commit + execute is **~0.001 SOL per member per action** — on the order of
 $0.0002. That is the whole design bet: privacy *for behavior* is cheap precisely
-because nothing of value moves and nothing heavy is verified on-chain. Approaches
-that hide funds or verify ZK on-chain cost orders of magnitude more per operation.
+because nothing of value moves and nothing heavy is verified on-chain. Systems
+that hide funds or verify a proof on-chain necessarily pay much more per
+operation — they're solving a harder problem, and the comparison is about scope,
+not quality.
 
 **Measured live on devnet, not estimated.** A full `initialize + commit + execute`
 run (plus a rejected double-spend) cost **0.002507 SOL** total by wallet-balance
@@ -177,8 +186,8 @@ Reproduce: `cargo run --manifest-path programs/mirror-pool/Cargo.toml --example 
 | `mirror-eval` | adversarial harness for the behavioral channel — clustering attacker → chance | 4 tests + exhibit |
 | `mirror-trace` | the `provenance-tracer`: backward funding-graph adversary + circularity defense + live-mainnet adapter | 7 tests + 2 exhibits |
 | `programs/mirror-pool` | the on-chain Solana program: commitment accumulator, per-round nullifier registry (PDA-per-nullifier anti-replay), action settlement | builds to `.so`; e2e green; **deployed + exercised live on devnet** |
-| `crates/riverrun-stark` | the post-quantum, transparent **STARK proof of set membership** (Rescue-Prime + FRI, no trusted setup) | 3 tests; prove + verify + secret-not-on-wire green (excluded — pulls Winterfell) |
-| `crates/riverrun-pool-zk` | the pool with the STARK **wired in**: `Execution` carries an opaque proof + public data only, never the secret | 5 tests green (excluded — pulls Winterfell) |
+| `crates/riverrun-stark` | the post-quantum, transparent **STARK proof of set membership + nullifier binding** (Rescue-Prime + FRI, no trusted setup) | 12 tests green (excluded — pulls Winterfell) |
+| `crates/riverrun-pool-zk` | the pool with the STARK **wired in**: `Execution` carries an opaque proof + public data only, never the secret | 6 tests green (excluded — pulls Winterfell) |
 
 ```bash
 cargo test --workspace                                            # 38 tests green
@@ -190,45 +199,54 @@ cargo run -p mirror-trace --features onchain --bin onchain-trace  # live mainnet
 # on-chain program (needs the Solana SBF toolchain):
 cargo build-sbf --manifest-path programs/mirror-pool/Cargo.toml            # → deployable .so
 cargo test --manifest-path programs/mirror-pool/Cargo.toml --test e2e      # on-chain lifecycle e2e
-cargo test --manifest-path crates/riverrun-stark/Cargo.toml                # post-quantum STARK membership
+cargo test --manifest-path crates/riverrun-stark/Cargo.toml                # STARK: membership + nullifier binding
+cargo test --manifest-path crates/riverrun-pool-zk/Cargo.toml              # the pool driven by the STARK
 ```
+
+**57 tests green** in total: 38 host + 12 STARK + 6 pool-zk + 1 on-chain e2e.
 
 ## Security status & honest limitations
 
 > **Research prototype — NOT production-ready, NOT audited.** An internal
-> adversarial audit (see below) found two critical gaps that mean the *shipped*
-> code does not yet protect a real user:
-> 1. **Zero-knowledge is now wired (`riverrun-pool-zk`) but not complete.** The
->    STARK is wired into a pool flow where the `Execution` carries an opaque proof
->    plus public data only — the secret never leaves the prover (tested). Two
->    honest gaps remain: (a) the **nullifier is not yet bound inside the AIR**, so
->    the proof does not witness that the revealed nullifier derives from the same
->    secret that proved membership — a member could pair a valid membership proof
->    with a chosen nullifier, so "one action per member per round" is not yet
->    cryptographically enforced; and (b) `riverrun-core`'s original pool still uses
->    the transparent reference proof. Full closure needs the nullifier folded into
->    the AIR.
+> adversarial audit (see below) found gaps that mean the *shipped* code does not
+> yet protect a real user. Current state:
+> 1. **In `riverrun-pool-zk`, membership and the nullifier are now one proof.**
+>    The `Execution` carries an opaque STARK plus public data only — the secret
+>    never leaves the prover — and the AIR witnesses both membership under the root
+>    *and* that the revealed nullifier `Rescue(secret, round)` came from that same
+>    secret. Pairing a valid membership proof with a chosen nullifier no longer
+>    verifies, so "one action per member per round" is enforced cryptographically.
+>    Two things this does **not** mean: the AIR is hand-rolled and unaudited
+>    (passing negative tests are necessary, not sufficient, for soundness), and
+>    `riverrun-core`'s original pool still uses the transparent reference proof
+>    that carries the secret. The action `A` is also not yet inside the AIR — the
+>    leaf commits to the secret, not to `H(secret‖A)`.
 > 2. **The on-chain program does not verify membership.** `execute` enforces
 >    per-round nullifier anti-replay only; it checks no membership proof, so any
->    signer can submit an execution and nullifiers are front-runnable.
+>    signer can submit an execution and nullifiers are front-runnable. This is the
+>    largest remaining gap.
 >
-> Closing these (wire the STARK + bind commitment/nullifier in one AIR; verify the
-> proof on-chain), plus anti-Sybil on `commit`, decentralized round progression,
-> 128-bit STARK parameters, and a multisig/renounced upgrade authority, is what
-> production would require. Do not deploy this to guard real funds or identities
-> until then.
+> Closing #2 (verify the proof on-chain), plus binding the action into the AIR,
+> anti-Sybil on `commit`, decentralized round progression, 128-bit STARK
+> parameters, and a multisig/renounced upgrade authority, is what production would
+> require. Do not deploy this to guard real funds or identities until then.
 
-A threat model that hides its assumptions is theater.
+A threat model is only useful if its assumptions are on the table, so here are
+ours.
 
-- **The post-quantum STARK membership proof is implemented and tested**
-  (`riverrun-stark`): a transparent, hash-based (Rescue-Prime + FRI) STARK that
-  proves set membership in zero knowledge — knowledge of a leaf preimage under the
-  public root, *without revealing which leaf* — with no trusted setup. What remains
-  is *wiring and binding*: the `BehaviorPool` flow still drives the end-to-end
-  protocol with the sound transparent reference proof, and folding the commitment
-  `H(secret‖action)` and the revealed nullifier into the *same* AIR (one proof
-  witnessing membership **and** the nullifier) plus on-chain verification are the
-  next increments.
+- **The proof keeps the witness off the wire, but it is not formally
+  zero-knowledge.** Winterfell 0.13 has no witness randomization, so the honest
+  claim is "the secret does not appear in the transmitted proof" — checked over 20
+  proofs, not proven. That check earns its keep: the first version of the binding
+  AIR held the secret in a column that was constant across the trace, and since a
+  constant column has a constant low-degree extension, the secret landed in every
+  FRI opening — 20 leaks out of 20. Confining it to the rows where it is
+  load-bearing fixed that (0 out of 20).
+- **Negative tests can be decorative.** The public-input rejection tests here pass
+  even with the binding constraint deleted, because the boundary assertions alone
+  reject them. The test that actually guards the binding builds the trace an
+  attacker would want — hash one secret, carry another member — and deleting the
+  constraint was checked to make it fail.
 - **The mainnet provenance trace is shallow** — SOL-only, depth-bounded. It
   *under*-reports the leak. Hub labels are an activity heuristic standing in for a
   real tag database (Arkham/Chainalysis); no CEX addresses are fabricated.
@@ -241,9 +259,13 @@ A threat model that hides its assumptions is theater.
 
 ## Roadmap / research directions
 
-- Bind the commitment and nullifier into the STARK AIR (one proof for the full
-  relation), wire `riverrun-stark` into the pool flow, and verify the proof
-  on-chain.
+- **Verify the proof on-chain.** The membership + nullifier binding is done
+  off-chain (`riverrun-stark`, wired into `riverrun-pool-zk`); the on-chain
+  `execute` still trusts the relayer. This is the top of the list.
+- Bind the action `A` into the same AIR, so the leaf commits to `H(secret‖A)` and
+  one proof covers the full relation.
+- An independent review of the hand-rolled AIR. Negative tests passing is
+  necessary, not sufficient.
 - Longer-running / Surfpool soak of the on-chain program (already deployed and
   exercised on devnet; in-process e2e passes).
 - **LWE-hard cover** — anchor indistinguishability on Learning-With-Errors so
