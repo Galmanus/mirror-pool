@@ -59,6 +59,7 @@ impl<E: FieldElement> EvaluationResult<E> for Vec<E> {
 // ================================================================================================
 
 /// Prints out an execution trace.
+#[allow(dead_code)]
 pub fn print_trace<E: StarkField>(
     trace: &TraceTable<E>,
     multiples_of: usize,
@@ -84,6 +85,7 @@ pub fn print_trace<E: StarkField>(
     }
 }
 
+#[allow(dead_code)]
 pub fn print_trace_step<E: StarkField>(trace: &[Vec<E>], step: usize) {
     let trace_width = trace.len();
     let mut state = vec![E::ZERO; trace_width];

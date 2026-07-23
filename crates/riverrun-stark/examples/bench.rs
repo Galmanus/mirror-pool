@@ -52,6 +52,55 @@ fn main() {
         );
     }
 
+    // --- one round, one proof -------------------------------------------
+    println!("\n\nriverrun — a whole synchronized round, batched into one proof\n");
+    println!(
+        "{:>9}  {:>12}  {:>13}  {:>8}  {:>10}",
+        "members", "one proof", "one per member", "saving", "prove"
+    );
+    println!("{}", "-".repeat(62));
+
+    for k in [4usize, 64] {
+        let secrets: Vec<[BaseElement; 2]> = (0..k as u128)
+            .map(|i| [BaseElement::new(1000 + i), BaseElement::new(2000 + i)])
+            .collect();
+        let set = MembershipSet::new(secrets.iter().map(|s| leaf_of(*s, action)).collect());
+        let members: Vec<(usize, [BaseElement; 2])> =
+            secrets.iter().copied().enumerate().collect();
+
+        let t = Instant::now();
+        let batched = prove_round(&set, &members, round, action);
+        let prove_ms = t.elapsed().as_secs_f64() * 1000.0;
+
+        let claim = RoundClaim {
+            root: set.root(),
+            round,
+            action,
+            nullifiers: secrets.iter().map(|s| nullifier(*s, round)).collect(),
+        };
+        assert!(verify_round(&claim, &batched));
+
+        let separate: usize = members
+            .iter()
+            .map(|(i, s)| set.prove_bound(*s, *i, round, action).len())
+            .sum();
+
+        println!(
+            "{k:>9}  {:>10} B  {:>11} B  {:>7.1}x  {prove_ms:>7.1} ms",
+            batched.len(),
+            separate,
+            separate as f64 / batched.len() as f64
+        );
+    }
+
+    println!(
+        "\nOne round is one proof and one verification. A per-member scheme pays\n\
+         for k of each; on-chain, that is k verifications of ~250k CU for a\n\
+         pairing-based verifier. riverrun's synchronized round is exactly the\n\
+         structure that batches, so this costs nothing conceptually — the k\n\
+         sub-traces are laid end to end in one trace.\n"
+    );
+
     println!(
         "\nProof size grows logarithmically: 4096x the members costs 1.6x the proof.\n\
          Proving is single-digit milliseconds and needs no proving key, no circuit\n\

@@ -27,6 +27,8 @@ mod air;
 mod bound_air;
 mod bound_prover;
 mod prover;
+mod round_air;
+mod round_prover;
 mod utils;
 
 // Crate-root re-exports so the ported `air.rs` / `prover.rs` resolve their
@@ -37,6 +39,8 @@ pub(crate) use bound_air::{BoundMerkleAir, BoundPublicInputs};
 pub(crate) use bound_prover::BoundMerkleProver;
 pub(crate) use core::marker::PhantomData;
 pub(crate) use prover::MerkleProver;
+pub(crate) use round_air::{RoundAir, RoundPublicInputs};
+pub(crate) use round_prover::{MemberWitness, RoundProver};
 pub(crate) use rescue::{
     CYCLE_LENGTH as HASH_CYCLE_LEN, NUM_ROUNDS as NUM_HASH_ROUNDS, STATE_WIDTH as HASH_STATE_WIDTH,
 };
@@ -248,11 +252,11 @@ pub fn nullifier(secret: [BaseElement; 2], round: BaseElement) -> Hash {
 // the same honesty: a relation you can check is not a proof you can publish.
 
 /// Domain tag separating the per-cycle secret from every other use of Rescue.
-const DOM_CYCLE: BaseElement = BaseElement::new(0x_5249_434F_5253_4F);
+const DOM_CYCLE: BaseElement = BaseElement::new(0x0052_4943_4F52_534F);
 /// Domain tag for the migration nullifier. It must differ from [`DOM_CYCLE`]:
 /// sharing one would make publishing a migration nullifier hand out the next
 /// cycle's secret, and with it the member's next leaf.
-const DOM_MIGRATE: BaseElement = BaseElement::new(0x_4D49_4752_4154_45);
+const DOM_MIGRATE: BaseElement = BaseElement::new(0x004D_4947_5241_5445);
 
 /// The member's secret for cycle `c`: `Rescue(v0, v1, c, DOM_CYCLE)`.
 ///
@@ -320,6 +324,67 @@ pub fn check_migration(
     }
     // membership of the *old* leaf, checked against the set the root came from
     old_set.contains(cycle_leaf(secret, m.old_cycle, m.action), index)
+}
+
+// --- One round, one proof ---------------------------------------------------
+
+/// Everything a settled round publishes: the set it was proven against, the
+/// round and action it settles, and one nullifier per member.
+#[derive(Clone, Debug)]
+pub struct RoundClaim {
+    pub root: Hash,
+    pub round: BaseElement,
+    pub action: [BaseElement; 2],
+    pub nullifiers: Vec<Hash>,
+}
+
+/// Prove a whole synchronized round in one STARK: every `(index, secret)` in
+/// `members` is a committed member of `set` acting on `action` in `round`.
+///
+/// This is the shape riverrun's thesis already has — k members doing the same
+/// thing at the same time — so batching costs nothing conceptually and saves a
+/// proof and a verification per member.
+pub fn prove_round(
+    set: &MembershipSet,
+    members: &[(usize, [BaseElement; 2])],
+    round: BaseElement,
+    action: [BaseElement; 2],
+) -> Vec<u8> {
+    let witnesses: Vec<MemberWitness> = members
+        .iter()
+        .map(|(index, secret)| {
+            let (leaf, path) = set.tree.prove(*index).expect("valid index");
+            let mut branch = vec![leaf];
+            branch.extend_from_slice(&path);
+            MemberWitness { secret: *secret, index: *index, branch }
+        })
+        .collect();
+
+    let prover =
+        RoundProver::<StarkHash>::new(proof_options(), round, action, witnesses.len());
+    let trace = prover.build_trace(&witnesses);
+    prover.prove(trace).expect("prove round").to_bytes()
+}
+
+/// Verify a whole round against its public claim.
+pub fn verify_round(claim: &RoundClaim, proof_bytes: &[u8]) -> bool {
+    let proof = match Proof::from_bytes(proof_bytes) {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+    let pub_inputs = RoundPublicInputs {
+        tree_root: claim.root.to_elements(),
+        round: claim.round,
+        action: claim.action,
+        nullifiers: claim.nullifiers.iter().map(|n| n.to_elements()).collect(),
+    };
+    let acceptable = AcceptableOptions::OptionSet(vec![proof.options().clone()]);
+    winterfell::verify::<RoundAir, StarkHash, DefaultRandomCoin<StarkHash>, MerkleTree<StarkHash>>(
+        proof,
+        pub_inputs,
+        &acceptable,
+    )
+    .is_ok()
 }
 
 /// Verify an opaque membership-proof byte string against a public `root`.
@@ -482,7 +547,7 @@ mod tests {
         // contain the secret preimage verbatim (the reference proof serialized
         // exactly that). This is a smoke test for "witness not on the wire", not
         // a formal zero-knowledge guarantee.
-        let value = [BaseElement::new(0xDEAD_BEEF_1234), BaseElement::new(0xC0FFEE_5678)];
+        let value = [BaseElement::new(0xDEAD_BEEF_1234), BaseElement::new(0x00C0_FFEE_5678)];
         let index = 2;
         let mut leaves: Vec<Hash> = (100..108u128)
             .map(|i| Hash::new(BaseElement::new(2 * i + 1), BaseElement::new(2 * i + 2)))

@@ -30,6 +30,7 @@ impl<H: ElementHasher> BoundMerkleProver<H> {
         Self { options, declared_action: None, _hasher: PhantomData }
     }
 
+    #[cfg(test)]
     pub(crate) fn declaring_action(options: ProofOptions, action: [BaseElement; 2]) -> Self {
         Self { options, declared_action: Some(action), _hasher: PhantomData }
     }

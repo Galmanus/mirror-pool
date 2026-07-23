@@ -141,7 +141,7 @@ fn the_bound_proof_does_not_carry_the_secret() {
     // zero-knowledge guarantee (Winterfell 0.13 has no witness randomization).
     let round = BaseElement::new(11);
     for k in 0..20u128 {
-        let value = [BaseElement::new(0xDEAD_BEEF_0000 + k), BaseElement::new(0xC0FFEE_0000 + k)];
+        let value = [BaseElement::new(0xDEAD_BEEF_0000 + k), BaseElement::new(0x00C0_FFEE_0000 + k)];
         let index = (k % 4) as usize;
         let set = set_with(value, action(0), index, 4);
 
