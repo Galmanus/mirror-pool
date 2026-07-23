@@ -37,6 +37,13 @@ _.-_-'\         _.-'`-._
 > that flows in a circle back to its own beginning. That circle is the system's
 > core defense: a funding trail with no origin to trace.
 
+![Rust](https://img.shields.io/badge/Rust-end%20to%20end-000000?logo=rust)
+![Solana](https://img.shields.io/badge/Solana-SBF%20program-14F195?logo=solana&logoColor=black)
+![tests](https://img.shields.io/badge/tests-74%20green-4c1)
+![clippy](https://img.shields.io/badge/clippy-D%20warnings%20clean-4c1)
+![post-quantum](https://img.shields.io/badge/STARK-post--quantum%2C%20no%20setup-8A2BE2)
+![license](https://img.shields.io/badge/license-MIT-blue)
+
 **Tornado Cash for behavioral patterns and actions — not funds.**
 
 Tornado Cash breaks the link between a *deposit* and a *withdrawal* of money.
@@ -50,6 +57,33 @@ Everything here is Rust, MIT, and runs today. Rather than assert the privacy
 claims, the repo ships the adversaries that check them — one of them run against
 live Solana mainnet. Where a claim doesn't hold yet, it's written down in
 [Security status](#security-status--honest-limitations).
+
+---
+
+### The three things worth your 30 seconds
+
+1. **A ruler nobody had built.** Every pool advertises `1/k`. We measured a live
+   mainnet pool: advertised **k=30**, effective **6.5**, worst case **1**. The
+   funding graph is public, and it collapses anonymity that member-count hides.
+   → [Your k is not your k](#your-k-is-not-your-k)
+2. **A tool that protects users, not just audits pools.** `riverrun preflight
+   <wallet>` tells you the anonymity *you* would get in any pool before you
+   deposit — protocol-agnostic, runs against any program.
+   → [Pre-flight](#pre-flight-know-your-anonymity-before-you-act)
+3. **Post-quantum, no ceremony, and now measured on-chain.** One STARK binds
+   membership + nullifier + action; a synchronized round batches into one proof
+   (**24.6×** at k=64); verification runs on SBF at a measured **3.77M CU**,
+   pointing the way to a small-field port. → [How this compares](#how-this-compares)
+
+**Contents:** [pre-flight](#pre-flight-know-your-anonymity-before-you-act) ·
+[the ruler](#your-k-is-not-your-k) · [who it's for](#who-this-is-for) ·
+[the mechanism](#the-mechanism) · [post-quantum](#why-post-quantum-and-transparent) ·
+[the adversaries](#the-privacy-is-proven-by-adversaries-in-this-repo) ·
+[cost](#what-one-execution-costs) · [comparison](#how-this-compares) ·
+[workspace & run it](#workspace) · [security status](#security-status--honest-limitations) ·
+[related work](#related-work)
+
+---
 
 ## Pre-flight: know your anonymity before you act
 
@@ -101,58 +135,23 @@ the arithmetic that was wrong the first time: **[docs/EFFECTIVE_K.md](docs/EFFEC
 
 ---
 
-## What you can actually do with it — and why it matters to a real person
-
-On a public chain, *everything you do is watched and tied back to you* — not by
-your name, but by your **behavior**: when you act, how much, what you buy, who you
-follow. That fingerprint lets an employer, a stalker, a scammer, a data broker, or
-a hostile government profile you from your on-chain life. Today, strong on-chain
-privacy is a luxury for the technical and the wealthy.
-
-`riverrun` gives that privacy to an ordinary person. You do the *same* action —
-get paid, save, claim an airdrop, vote in a DAO, trade — but the link between
-**you** and **what you did** is cut. You act from inside a crowd wearing the same
-mask.
-
-- **A worker paid in crypto** is no longer profiled by their salary and every
-  purchase that follows it.
-- **A saver** isn't marked as a target the moment a scammer sees their balance
-  move.
-- **An activist or journalist** can transact without that transaction becoming a
-  trail back to them.
-- **A DAO voter** votes without fear of retaliation.
-- **Anyone** gets the financial privacy that used to require a specialist — with
-  one honest promise: *what you do with your money is your business again.*
-
-That is the point. The cryptography below exists to deliver **that feeling** to a
-person who will never read it.
-
----
-
 ## Who this is for
 
-Anyone who doesn't want to be an open book on-chain:
+On a public chain your **behavior** is your fingerprint — when you act, how much,
+what you buy — and it clusters you even when your name is hidden. riverrun severs
+the **actor ↔ action** link so you act from inside a crowd wearing the same mask.
+That serves anyone who doesn't want to be an open book on-chain:
 
-- **Algotraders** who don't want their strategies reverse-engineered.
-- **Whales** who don't want every move shadowed and front-run.
+- **Algotraders** whose strategies would otherwise be reverse-engineered.
+- **Whales** whose every move is shadowed and front-run.
 - **Market makers** protecting flow and inventory.
-- **Protocols & agents** that need to operate without broadcasting their playbook.
-- **Everyday users** who simply don't want to be clustered, profiled, and tracked.
+- **Protocols & agents** operating without broadcasting their playbook.
+- **Everyday users** who simply don't want to be clustered and profiled — the
+  privacy that used to require a specialist.
 
-riverrun protects the **behavior** layer for all of them — the actor↔action link —
-which is orthogonal to, and composes with, value/recipient confidentiality.
-
-### Where it composes (roadmap — not yet built)
-
-riverrun is designed to be the behavioral-privacy layer of a confidential
-settlement rail. The author's payments rail, **Vineland** — a non-custodial dollar
-layer on Stellar with a *live* zero-knowledge **confidential-compliance** layer
-(amounts and recipients hidden, with selective disclosure to a regulator key) — is
-the intended integration target: Vineland hides *how much* and *to whom*; riverrun
-adds *who* and *what behavior*. Together they are a full private settlement rail
-for the audience above. This composition is a **roadmap item, not yet built** — and
-crucially it must preserve Vineland's *provable-compliance / selective-disclosure*
-framing rather than become pure hiding. See Security status.
+It hides *who did it*, which is orthogonal to and composes with value/recipient
+confidentiality (the roadmap target is the author's Stellar rail **Vineland**,
+which hides *how much / to whom* — not yet integrated).
 
 ---
 
@@ -225,7 +224,7 @@ credibly claim privacy against an attack you never ran.
   chance: **12.5% attribution at k=8, 1.5% at k=64** (= `1/k`). Same attacker,
   same population; the only difference is the pool.
 
-- **Provenance channel** (`cargo run -p riverrun-trace --bin provenance-tracer`). The leak every noise tool
+- **Provenance channel** (`riverrun exhibit`). The leak every noise tool
   leaves open: trace a wallet's funding *backward* and reach an attributable
   origin. The `provenance-tracer` measures it, and — proven on **live mainnet** —
   a shallow, SOL-only walk names an origin for a real user wallet in **two hops**.
@@ -296,36 +295,17 @@ left for proving it off-chain forever.
 
 ## Cost — cheap by construction
 
-Because riverrun hides *behavior* and not funds, its on-chain footprint is tiny:
-an execution writes a **17-byte nullifier account** and emits an event. No value
-moves; no ZK is verified on-chain in the MVP. Deployed and exercised on **devnet**
-(program `BFy2ehVxpBrtwMCWwufpfbbsoWtZVYVaZBzDE2eAG7az`):
-
-| operation | cost |
-|---|---|
-| `execute` (the action / withdrawal) — writes the nullifier | **~0.00101 SOL** |
-| `commit` — fee only | ~0.000005 SOL |
-| `initialize` — one-time pool account (85 bytes) | ~0.00148 SOL |
-
-A full commit + execute is **~0.001 SOL per member per action** — on the order of
-$0.0002. That is the whole design bet: privacy *for behavior* is cheap precisely
-because nothing of value moves and nothing heavy is verified on-chain. Systems
-that hide funds or verify a proof on-chain necessarily pay much more per
-operation — they're solving a harder problem, and the comparison is about scope,
-not quality.
-
-**Measured live on devnet, not estimated** — though that measurement predates the
-verifier attestation. The attestation adds one Ed25519 precompile instruction: no
-new account, no new transaction signature, so no rent and no extra base fee, and
-the transaction stays well inside the size limit. The figures below should
-therefore still hold, but they have not been re-measured on devnet. A full
-`initialize + commit + execute`
-run (plus a rejected double-spend) cost **0.002507 SOL** total by wallet-balance
-delta, matching the rent math above — so per action (commit + execute) is
-**~0.00102 SOL**. The nullifier anti-replay was verified on a real cluster: the
-double-spend attempt was rejected on-chain
+Because riverrun hides *behavior* and not funds, its on-chain footprint is a
+**17-byte nullifier account** and an event — no value moves. Measured live on
+**devnet** (program `BFy2ehVxpBrtwMCWwufpfbbsoWtZVYVaZBzDE2eAG7az`): a full
+`initialize + commit + execute` run cost **0.002507 SOL** by wallet-balance delta,
+so **~0.00102 SOL per action** (commit + execute), on the order of $0.0002. The
+double-spend was rejected on-chain
 ([execute tx](https://explorer.solana.com/tx/coUCBWh4dsbRsUZHHZy62bK28JCfrF47RzhxPhSdSq1mpHRkucuxq5EiwSL8j1azxqPZdcetpMCB9rnAukYSbzX?cluster=devnet)).
-Reproduce: `cargo run --manifest-path programs/mirror-pool/Cargo.toml --example devnet_demo`.
+That deployment predates the verifier attestation, which adds one Ed25519
+precompile instruction — no new account, no rent — so the figures hold but were
+not re-measured. Reproduce: `cargo run --manifest-path
+programs/mirror-pool/Cargo.toml --example devnet_demo`.
 
 ## Workspace
 
@@ -357,7 +337,7 @@ cargo test --workspace                                            # 34 tests gre
 cargo run --manifest-path crates/riverrun-pool-zk/Cargo.toml \
   --example behavior_pool --release                                # the mechanism
 cargo run -p riverrun-eval                                        # behavioral deanon → chance
-cargo run -p riverrun-trace --bin provenance-tracer                                       # provenance: field vs circularity
+cargo run -p riverrun-trace --features onchain --bin riverrun -- exhibit  # provenance: field vs circularity
 # the unified CLI — one binary, four verbs (needs --features onchain for live data):
 cargo run -p riverrun-trace --features onchain --bin riverrun -- help
 cargo run -p riverrun-trace --features onchain --bin riverrun -- preflight <WALLET>  # your anonymity before you act
@@ -545,6 +525,71 @@ the literature says this repo's anti-Sybil *should* be:
   quantity) under which any trace flows to a canonical, indistinguishable form.
   Paper track.
 
+## References
+
+Nothing here is claimed from nowhere. The metric, the primitives, the on-chain
+verification, and the systems riverrun is measured against are all public work;
+where riverrun is behind the state of the art, the reference says so. Full
+accounting in [docs/RELATED_WORK.md](docs/RELATED_WORK.md) and
+[docs/EFFECTIVE_K.md](docs/EFFECTIVE_K.md).
+
+**Anonymity metrics & mixer de-anonymization**
+- Serjantov & Danezis, *Towards an Information Theoretic Metric for Anonymity*,
+  PET 2002 (Outstanding Paper) — the effective anonymity-set size `effective_k`
+  implements. <https://bib.mixnetworks.org/pdf/serjantov2002towards.pdf>
+- Wu et al., *Tutela: Assessing User-Privacy on Ethereum and Tornado Cash*,
+  arXiv:2201.06811 — true-vs-advertised pool size. <https://arxiv.org/abs/2201.06811>
+- Béres et al., *Blockchain is Watching You: Profiling and Deanonymizing
+  Ethereum Users*, arXiv:2005.14051. <https://arxiv.org/abs/2005.14051>
+- *Clustering Deposit and Withdrawal Activity in Tornado Cash*, arXiv:2510.09433
+  (2025) — 20–35% of withdrawals linked cross-chain. <https://arxiv.org/abs/2510.09433>
+- Du et al., *Breaking the Anonymity of Ethereum Mixing Services Using Graph
+  Feature Learning*, IEEE TIFS 2024. <https://doi.org/10.1109/TIFS.2023.3326984>
+
+**Nullifiers & anonymous authentication**
+- Gupta & Gurkan, *PLUME: An ECDSA Nullifier Scheme*, ePrint 2022/1255 —
+  formalizes the deterministic nullifier riverrun uses. <https://eprint.iacr.org/2022/1255>
+- *PrivDID*, ePrint 2026/127 — session unlinkability, no trusted setup.
+  <https://eprint.iacr.org/2026/127>
+- *Anonymous Self-Credentials*, ePrint 2025/618 — one-nullifier-per-verifier
+  Sybil resistance, the anti-Sybil riverrun's `entry_fee` *should* become.
+  <https://eprint.iacr.org/2025/618>
+
+**On-chain STARK verification on Solana** (the roadmap, with numbers)
+- Yano, *Full L1 On-Chain ZK-STARK+PQC Verification on Solana: A Measurement
+  Study*, ePrint 2025/1741 — a Winterfell STARK on L1 at ~1.1M CU / 4.4 KB proof.
+  <https://eprint.iacr.org/2025/1741>
+- **murkl** — Circle STARK verifier as a Solana CPI target, ~31k CU over M31,
+  post-quantum. <https://github.com/exidz/murkl>
+- **mosaic** (Wiener Labs) — trait-based on-chain verifier lib; chunked FRI-STARK
+  across transactions. <https://github.com/wienerlabs/mosaic>
+
+**Proving stack & fields**
+- **Winterfell** — the STARK prover/verifier riverrun builds on (Rescue-Prime
+  Merkle AIR, f128). <https://github.com/facebook/winterfell>
+- **Plonky3** — small-field toolkit, HVZK work. <https://github.com/Plonky3/Plonky3>
+- **Stwo / S-two** (StarkWare) — production Circle STARK over M31, the target
+  field for a cheap on-chain port. <https://github.com/starkware-libs/stwo>
+
+**Solana privacy ecosystem** (what riverrun is placed against)
+- Confidential Transfers (Token-2022) — native encrypted amounts.
+  <https://solana.com/privacy>
+- `groth16-solana` (Light Protocol / Helius) — the one production ZK verifier on
+  Solana today. <https://github.com/Lightprotocol/groth16-solana> ·
+  [Helius acquires Light](https://www.helius.dev/blog/light-protocol-acquisition)
+- **Arcium** — MPC/FHE confidential compute, C-SPL. <https://www.arcium.com/>
+- **Umbra** — Arcium-based shielded pool. <https://sdk.umbraprivacy.com/introduction>
+- **Privacy Cash** — the live SOL pool `riverrun audit` measures
+  (`9fhQBbumKEFuXtMBDw8AaQyAjCorLGJQiS3skWZdQyQD`).
+  <https://github.com/Privacy-Cash/privacy-cash>
+
+**The bounty & the name**
+- Superteam Brazil, *Build Privacy-Through-Noise tooling for Solana*.
+  <https://github.com/solanabr>
+- Joyce, *Finnegans Wake* (1939) — "riverrun, past Eve and Adam's, by a commodius
+  vicus of recirculation"; Vico's cycle is the *ricorso* the set-rebirth borrows.
+
 ## License
 
-MIT.
+MIT. Portions of the STARK AIR are adapted from the Winterfell `merkle` example
+(MIT, Meta). See individual file headers.
