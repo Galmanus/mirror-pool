@@ -381,14 +381,21 @@ below is a trust assumption rather than a proof.
 >      transactions** with a resumable verifier and a checkpoint state machine,
 >      validated end to end on SBF.
 >
+>    And it is no longer unmeasured for *this* repo either. `programs/stark-verifier`
+>    runs riverrun's real verifier on SBF and prices it: **3.77M CU at k=4, 7.13M
+>    CU at k=64** (`cargo test --manifest-path programs/stark-verifier/Cargo.toml
+>    --test cu`). Both exceed the 1.4M per-transaction cap, so it needs chunked
+>    execution across transactions — which is exactly what mosaic implements. The
+>    number is consistent with eprint 2025/1741's 1.1M CU for a 4.4 KB proof: we
+>    spend 3.4x the CU for a 2.7x larger proof.
+>
 >    So the blocker is not feasibility, it is *this repo's choices*. Our proof is
 >    **12,057–16,536 bytes** against a 1,232-byte transaction limit, because the
 >    AIR is a Rescue-Prime Merkle path over the 128-bit field rather than a
->    minimal AIR over a 31-bit one. Chunk-uploading 16 KB costs ~0.115 SOL of rent
->    against ~0.001 SOL for an entire action today. The path forward is a smaller
->    field and a cheaper hash — Circle STARK over M31, or Winterfell driven
->    through the `hashv` syscall — not a claim that it cannot be done. The SBF
->    compute cost of *our* verifier is not measured.
+>    minimal AIR over a 31-bit one. The path forward is a smaller field and a
+>    cheaper hash — Circle STARK over M31 verifies at ~31k CU (murkl), inside one
+>    transaction. It is a field change, not a possibility proof, and it needs no
+>    trusted setup.
 >
 > 3. **The anonymity set is priced, not protected.** `commit` charges an
 >    `entry_fee` and `execute` refuses to settle below a `k_min` floor, so
