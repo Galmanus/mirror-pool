@@ -9,12 +9,12 @@
 > that flows in a circle back to its own beginning. That circle is the system's
 > core defense: a funding trail with no origin to trace.
 
-![Rust](https://img.shields.io/badge/Rust-end%20to%20end-000000?logo=rust)
-![Solana](https://img.shields.io/badge/Solana-SBF%20program-14F195?logo=solana&logoColor=black)
-![tests](https://img.shields.io/badge/tests-74%20green-4c1)
-![clippy](https://img.shields.io/badge/clippy-D%20warnings%20clean-4c1)
-![post-quantum](https://img.shields.io/badge/STARK-post--quantum%2C%20no%20setup-8A2BE2)
-![license](https://img.shields.io/badge/license-MIT-blue)
+[![Rust](https://img.shields.io/badge/Rust-end%20to%20end-000000?logo=rust)](https://www.rust-lang.org)
+[![Solana](https://img.shields.io/badge/Solana-SBF%20program-14F195?logo=solana&logoColor=black)](https://solana.com/privacy)
+[![tests](https://img.shields.io/badge/tests-74%20green-4c1)](#workspace)
+[![clippy](https://img.shields.io/badge/clippy-D%20warnings%20clean-4c1)](https://github.com/rust-lang/rust-clippy)
+[![post-quantum](https://img.shields.io/badge/STARK-post--quantum%2C%20no%20setup-8A2BE2)](#why-post-quantum-and-transparent)
+[![license](https://img.shields.io/badge/license-MIT-blue)](#license)
 
 **Tornado Cash for behavioral patterns and actions — not funds.**
 
@@ -526,6 +526,11 @@ accounting in [docs/RELATED_WORK.md](docs/RELATED_WORK.md) and
 - *Anonymous Self-Credentials*, ePrint 2025/618 — one-nullifier-per-verifier
   Sybil resistance, the anti-Sybil riverrun's `entry_fee` *should* become.
   <https://eprint.iacr.org/2025/618>
+- *Formalizing Privacy of Anonymous Credentials: A Provably Secure Framework with
+  Predicate Proofs*, ePrint 2026/1373 — the identity/credential-privacy threat
+  model riverrun works in. <https://eprint.iacr.org/2026/1373>
+- *Re2creds: Reusable Anonymous Credentials*, ePrint 2026/119 — reusable
+  presentations without linkage. <https://eprint.iacr.org/2026/119>
 
 **On-chain STARK verification on Solana** (the roadmap, with numbers)
 - Yano, *Full L1 On-Chain ZK-STARK+PQC Verification on Solana: A Measurement
@@ -537,6 +542,9 @@ accounting in [docs/RELATED_WORK.md](docs/RELATED_WORK.md) and
   across transactions. <https://github.com/wienerlabs/mosaic>
 
 **Proving stack & fields**
+- Szepieniec, Ashur & Dhooghe, *Rescue-Prime: a Standard Specification (SoK)*,
+  ePrint 2020/1143 — the arithmetization-oriented hash the AIR computes in-circuit.
+  <https://eprint.iacr.org/2020/1143>
 - **Winterfell** — the STARK prover/verifier riverrun builds on (Rescue-Prime
   Merkle AIR, f128). <https://github.com/facebook/winterfell>
 - **Plonky3** — small-field toolkit, HVZK work. <https://github.com/Plonky3/Plonky3>
