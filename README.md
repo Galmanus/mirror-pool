@@ -150,7 +150,8 @@ Reproduce: `cargo run --manifest-path programs/mirror-pool/Cargo.toml --example 
 | `mirror-eval` | adversarial harness for the behavioral channel — clustering attacker → chance | 4 tests + exhibit |
 | `mirror-trace` | the `provenance-tracer`: backward funding-graph adversary + circularity defense + live-mainnet adapter | 7 tests + 2 exhibits |
 | `programs/mirror-pool` | the on-chain Solana program: commitment accumulator, per-round nullifier registry (PDA-per-nullifier anti-replay), action settlement | builds to `.so`; e2e green; **deployed + exercised live on devnet** |
-| `crates/riverrun-stark` | the post-quantum, transparent **STARK proof of set membership** (Rescue-Prime + FRI, no trusted setup) | 2 tests; prove + verify green (excluded from default build — pulls Winterfell) |
+| `crates/riverrun-stark` | the post-quantum, transparent **STARK proof of set membership** (Rescue-Prime + FRI, no trusted setup) | 3 tests; prove + verify + secret-not-on-wire green (excluded — pulls Winterfell) |
+| `crates/riverrun-pool-zk` | the pool with the STARK **wired in**: `Execution` carries an opaque proof + public data only, never the secret | 5 tests green (excluded — pulls Winterfell) |
 
 ```bash
 cargo test --workspace                                            # 38 tests green
@@ -170,11 +171,16 @@ cargo test --manifest-path crates/riverrun-stark/Cargo.toml                # pos
 > **Research prototype — NOT production-ready, NOT audited.** An internal
 > adversarial audit (see below) found two critical gaps that mean the *shipped*
 > code does not yet protect a real user:
-> 1. **The end-to-end flow is not zero-knowledge yet.** The `BehaviorPool`
->    commit→execute→settle path uses a transparent *reference* proof that carries
->    the secret (and the leaf index) in cleartext. The post-quantum STARK that
->    delivers real hiding exists and is tested, but is **not yet wired into the
->    flow** — so an `Execution` published today is fully linkable.
+> 1. **Zero-knowledge is now wired (`riverrun-pool-zk`) but not complete.** The
+>    STARK is wired into a pool flow where the `Execution` carries an opaque proof
+>    plus public data only — the secret never leaves the prover (tested). Two
+>    honest gaps remain: (a) the **nullifier is not yet bound inside the AIR**, so
+>    the proof does not witness that the revealed nullifier derives from the same
+>    secret that proved membership — a member could pair a valid membership proof
+>    with a chosen nullifier, so "one action per member per round" is not yet
+>    cryptographically enforced; and (b) `riverrun-core`'s original pool still uses
+>    the transparent reference proof. Full closure needs the nullifier folded into
+>    the AIR.
 > 2. **The on-chain program does not verify membership.** `execute` enforces
 >    per-round nullifier anti-replay only; it checks no membership proof, so any
 >    signer can submit an execution and nullifiers are front-runnable.
