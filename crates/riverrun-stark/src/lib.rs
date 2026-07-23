@@ -134,6 +134,16 @@ pub fn leaf_of(value: [BaseElement; 2]) -> Hash {
     Rescue128::digest(&value)
 }
 
+/// The per-round nullifier for a secret: `Rescue(v0, v1, round)`. This is the
+/// value that binding-into-the-AIR (audit-critical #1c, see
+/// `docs/1c-nullifier-binding-design.md`) must reproduce in-circuit and expose as
+/// a public output, so that one proof witnesses membership *and* this nullifier
+/// from the same secret. Provided and tested here so the AIR has a reference to
+/// match.
+pub fn nullifier(secret: [BaseElement; 2], round: BaseElement) -> Hash {
+    Rescue128::digest(&[secret[0], secret[1], round])
+}
+
 /// Verify an opaque membership-proof byte string against a public `root`.
 pub fn verify_bytes(root: Hash, proof_bytes: &[u8]) -> bool {
     match Proof::from_bytes(proof_bytes) {
@@ -180,6 +190,22 @@ mod tests {
         let real = tree.root().to_elements();
         let wrong = Hash::new(real[1], real[0]);
         assert!(verify_membership(wrong, proof).is_err(), "a wrong root must be rejected");
+    }
+
+    #[test]
+    fn nullifier_is_deterministic_and_round_dependent() {
+        let v = [BaseElement::new(11), BaseElement::new(22)];
+        let r1 = BaseElement::new(1);
+        let r2 = BaseElement::new(2);
+        // deterministic per (secret, round)
+        assert_eq!(nullifier(v, r1).to_bytes(), nullifier(v, r1).to_bytes());
+        // different round → different nullifier (cross-round unlinkability)
+        assert_ne!(nullifier(v, r1).to_bytes(), nullifier(v, r2).to_bytes());
+        // different secret → different nullifier
+        let w = [BaseElement::new(33), BaseElement::new(22)];
+        assert_ne!(nullifier(v, r1).to_bytes(), nullifier(w, r1).to_bytes());
+        // and it is distinct from the leaf commitment of the same secret
+        assert_ne!(nullifier(v, r1).to_bytes(), leaf_of(v).to_bytes());
     }
 
     #[test]
