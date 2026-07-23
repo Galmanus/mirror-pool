@@ -35,8 +35,11 @@ pub(crate) use rescue::{
 };
 pub(crate) use utils::rescue;
 pub(crate) use winterfell::crypto::{DefaultRandomCoin, ElementHasher};
-pub(crate) use winterfell::math::{fields::f128::BaseElement, FieldElement};
+pub(crate) use winterfell::math::FieldElement;
 pub(crate) use winterfell::{ProofOptions, Prover};
+
+/// The field over which the in-circuit Rescue hash and leaf preimages live.
+pub use winterfell::math::fields::f128::BaseElement;
 
 pub(crate) const TRACE_WIDTH: usize = 7;
 
@@ -99,9 +102,54 @@ pub fn verify_membership(root: Hash, proof: Proof) -> Result<(), VerifierError> 
     )
 }
 
+// --- High-level API: the transmitted proof carries no witness ----------------
+
+/// An anonymity set backed by the Rescue-Prime Merkle tree, hiding the winterfell
+/// types so a consumer (e.g. the pool) never touches them.
+pub struct MembershipSet {
+    tree: MerkleTree<Rescue128>,
+}
+
+impl MembershipSet {
+    /// Build the set from its leaves (each a Rescue digest — see [`leaf_of`]).
+    pub fn new(leaves: Vec<Hash>) -> Self {
+        Self { tree: build_tree(leaves) }
+    }
+
+    /// The public set root.
+    pub fn root(&self) -> Hash {
+        *self.tree.root()
+    }
+
+    /// Prove membership of the leaf whose preimage is `value` at `index`, and
+    /// return the proof **as opaque bytes**. Unlike a witness-carrying proof, the
+    /// secret `value` and the leaf `index` are not serialized into these bytes.
+    pub fn prove(&self, value: [BaseElement; 2], index: usize) -> Vec<u8> {
+        prove_membership(&self.tree, value, index).to_bytes()
+    }
+}
+
+/// The leaf (member commitment) for a preimage `value`: its Rescue digest.
+pub fn leaf_of(value: [BaseElement; 2]) -> Hash {
+    Rescue128::digest(&value)
+}
+
+/// Verify an opaque membership-proof byte string against a public `root`.
+pub fn verify_bytes(root: Hash, proof_bytes: &[u8]) -> bool {
+    match Proof::from_bytes(proof_bytes) {
+        Ok(proof) => verify_membership(root, proof).is_ok(),
+        Err(_) => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use winterfell::math::StarkField;
+
+    fn contains(haystack: &[u8], needle: &[u8]) -> bool {
+        haystack.windows(needle.len()).any(|w| w == needle)
+    }
 
     /// Build an 8-leaf set with `value`'s digest planted at `index`.
     fn set_with(value: [BaseElement; 2], index: usize) -> MerkleTree<Rescue128> {
@@ -132,5 +180,32 @@ mod tests {
         let real = tree.root().to_elements();
         let wrong = Hash::new(real[1], real[0]);
         assert!(verify_membership(wrong, proof).is_err(), "a wrong root must be rejected");
+    }
+
+    #[test]
+    fn transmitted_proof_does_not_carry_the_secret_verbatim() {
+        // The whole point vs the reference proof: the opaque proof bytes must not
+        // contain the secret preimage verbatim (the reference proof serialized
+        // exactly that). This is a smoke test for "witness not on the wire", not
+        // a formal zero-knowledge guarantee.
+        let value = [BaseElement::new(0xDEAD_BEEF_1234), BaseElement::new(0xC0FFEE_5678)];
+        let index = 2;
+        let mut leaves: Vec<Hash> = (100..108u128)
+            .map(|i| Hash::new(BaseElement::new(2 * i + 1), BaseElement::new(2 * i + 2)))
+            .collect();
+        leaves[index] = leaf_of(value);
+        let set = MembershipSet::new(leaves);
+        let root = set.root();
+
+        let proof = set.prove(value, index);
+        assert!(verify_bytes(root, &proof), "opaque proof must verify against the root");
+
+        // The 32 raw bytes of the secret preimage (two f128 elements, LE).
+        let secret_bytes: Vec<u8> =
+            value.iter().flat_map(|e| e.as_int().to_le_bytes()).collect();
+        assert!(
+            !contains(&proof, &secret_bytes),
+            "the secret preimage must not appear verbatim in the transmitted proof"
+        );
     }
 }
