@@ -1,7 +1,7 @@
 # riverrun
 
 <p align="center">
-  <img src="assets/banner.png" alt="riverrun — a glitched desert valley, the ledger's terrain scrambled" width="480">
+  <img src="assets/banner.jpg" alt="riverrun — a glitched desert valley, the ledger's terrain scrambled" width="480">
 </p>
 
 > The submission for the **`mirror-pool`** bounty ("Tornado cash for synchronized
