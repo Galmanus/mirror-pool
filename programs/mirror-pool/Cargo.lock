@@ -3271,7 +3271,9 @@ dependencies = [
  "litesvm",
  "sha2 0.10.9",
  "solana-client",
+ "solana-instructions-sysvar 3.0.1",
  "solana-sdk",
+ "solana-sdk-ids 3.1.0",
  "solana-sha256-hasher 3.1.0",
 ]
 

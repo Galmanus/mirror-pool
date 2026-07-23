@@ -47,28 +47,95 @@ fn load() -> (LiteSVM, Keypair) {
 }
 
 fn send(svm: &mut LiteSVM, signers: &[&Keypair], ix: Instruction) -> bool {
+    send_many(svm, signers, &[ix]).is_ok()
+}
+
+/// Send a multi-instruction transaction, returning the program logs on failure so
+/// a test can assert *why* it failed rather than only that it did.
+fn send_many(svm: &mut LiteSVM, signers: &[&Keypair], ixs: &[Instruction]) -> Result<(), String> {
     let payer = signers[0].pubkey();
-    let tx =
-        Transaction::new_signed_with_payer(&[ix], Some(&payer), signers, svm.latest_blockhash());
-    svm.send_transaction(tx).is_ok()
+    let tx = Transaction::new_signed_with_payer(ixs, Some(&payer), signers, svm.latest_blockhash());
+    match svm.send_transaction(tx) {
+        Ok(_) => Ok(()),
+        Err(e) => Err(format!("{:?} {}", e.err, e.meta.logs.join(" | "))),
+    }
+}
+
+/// The message a verifier signs to attest "I checked the membership proof behind
+/// this execution". Binding every field is what stops an attestation from being
+/// replayed onto another pool, round, action or nullifier.
+fn attestation_message(
+    pool: &Pubkey,
+    root: &[u8; 32],
+    action_hash: &[u8; 32],
+    nullifier: &[u8; 32],
+    round: u64,
+) -> Vec<u8> {
+    let mut m = Vec::with_capacity(152);
+    m.extend_from_slice(b"riverrun-exec-v1");
+    m.extend_from_slice(pool.as_ref());
+    m.extend_from_slice(root);
+    m.extend_from_slice(action_hash);
+    m.extend_from_slice(nullifier);
+    m.extend_from_slice(&round.to_le_bytes());
+    m
+}
+
+/// Build a native Ed25519 sigverify instruction over `msg`, laid out the way
+/// `new_ed25519_instruction` does: 16-byte header, pubkey at 16, signature at 48,
+/// message at 112, all three source indices being "this instruction" (0xFFFF).
+fn ed25519_ix(signer: &Keypair, msg: &[u8], tamper_signature: bool) -> Instruction {
+    ed25519_ix_sourced_from(signer, msg, tamper_signature, u16::MAX)
+}
+
+/// The same, but with a chosen `source_index` for where the precompile should read
+/// the public key, signature and message from. `u16::MAX` means "this
+/// instruction's own data", which is the only layout the program accepts.
+fn ed25519_ix_sourced_from(
+    signer: &Keypair,
+    msg: &[u8],
+    tamper_signature: bool,
+    source_index: u16,
+) -> Instruction {
+    let mut sig = signer.sign_message(msg).as_ref().to_vec();
+    if tamper_signature {
+        sig[0] ^= 0xFF;
+    }
+    let pk = signer.pubkey().to_bytes();
+
+    let mut data = Vec::with_capacity(16 + 32 + 64 + msg.len());
+    data.push(1); // one signature
+    data.push(0); // padding
+    for v in [48u16, source_index, 16u16, source_index, 112u16, msg.len() as u16, source_index] {
+        data.extend_from_slice(&v.to_le_bytes());
+    }
+    data.extend_from_slice(&pk);
+    data.extend_from_slice(&sig);
+    data.extend_from_slice(msg);
+
+    Instruction { program_id: solana_sdk::ed25519_program::ID, accounts: vec![], data }
 }
 
 fn pool_member_count(svm: &LiteSVM, pool: &Pubkey) -> u32 {
     let data = svm.get_account(pool).unwrap().data;
-    u32::from_le_bytes(data[72..76].try_into().unwrap())
+    u32::from_le_bytes(data[136..140].try_into().unwrap())
 }
 
 fn pool_round(svm: &LiteSVM, pool: &Pubkey) -> u64 {
     let data = svm.get_account(pool).unwrap().data;
-    u64::from_le_bytes(data[76..84].try_into().unwrap())
+    u64::from_le_bytes(data[140..148].try_into().unwrap())
 }
 
-#[test]
-fn full_lifecycle() {
+/// Set up an initialized pool with a published root, returning everything the
+/// execute tests need.
+fn pool_ready() -> (LiteSVM, Keypair, Keypair, Pubkey, [u8; 32]) {
     let (mut svm, authority) = load();
+    let verifier = Keypair::new();
     let (pool, _) = pool_pda(&authority.pubkey());
+    let root = [0x5A; 32];
 
-    // 1. initialize
+    let mut data = disc("initialize").to_vec();
+    data.extend_from_slice(verifier.pubkey().as_ref());
     let ix = Instruction {
         program_id: PROGRAM_ID,
         accounts: vec![
@@ -76,13 +143,225 @@ fn full_lifecycle() {
             AccountMeta::new(authority.pubkey(), true),
             AccountMeta::new_readonly(system_program::ID, false),
         ],
-        data: disc("initialize").to_vec(),
+        data,
     };
     assert!(send(&mut svm, &[&authority], ix), "initialize should succeed");
+
+    let mut data = disc("publish_root").to_vec();
+    data.extend_from_slice(&root);
+    let ix = Instruction {
+        program_id: PROGRAM_ID,
+        accounts: vec![
+            AccountMeta::new(pool, false),
+            AccountMeta::new_readonly(authority.pubkey(), true),
+        ],
+        data,
+    };
+    assert!(send(&mut svm, &[&authority], ix), "publish_root should succeed");
+
+    (svm, authority, verifier, pool, root)
+}
+
+fn execute_ix(
+    pool: Pubkey,
+    relayer: &Keypair,
+    root: [u8; 32],
+    action: [u8; 32],
+    nf: [u8; 32],
+    round: u64,
+) -> Instruction {
+    let mut data = disc("execute").to_vec();
+    data.extend_from_slice(&action);
+    data.extend_from_slice(&nf);
+    data.extend_from_slice(&round.to_le_bytes());
+    data.extend_from_slice(&root);
+    Instruction {
+        program_id: PROGRAM_ID,
+        accounts: vec![
+            AccountMeta::new_readonly(pool, false),
+            AccountMeta::new(nullifier_pda(&pool, &nf).0, false),
+            AccountMeta::new(relayer.pubkey(), true),
+            AccountMeta::new_readonly(system_program::ID, false),
+            AccountMeta::new_readonly(
+                solana_sdk::sysvar::instructions::ID,
+                false,
+            ),
+        ],
+        data,
+    }
+}
+
+fn relayer(svm: &mut LiteSVM) -> Keypair {
+    let r = Keypair::new();
+    svm.airdrop(&r.pubkey(), 10_000_000_000).unwrap();
+    r
+}
+
+/// Audit-critical #2: before this, `execute` checked only the round and the
+/// nullifier PDA — any signer could settle an action for a member they were not,
+/// and a watcher could front-run a nullifier out of the mempool. `execute` now
+/// requires an Ed25519 attestation from the pool's named verifier, bound to the
+/// exact `(pool, root, action, nullifier, round)` being settled.
+///
+/// This is a *trust-minimising* control, not a trustless one: it moves the hole
+/// from "anyone" to "a named key", and the on-chain program still does not verify
+/// the membership proof itself. See the README's Security status.
+mod attestation {
+    use super::*;
+
+    #[test]
+    fn an_attested_execution_succeeds_and_still_cannot_be_replayed() {
+        let (mut svm, _auth, verifier, pool, root) = pool_ready();
+        let relayer = relayer(&mut svm);
+        let (action, nf) = ([7u8; 32], [0xAA; 32]);
+
+        let msg = attestation_message(&pool, &root, &action, &nf, 0);
+        let ixs = [
+            ed25519_ix(&verifier, &msg, false),
+            execute_ix(pool, &relayer, root, action, nf, 0),
+        ];
+        send_many(&mut svm, &[&relayer], &ixs).expect("attested execution should succeed");
+        assert!(svm.get_account(&nullifier_pda(&pool, &nf).0).is_some());
+
+        // a fresh blockhash, so this is a genuinely new transaction rather than a
+        // duplicate the runtime would drop before reaching the program
+        svm.expire_blockhash();
+        let err = send_many(&mut svm, &[&relayer], &ixs)
+            .expect_err("the same nullifier must not settle twice");
+        assert!(err.contains("already in use"), "got: {err}");
+    }
+
+    #[test]
+    fn an_attestation_that_sources_its_message_from_elsewhere_is_rejected() {
+        // The classic break in this pattern: the sigverify instruction declares
+        // *where* the key and message come from. If the program reads them at fixed
+        // offsets in the sigverify instruction's own data but lets the declared
+        // source point at some other instruction, the precompile can be made to
+        // check a different message than the one the program reads. So the program
+        // accepts only the self-contained layout (source index 0xFFFF).
+        let (mut svm, _auth, verifier, pool, root) = pool_ready();
+        let relayer = relayer(&mut svm);
+        let (action, nf) = ([7u8; 32], [0xB1; 32]);
+
+        let msg = attestation_message(&pool, &root, &action, &nf, 0);
+        let err = send_many(
+            &mut svm,
+            &[&relayer],
+            &[
+                ed25519_ix_sourced_from(&verifier, &msg, false, 0),
+                execute_ix(pool, &relayer, root, action, nf, 0),
+            ],
+        )
+        .expect_err("only a self-contained sigverify instruction may attest");
+        assert!(err.contains("AttestationMismatch"), "got: {err}");
+    }
+
+    #[test]
+    fn an_execution_with_no_attestation_is_rejected() {
+        let (mut svm, _auth, _verifier, pool, root) = pool_ready();
+        let relayer = relayer(&mut svm);
+
+        let err = send_many(
+            &mut svm,
+            &[&relayer],
+            &[execute_ix(pool, &relayer, root, [7u8; 32], [0xAB; 32], 0)],
+        )
+        .expect_err("an unattested execution must be rejected");
+        assert!(err.contains("MissingAttestation"), "got: {err}");
+    }
+
+    #[test]
+    fn an_attestation_from_the_wrong_key_is_rejected() {
+        let (mut svm, _auth, _verifier, pool, root) = pool_ready();
+        let relayer = relayer(&mut svm);
+        let impostor = Keypair::new();
+        let (action, nf) = ([7u8; 32], [0xAC; 32]);
+
+        let msg = attestation_message(&pool, &root, &action, &nf, 0);
+        let err = send_many(
+            &mut svm,
+            &[&relayer],
+            &[
+                ed25519_ix(&impostor, &msg, false),
+                execute_ix(pool, &relayer, root, action, nf, 0),
+            ],
+        )
+        .expect_err("only the pool's named verifier may attest");
+        assert!(err.contains("UnknownVerifier"), "got: {err}");
+    }
+
+    #[test]
+    fn an_attestation_for_a_different_nullifier_is_rejected() {
+        // The front-running case: a watcher lifts a valid attestation and tries to
+        // settle a nullifier of their own choosing with it.
+        let (mut svm, _auth, verifier, pool, root) = pool_ready();
+        let relayer = relayer(&mut svm);
+        let action = [7u8; 32];
+
+        let msg = attestation_message(&pool, &root, &action, &[0xAD; 32], 0);
+        let err = send_many(
+            &mut svm,
+            &[&relayer],
+            &[
+                ed25519_ix(&verifier, &msg, false),
+                execute_ix(pool, &relayer, root, action, [0xAE; 32], 0),
+            ],
+        )
+        .expect_err("the attestation must bind the nullifier it settles");
+        assert!(err.contains("AttestationMismatch"), "got: {err}");
+    }
+
+    #[test]
+    fn an_execution_against_an_unpublished_root_is_rejected() {
+        let (mut svm, _auth, verifier, pool, _root) = pool_ready();
+        let relayer = relayer(&mut svm);
+        let (action, nf, stale) = ([7u8; 32], [0xAF; 32], [0x11; 32]);
+
+        let msg = attestation_message(&pool, &stale, &action, &nf, 0);
+        let err = send_many(
+            &mut svm,
+            &[&relayer],
+            &[
+                ed25519_ix(&verifier, &msg, false),
+                execute_ix(pool, &relayer, stale, action, nf, 0),
+            ],
+        )
+        .expect_err("executions are bound to the root the pool published");
+        assert!(err.contains("RootMismatch"), "got: {err}");
+    }
+
+    #[test]
+    fn a_forged_signature_is_rejected_by_the_runtime() {
+        // The program trusts the Ed25519 precompile to have checked the signature;
+        // this asserts the precompile actually runs here, so the rest of these
+        // tests are not green for the wrong reason.
+        let (mut svm, _auth, verifier, pool, root) = pool_ready();
+        let relayer = relayer(&mut svm);
+        let (action, nf) = ([7u8; 32], [0xB0; 32]);
+
+        let msg = attestation_message(&pool, &root, &action, &nf, 0);
+        let err = send_many(
+            &mut svm,
+            &[&relayer],
+            &[
+                ed25519_ix(&verifier, &msg, true),
+                execute_ix(pool, &relayer, root, action, nf, 0),
+            ],
+        )
+        .expect_err("a tampered signature must not verify");
+        // instruction 0 is the sigverify precompile: the runtime rejected it before
+        // our program ran at all, which is what the program's check relies on
+        assert!(err.contains("InstructionError(0,"), "got: {err}");
+    }
+}
+
+#[test]
+fn full_lifecycle() {
+    let (mut svm, authority, verifier, pool, root) = pool_ready();
     assert_eq!(pool_member_count(&svm, &pool), 0);
     assert_eq!(pool_round(&svm, &pool), 0);
 
-    // 2. commit two members
+    // commit two members
     for c in [[1u8; 32], [2u8; 32]] {
         let mut data = disc("commit").to_vec();
         data.extend_from_slice(&c);
@@ -98,51 +377,34 @@ fn full_lifecycle() {
     }
     assert_eq!(pool_member_count(&svm, &pool), 2, "two members committed");
 
-    // 3. execute an action for round 0 via a relayer (no member key signs)
-    let relayer = Keypair::new();
-    svm.airdrop(&relayer.pubkey(), 10_000_000_000).unwrap();
-    let action = [7u8; 32];
-    let nf1 = [0xAA; 32];
-    let (nf1_pda, _) = nullifier_pda(&pool, &nf1);
-
-    let execute_ix = |action: [u8; 32], nf: [u8; 32], round: u64, nf_pda: Pubkey| {
-        let mut data = disc("execute").to_vec();
-        data.extend_from_slice(&action);
-        data.extend_from_slice(&nf);
-        data.extend_from_slice(&round.to_le_bytes());
-        Instruction {
-            program_id: PROGRAM_ID,
-            accounts: vec![
-                AccountMeta::new_readonly(pool, false),
-                AccountMeta::new(nf_pda, false),
-                AccountMeta::new(relayer.pubkey(), true),
-                AccountMeta::new_readonly(system_program::ID, false),
-            ],
-            data,
-        }
+    // execute an action for round 0 via a relayer (no member key signs), carrying
+    // the verifier's attestation
+    let relayer = relayer(&mut svm);
+    let (action, nf1) = ([7u8; 32], [0xAA; 32]);
+    let attested = |nf: [u8; 32], round: u64| {
+        [
+            ed25519_ix(&verifier, &attestation_message(&pool, &root, &action, &nf, round), false),
+            execute_ix(pool, &relayer, root, action, nf, round),
+        ]
     };
 
-    assert!(
-        send(&mut svm, &[&relayer], execute_ix(action, nf1, 0, nf1_pda)),
-        "first execution should succeed"
-    );
-    assert!(svm.get_account(&nf1_pda).is_some(), "nullifier PDA now exists");
+    send_many(&mut svm, &[&relayer], &attested(nf1, 0)).expect("first execution should succeed");
+    assert!(svm.get_account(&nullifier_pda(&pool, &nf1).0).is_some(), "nullifier PDA now exists");
 
-    // 4. double execution with the same nullifier must FAIL (PDA already exists)
+    // double execution with the same nullifier must fail (PDA already exists)
+    svm.expire_blockhash();
     assert!(
-        !send(&mut svm, &[&relayer], execute_ix(action, nf1, 0, nf1_pda)),
+        send_many(&mut svm, &[&relayer], &attested(nf1, 0)).is_err(),
         "double execution (nullifier reuse) must be rejected"
     );
 
-    // 5. execution for a stale round must FAIL (pool is at round 0)
-    let nf2 = [0xBB; 32];
-    let (nf2_pda, _) = nullifier_pda(&pool, &nf2);
+    // execution for a stale round must fail (pool is at round 0)
     assert!(
-        !send(&mut svm, &[&relayer], execute_ix(action, nf2, 9, nf2_pda)),
+        send_many(&mut svm, &[&relayer], &attested([0xBB; 32], 9)).is_err(),
         "execution for the wrong round must be rejected"
     );
 
-    // 6. advance the round
+    // advance the round
     let ix = Instruction {
         program_id: PROGRAM_ID,
         accounts: vec![

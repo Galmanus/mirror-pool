@@ -41,14 +41,9 @@ fn main() {
     println!("program : {PROGRAM_ID}");
     println!("pool PDA: {pool}\n");
 
-    let send = |name: &str, ix: Instruction, signers: &[&Keypair]| -> bool {
+    let send_many = |name: &str, ixs: &[Instruction], signers: &[&Keypair]| -> bool {
         let bh = rpc.get_latest_blockhash().unwrap();
-        let tx = Transaction::new_signed_with_payer(
-            &[ix],
-            Some(&payer.pubkey()),
-            signers,
-            bh,
-        );
+        let tx = Transaction::new_signed_with_payer(ixs, Some(&payer.pubkey()), signers, bh);
         match rpc.send_and_confirm_transaction(&tx) {
             Ok(sig) => {
                 println!("  {name:<26} OK   {sig}");
@@ -63,6 +58,16 @@ fn main() {
         }
     };
 
+    let send = |name: &str, ix: Instruction, signers: &[&Keypair]| -> bool {
+        send_many(name, &[ix], signers)
+    };
+
+    // The verifier attests that it checked the off-chain membership proof. In a
+    // real deployment this is a separate operator (or a threshold of them); here
+    // the demo operator plays that role, which is exactly the trust assumption the
+    // README's Security status names.
+    let verifier: &Keypair = authority;
+
     // 1. initialize (skip if the pool already exists from a prior run)
     if rpc.get_account(&pool).is_err() {
         let ix = Instruction {
@@ -72,12 +77,32 @@ fn main() {
                 AccountMeta::new(authority.pubkey(), true),
                 AccountMeta::new_readonly(system_program::ID, false),
             ],
-            data: disc("initialize").to_vec(),
+            data: {
+                let mut d = disc("initialize").to_vec();
+                d.extend_from_slice(verifier.pubkey().as_ref());
+                d
+            },
         };
         send("initialize", ix, &[authority]);
     } else {
         println!("  initialize                 SKIP (pool already exists)");
     }
+
+    // 1b. publish the membership root executions are settled against. The
+    // canonical tree is Rescue-Prime and lives off-chain, so the root is published
+    // here rather than recomputed on-chain.
+    let root = *b"riverrun-devnet-demo-root-000001";
+    let mut data = disc("publish_root").to_vec();
+    data.extend_from_slice(&root);
+    let ix = Instruction {
+        program_id: PROGRAM_ID,
+        accounts: vec![
+            AccountMeta::new(pool, false),
+            AccountMeta::new_readonly(authority.pubkey(), true),
+        ],
+        data,
+    };
+    send("publish_root", ix, &[authority]);
 
     // 2. commit a member
     let commitment = Keypair::new().pubkey().to_bytes(); // unique per run
@@ -95,8 +120,8 @@ fn main() {
 
     // read the pool's current round
     let pool_data = rpc.get_account_data(&pool).unwrap();
-    let round = u64::from_le_bytes(pool_data[76..84].try_into().unwrap());
-    let member_count = u32::from_le_bytes(pool_data[72..76].try_into().unwrap());
+    let round = u64::from_le_bytes(pool_data[140..148].try_into().unwrap());
+    let member_count = u32::from_le_bytes(pool_data[136..140].try_into().unwrap());
     println!("  (pool now: round={round}, members={member_count})");
 
     // 3. execute via a fresh relayer key (no member signs) — unique nullifier
@@ -106,11 +131,36 @@ fn main() {
     let (nf_pda, _) =
         Pubkey::find_program_address(&[b"nullifier", pool.as_ref(), &nullifier], &PROGRAM_ID);
 
+    // the verifier's attestation, bound to this exact pool, root, action,
+    // nullifier and round
+    let attestation = |nf: [u8; 32], round: u64| -> Instruction {
+        let mut msg = Vec::with_capacity(152);
+        msg.extend_from_slice(b"riverrun-exec-v1");
+        msg.extend_from_slice(pool.as_ref());
+        msg.extend_from_slice(&root);
+        msg.extend_from_slice(&action);
+        msg.extend_from_slice(&nf);
+        msg.extend_from_slice(&round.to_le_bytes());
+
+        let sig = verifier.sign_message(&msg);
+        let mut data = Vec::with_capacity(16 + 32 + 64 + msg.len());
+        data.push(1);
+        data.push(0);
+        for v in [48u16, u16::MAX, 16u16, u16::MAX, 112u16, msg.len() as u16, u16::MAX] {
+            data.extend_from_slice(&v.to_le_bytes());
+        }
+        data.extend_from_slice(&verifier.pubkey().to_bytes());
+        data.extend_from_slice(sig.as_ref());
+        data.extend_from_slice(&msg);
+        Instruction { program_id: solana_sdk::ed25519_program::ID, accounts: vec![], data }
+    };
+
     let exec_ix = |nf: [u8; 32], nf_pda: Pubkey, round: u64| {
         let mut data = disc("execute").to_vec();
         data.extend_from_slice(&action);
         data.extend_from_slice(&nf);
         data.extend_from_slice(&round.to_le_bytes());
+        data.extend_from_slice(&root);
         Instruction {
             program_id: PROGRAM_ID,
             accounts: vec![
@@ -118,14 +168,23 @@ fn main() {
                 AccountMeta::new(nf_pda, false),
                 AccountMeta::new(relayer.pubkey(), true),
                 AccountMeta::new_readonly(system_program::ID, false),
+                AccountMeta::new_readonly(solana_sdk::sysvar::instructions::ID, false),
             ],
             data,
         }
     };
 
-    send("execute", exec_ix(nullifier, nf_pda, round), &[relayer]);
+    let attested = |nf: [u8; 32], nf_pda: Pubkey, round: u64| {
+        vec![attestation(nf, round), exec_ix(nf, nf_pda, round)]
+    };
+
+    send_many("execute", &attested(nullifier, nf_pda, round), &[relayer]);
     // 4. double execution with the same nullifier must fail on the live cluster
-    let ok = send("execute (double-spend)", exec_ix(nullifier, nf_pda, round), &[relayer]);
+    let ok = send_many(
+        "execute (double-spend)",
+        &attested(nullifier, nf_pda, round),
+        &[relayer],
+    );
     println!(
         "\ndouble-spend {}",
         if ok { "UNEXPECTEDLY SUCCEEDED (bug!)" } else { "correctly REJECTED on-chain" }

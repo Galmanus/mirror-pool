@@ -170,7 +170,12 @@ that hide funds or verify a proof on-chain necessarily pay much more per
 operation — they're solving a harder problem, and the comparison is about scope,
 not quality.
 
-**Measured live on devnet, not estimated.** A full `initialize + commit + execute`
+**Measured live on devnet, not estimated** — though that measurement predates the
+verifier attestation. The attestation adds one Ed25519 precompile instruction: no
+new account, no new transaction signature, so no rent and no extra base fee, and
+the transaction stays well inside the size limit. The figures below should
+therefore still hold, but they have not been re-measured on devnet. A full
+`initialize + commit + execute`
 run (plus a rejected double-spend) cost **0.002507 SOL** total by wallet-balance
 delta, matching the rent math above — so per action (commit + execute) is
 **~0.00102 SOL**. The nullifier anti-replay was verified on a real cluster: the
@@ -185,7 +190,7 @@ Reproduce: `cargo run --manifest-path programs/mirror-pool/Cargo.toml --example 
 | `mirror-core` | the behavioral pool + its post-quantum primitives (commitment, Merkle set, nullifier, membership, `BehaviorPool`) | 27 tests + demo |
 | `mirror-eval` | adversarial harness for the behavioral channel — clustering attacker → chance | 4 tests + exhibit |
 | `mirror-trace` | the `provenance-tracer`: backward funding-graph adversary + circularity defense + live-mainnet adapter | 7 tests + 2 exhibits |
-| `programs/mirror-pool` | the on-chain Solana program: commitment accumulator, per-round nullifier registry (PDA-per-nullifier anti-replay), action settlement | builds to `.so`; e2e green; **deployed + exercised live on devnet** |
+| `programs/mirror-pool` | the on-chain Solana program: commitment accumulator, per-round nullifier registry (PDA-per-nullifier anti-replay), published root, verifier-attested settlement | builds to `.so`; 8 e2e tests green; **deployed + exercised live on devnet** (that deployment predates the attestation change) |
 | `crates/riverrun-stark` | the post-quantum, transparent **STARK proof of set membership + nullifier binding** (Rescue-Prime + FRI, no trusted setup) | 12 tests green (excluded — pulls Winterfell) |
 | `crates/riverrun-pool-zk` | the pool with the STARK **wired in**: `Execution` carries an opaque proof + public data only, never the secret | 6 tests green (excluded — pulls Winterfell) |
 
@@ -203,7 +208,7 @@ cargo test --manifest-path crates/riverrun-stark/Cargo.toml                # STA
 cargo test --manifest-path crates/riverrun-pool-zk/Cargo.toml              # the pool driven by the STARK
 ```
 
-**57 tests green** in total: 38 host + 12 STARK + 6 pool-zk + 1 on-chain e2e.
+**64 tests green** in total: 38 host + 12 STARK + 6 pool-zk + 8 on-chain e2e.
 
 ## Security status & honest limitations
 
@@ -221,12 +226,25 @@ cargo test --manifest-path crates/riverrun-pool-zk/Cargo.toml              # the
 >    `riverrun-core`'s original pool still uses the transparent reference proof
 >    that carries the secret. The action `A` is also not yet inside the AIR — the
 >    leaf commits to the secret, not to `H(secret‖A)`.
-> 2. **The on-chain program does not verify membership.** `execute` enforces
->    per-round nullifier anti-replay only; it checks no membership proof, so any
->    signer can submit an execution and nullifiers are front-runnable. This is the
->    largest remaining gap.
+> 2. **On-chain, `execute` now requires a named verifier's attestation — but it
+>    still does not verify the proof itself.** The pool names a `verifier` key, and
+>    an execution must carry that key's Ed25519 signature (checked through the
+>    native sigverify precompile and instruction introspection) over exactly the
+>    `(pool, root, action, nullifier, round)` being settled, where `root` must be
+>    the one the authority published for the round. An arbitrary signer can no
+>    longer settle an action, and a watcher can no longer front-run a nullifier out
+>    of the mempool. **This is a named trust assumption, not soundness:** a
+>    dishonest verifier can attest to a membership proof that does not exist.
 >
-> Closing #2 (verify the proof on-chain), plus binding the action into the AIR,
+>    Why not verify on-chain: a riverrun STARK is **12,057 bytes** (4-leaf set) to
+>    **16,536 bytes** (64-leaf), against Solana's **1,232-byte** transaction limit.
+>    On-chain verification means chunk-uploading the proof into a ~16 KB account —
+>    rent-exempt cost ~0.115 SOL, against ~0.001 SOL for an entire action today —
+>    before a single compute unit is spent on FRI. The SBF compute cost of the
+>    verifier itself is **not measured**.
+>
+> Closing #2 properly (verify a proof on-chain, whether chunked STARK or a
+> pairing-based verifier via `alt_bn128`), plus binding the action into the AIR,
 > anti-Sybil on `commit`, decentralized round progression, 128-bit STARK
 > parameters, and a multisig/renounced upgrade authority, is what production would
 > require. Do not deploy this to guard real funds or identities until then.
@@ -259,9 +277,13 @@ ours.
 
 ## Roadmap / research directions
 
-- **Verify the proof on-chain.** The membership + nullifier binding is done
-  off-chain (`riverrun-stark`, wired into `riverrun-pool-zk`); the on-chain
-  `execute` still trusts the relayer. This is the top of the list.
+- **Verify the proof on-chain.** `execute` now demands a named verifier's
+  attestation, which removes the anyone-can-settle and nullifier-front-running
+  holes, but the chain still takes that verifier's word for it. Removing the
+  trusted party means either chunk-uploading the 12–16 KB STARK and verifying FRI
+  across transactions, or adding a pairing-based verifier through the
+  `alt_bn128` syscalls and giving up the post-quantum property on-chain. This is
+  the top of the list, and the tradeoff is genuinely open.
 - Bind the action `A` into the same AIR, so the leaf commits to `H(secret‖A)` and
   one proof covers the full relation.
 - An independent review of the hand-rolled AIR. Negative tests passing is
