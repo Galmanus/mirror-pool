@@ -19,7 +19,7 @@ fn hash_bytes(h: riverrun_stark::Hash) -> [u8; 32] {
     b
 }
 
-fn instruction_data(k: u128) -> Vec<u8> {
+fn instruction_data(k: u128, queries: usize, blowup: usize) -> Vec<u8> {
     use riverrun_stark::*;
     let v = [BaseElement::new(7), BaseElement::new(9)];
     let action = [BaseElement::new(0xAC01), BaseElement::new(0xAC02)];
@@ -29,7 +29,7 @@ fn instruction_data(k: u128) -> Vec<u8> {
         .collect();
     leaves[1] = leaf_of(v, action);
     let set = MembershipSet::new(leaves);
-    let proof = set.prove_bound(v, 1, round, action);
+    let proof = prove_bound_tuned(&set, v, 1, round, action, proof_options_tuned(queries, blowup));
 
     let mut d = Vec::new();
     d.extend_from_slice(&hash_bytes(set.root()));
@@ -52,8 +52,8 @@ fn measure_on_chain_verification_cost() {
     let payer = Keypair::new();
     svm.airdrop(&payer.pubkey(), 1_000_000_000).unwrap();
 
-    for k in [4u128, 64] {
-        let data = instruction_data(k);
+    for (k, queries, blowup) in [(4u128, 28, 8), (4, 16, 8), (4, 8, 8), (4, 4, 8)] {
+        let data = instruction_data(k, queries, blowup);
         let proof_bytes = data.len() - 112;
         let heap_ix = solana_sdk::compute_budget::ComputeBudgetInstruction::request_heap_frame(256 * 1024);
         let ix = Instruction { program_id: PROGRAM_ID, accounts: vec![], data };
@@ -61,8 +61,9 @@ fn measure_on_chain_verification_cost() {
         let tx = Transaction::new(&[&payer], msg, svm.latest_blockhash());
         match svm.send_transaction(tx) {
             Ok(meta) => println!(
-                "CU  k={k:<5}  proof={proof_bytes:>6} B  ->  {} compute units  (verified on-chain)",
-                meta.compute_units_consumed
+                "CU  k={k}  q={queries:<3} blowup={blowup}  proof={proof_bytes:>6} B  ->  {:>9} CU {}",
+                meta.compute_units_consumed,
+                if meta.compute_units_consumed <= 1_400_000 { "  FITS ONE TX" } else { "" }
             ),
             Err(e) => {
                 for l in &e.meta.logs { println!("    {l}"); }

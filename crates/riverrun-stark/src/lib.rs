@@ -86,6 +86,40 @@ fn proof_options() -> ProofOptions {
     )
 }
 
+/// Proof options with a chosen query count and blow-up, for measuring how far the
+/// on-chain verification cost can be pushed down. Fewer queries = lower security
+/// and lower CU. Used only by the on-chain verifier's cost study; the shipped
+/// path uses [`proof_options`].
+pub fn proof_options_tuned(queries: usize, blowup: usize) -> ProofOptions {
+    ProofOptions::new(
+        queries,
+        blowup,
+        0,
+        FieldExtension::None,
+        8,
+        31,
+        BatchingMethod::Linear,
+        BatchingMethod::Linear,
+    )
+}
+
+/// Prove a bound membership with explicit proof options — for the on-chain cost
+/// measurement only.
+pub fn prove_bound_tuned(
+    set: &MembershipSet,
+    value: [BaseElement; 2],
+    index: usize,
+    round: BaseElement,
+    action: [BaseElement; 2],
+    options: ProofOptions,
+) -> Vec<u8> {
+    let (leaf, path) = set.tree.prove(index).expect("valid index");
+    let mut branch = vec![leaf];
+    branch.extend_from_slice(&path);
+    let prover = BoundMerkleProver::<StarkHash>::new(options);
+    prover.prove(prover.build_trace(value, &branch, index, round, action)).unwrap().to_bytes()
+}
+
 /// Build a Rescue-Prime Merkle tree (the anonymity set) from its leaves.
 pub fn build_tree(leaves: Vec<Hash>) -> MerkleTree<Rescue128> {
     MerkleTree::new(leaves).expect("power-of-two leaf count")
