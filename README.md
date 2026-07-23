@@ -1,5 +1,25 @@
 # riverrun
 
+```
+                    ___________________________
+                ,-'''                           '''-.
+             ,-'          r i v e r r u n            '-.
+           ,'        __                         __       ',
+         ,'        ,'  '.       ------>       ,'  '.       ',
+        /         /      \                   /      \        \
+       ;         ;        ;   no origin     ;        ;        :
+       |    ^    |        |   no source     |        |    |   |
+       :         :        :   to trace      :        :    v   ;
+        \         \      /                   \      /        /
+         ',        '.__,'      <------         '.__,'       ,'
+           ',                 the cycle                   ,'
+             '-.          that has no end             ,-'
+                '-.___                         ___,-'
+                      '''---.___________.---'''
+        riverrun, past Eve and Adam's, by a commodius vicus of
+                          r e c i r c u l a t i o n
+```
+
 > The submission for the **`mirror-pool`** bounty ("Tornado cash for synchronized
 > actions"). *riverrun* is the first word of Joyce's *Finnegans Wake* — the river
 > that flows in a circle back to its own beginning. That circle is the system's
