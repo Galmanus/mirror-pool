@@ -9,7 +9,7 @@ members = [
 # intentionally excluded from the default workspace: it pulls the heavy Winterfell
 # toolchain and is not on the critical path for the benchmark deliverable. It
 # builds on its own when needed.
-exclude = ["crates/riverrun-stark", "programs/mirror-pool"]
+exclude = ["crates/riverrun-stark", "crates/riverrun-pool-zk", "programs/mirror-pool"]
 
 # The on-chain Solana program and the round coordinator join the workspace as they
 # land. riverrun-core is pure Rust and builds standalone so the cryptographic core

@@ -1,0 +1,13 @@
+# ZK-backed behavioral pool: the Execution carries an opaque STARK membership
+# proof, never the witness. Excluded from the default workspace (pulls Winterfell
+# via riverrun-stark); builds/tests standalone:
+#   cargo test --manifest-path crates/riverrun-pool-zk/Cargo.toml
+[package]
+name = "riverrun-pool-zk"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "ZK-backed behavioral pool for riverrun: execution carries an opaque post-quantum STARK membership proof, not the secret."
+
+[dependencies]
+riverrun-stark = { path = "../riverrun-stark" }
