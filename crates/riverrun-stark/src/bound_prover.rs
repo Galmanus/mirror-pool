@@ -18,12 +18,20 @@ use crate::{
 
 pub struct BoundMerkleProver<H: ElementHasher> {
     options: ProofOptions,
+    /// Overrides the action published with the proof, instead of reading it back
+    /// out of the trace. Only the soundness tests set this: it is how a dishonest
+    /// prover would hash one action into their leaf and announce another.
+    declared_action: Option<[BaseElement; 2]>,
     _hasher: PhantomData<H>,
 }
 
 impl<H: ElementHasher> BoundMerkleProver<H> {
     pub fn new(options: ProofOptions) -> Self {
-        Self { options, _hasher: PhantomData }
+        Self { options, declared_action: None, _hasher: PhantomData }
+    }
+
+    pub(crate) fn declaring_action(options: ProofOptions, action: [BaseElement; 2]) -> Self {
+        Self { options, declared_action: Some(action), _hasher: PhantomData }
     }
 
     /// Build the execution trace for `value` at `index` under `branch` (the leaf
@@ -34,8 +42,9 @@ impl<H: ElementHasher> BoundMerkleProver<H> {
         branch: &[rescue::Hash],
         index: usize,
         round: BaseElement,
+        action: [BaseElement; 2],
     ) -> TraceTable<BaseElement> {
-        self.build_trace_with_carry(value, value, branch, index, round)
+        self.build_trace_with_carry(value, value, branch, index, round, action)
     }
 
     /// The same trace, but with the value that feeds the **nullifier hash**
@@ -52,6 +61,7 @@ impl<H: ElementHasher> BoundMerkleProver<H> {
         branch: &[rescue::Hash],
         index: usize,
         round: BaseElement,
+        action: [BaseElement; 2],
     ) -> TraceTable<BaseElement> {
         // one cycle for the nullifier hash, one for the leaf hash, one per path node
         let trace_length = (branch.len() + 1) * HASH_CYCLE_LEN;
@@ -88,7 +98,11 @@ impl<H: ElementHasher> BoundMerkleProver<H> {
                     // so the Merkle path hashes the same value
                     state[0] = state[CARRY_0];
                     state[1] = state[CARRY_1];
-                    state[2..HASH_STATE_WIDTH].fill(BaseElement::ZERO);
+                    // the leaf commits to the action too: Rescue(v0, v1, a0, a1)
+                    state[2] = action[0];
+                    state[3] = action[1];
+                    state[4] = BaseElement::ZERO;
+                    state[5] = BaseElement::ZERO;
                     // the carry has done its job; clear it so the column is not
                     // constant (a constant column has a constant low-degree
                     // extension, which would put the secret in every FRI opening)
@@ -145,6 +159,9 @@ where
             tree_root: [trace.get(0, last_step), trace.get(1, last_step)],
             nullifier: [trace.get(0, NULLIFIER_STEP), trace.get(1, NULLIFIER_STEP)],
             round: trace.get(2, 0),
+            action: self
+                .declared_action
+                .unwrap_or([trace.get(2, HASH_CYCLE_LEN), trace.get(3, HASH_CYCLE_LEN)]),
         }
     }
 

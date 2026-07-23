@@ -7,10 +7,11 @@
 //! membership proof**. The member's secret never leaves the prover.
 //!
 //! Flow:
-//! - **commit**: publish `leaf = Rescue(secret)` into the set.
+//! - **commit**: publish `leaf = Rescue(secret, action)` into the set — the member
+//!   registers *which intent* they may later execute.
 //! - **execute**: produce an opaque STARK proof that *some* committed leaf is
-//!   yours *and* that the revealed round nullifier came from that same secret —
-//!   the secret itself is not transmitted.
+//!   yours, that it commits to *this* action, and that the revealed round
+//!   nullifier came from that same secret — none of which transmits the secret.
 //! - **settle**: verify the opaque proof against the public root, round and
 //!   nullifier, then spend the nullifier. No witness required.
 //!
@@ -19,11 +20,14 @@
 //! - Closes: the secret is no longer on the wire (confidentiality of
 //!   audit-critical #1). Verified by a test asserting the `Execution` carries no
 //!   witness.
-//! - Closes: the nullifier is now **bound inside the STARK** (audit-critical #1c).
-//!   The proof's public inputs are `{root, nullifier, round}`, and the AIR
-//!   witnesses both halves from one secret, so pairing a valid membership proof
+//! - Closes: the nullifier is **bound inside the STARK** (audit-critical #1c).
+//!   The proof's public inputs are `{root, nullifier, round, action}`, and the AIR
+//!   witnesses every part from one secret, so pairing a valid membership proof
 //!   with a nullifier of one's choosing no longer verifies — "one action per
 //!   member per round" is cryptographically enforced here.
+//! - Closes: the **action is bound too**. The leaf is `Rescue(secret, action)`, so
+//!   a member can execute the intent they registered and not another. Without
+//!   this, membership alone would let anyone in the set execute anything.
 //! - Still open: the AIR is hand-rolled and **unaudited**. Passing negative tests
 //!   are necessary, not sufficient, for soundness.
 //! - Still open: verification is off-chain (the chosen trusted-relayer,
@@ -39,6 +43,10 @@ use riverrun_stark::{leaf_of, nullifier, verify_bound, BaseElement, Hash, Member
 /// A member's secret witness: the two field-element preimage of their leaf.
 pub type Secret = [BaseElement; 2];
 
+/// The public action a member commits to and later executes, as two field
+/// elements (a 32-byte action hash).
+pub type Action = [BaseElement; 2];
+
 /// Everything an execution publishes. Note the absence of any witness field —
 /// only the public root, round, revealed nullifier, and the opaque proof.
 #[derive(Clone)]
@@ -46,6 +54,8 @@ pub struct Execution {
     pub root: Hash,
     pub round: u64,
     pub nullifier: Hash,
+    /// The action being executed. Public, and witnessed by the proof.
+    pub action: Action,
     /// Opaque post-quantum STARK membership proof. Carries no secret.
     pub proof: Vec<u8>,
 }
@@ -70,10 +80,10 @@ impl ZkPool {
         Self::default()
     }
 
-    /// Commit a member: publish `Rescue(secret)` as a leaf. Returns the member's
-    /// private leaf index.
-    pub fn commit(&mut self, secret: Secret) -> usize {
-        self.leaves.push(leaf_of(secret));
+    /// Commit a member's intent: publish `Rescue(secret, action)` as a leaf.
+    /// Returns the member's private leaf index.
+    pub fn commit(&mut self, secret: Secret, action: Action) -> usize {
+        self.leaves.push(leaf_of(secret, action));
         self.leaves.len() - 1
     }
 
@@ -131,13 +141,20 @@ impl ZkPool {
 
     /// Produce an execution: an opaque STARK membership proof plus the round
     /// nullifier. The secret stays here; it is not part of the returned value.
-    pub fn prove_execution(&self, secret: Secret, index: usize, round: u64) -> Execution {
+    pub fn prove_execution(
+        &self,
+        secret: Secret,
+        index: usize,
+        round: u64,
+        action: Action,
+    ) -> Execution {
         let set = self.set();
         Execution {
             root: set.root(),
             round,
             nullifier: Self::nullifier(&secret, round),
-            proof: set.prove_bound(secret, index, Self::round_element(round)),
+            action,
+            proof: set.prove_bound(secret, index, Self::round_element(round), action),
         }
     }
 
@@ -152,6 +169,7 @@ impl ZkPool {
             exec.root,
             exec.nullifier,
             Self::round_element(exec.round),
+            exec.action,
             &exec.proof,
         ) {
             return Err(ZkPoolError::BadProof);
@@ -173,13 +191,17 @@ mod tests {
         [BaseElement::new(a), BaseElement::new(b)]
     }
 
+    fn action(tag: u128) -> Action {
+        [BaseElement::new(0xAC01 + tag), BaseElement::new(0xAC02 + tag)]
+    }
+
     /// Fill the pool to `n` members, returning their (secret, index) handles.
     fn pool_with(n: u128) -> (ZkPool, Vec<(Secret, usize)>) {
         let mut pool = ZkPool::new();
         let members: Vec<(Secret, usize)> = (0..n)
             .map(|i| {
                 let s = secret(1000 + i, 2000 + i);
-                let idx = pool.commit(s);
+                let idx = pool.commit(s, action(0));
                 (s, idx)
             })
             .collect();
@@ -190,7 +212,7 @@ mod tests {
     fn commit_execute_settle_round_trip() {
         let (mut pool, members) = pool_with(5);
         let (s, idx) = members[2];
-        let exec = pool.prove_execution(s, idx, 0);
+        let exec = pool.prove_execution(s, idx, 0, action(0));
         assert!(pool.settle(&exec).is_ok());
     }
 
@@ -204,7 +226,7 @@ mod tests {
         // `transmitted_proof_does_not_carry_the_secret_verbatim`.)
         let (mut pool, members) = pool_with(5);
         let (s, idx) = members[1];
-        let exec = pool.prove_execution(s, idx, 7);
+        let exec = pool.prove_execution(s, idx, 7, action(0));
         drop(s);
         assert!(pool.settle(&exec).is_ok());
     }
@@ -213,8 +235,8 @@ mod tests {
     fn double_execution_same_round_is_rejected() {
         let (mut pool, members) = pool_with(4);
         let (s, idx) = members[0];
-        let e1 = pool.prove_execution(s, idx, 0);
-        let e2 = pool.prove_execution(s, idx, 0);
+        let e1 = pool.prove_execution(s, idx, 0, action(0));
+        let e2 = pool.prove_execution(s, idx, 0, action(0));
         assert!(pool.settle(&e1).is_ok());
         assert_eq!(pool.settle(&e2).unwrap_err(), ZkPoolError::NullifierSpent);
     }
@@ -223,8 +245,8 @@ mod tests {
     fn same_member_acts_once_per_new_round() {
         let (mut pool, members) = pool_with(4);
         let (s, idx) = members[0];
-        assert!(pool.settle(&pool.prove_execution(s, idx, 1)).is_ok());
-        assert!(pool.settle(&pool.prove_execution(s, idx, 2)).is_ok());
+        assert!(pool.settle(&pool.prove_execution(s, idx, 1, action(0))).is_ok());
+        assert!(pool.settle(&pool.prove_execution(s, idx, 2, action(0))).is_ok());
     }
 
     #[test]
@@ -237,8 +259,24 @@ mod tests {
         let (s_a, idx_a) = members[0];
         let (s_b, _) = members[1];
 
-        let mut exec = pool.prove_execution(s_a, idx_a, 4);
+        let mut exec = pool.prove_execution(s_a, idx_a, 4, action(0));
         exec.nullifier = ZkPool::nullifier(&s_b, 4);
+
+        assert_eq!(pool.settle(&exec).unwrap_err(), ZkPoolError::BadProof);
+    }
+
+    #[test]
+    fn executing_an_action_the_member_did_not_commit_is_rejected() {
+        // The thesis: a member registers an intent and later executes *that*
+        // intent unlinkably. Without the action inside the proof, membership
+        // alone would let anyone in the set execute anything.
+        let mut pool = ZkPool::new();
+        let s = secret(1000, 2000);
+        let committed = action(1);
+        let idx = pool.commit(s, committed);
+
+        let mut exec = pool.prove_execution(s, idx, 5, committed);
+        exec.action = action(2);
 
         assert_eq!(pool.settle(&exec).unwrap_err(), ZkPoolError::BadProof);
     }
@@ -247,7 +285,7 @@ mod tests {
     fn tampered_proof_is_rejected() {
         let (mut pool, members) = pool_with(4);
         let (s, idx) = members[3];
-        let mut exec = pool.prove_execution(s, idx, 0);
+        let mut exec = pool.prove_execution(s, idx, 0, action(0));
         // Corrupt the opaque proof.
         if let Some(b) = exec.proof.get_mut(16) {
             *b ^= 0xFF;

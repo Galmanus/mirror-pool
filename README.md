@@ -191,8 +191,8 @@ Reproduce: `cargo run --manifest-path programs/mirror-pool/Cargo.toml --example 
 | `mirror-eval` | adversarial harness for the behavioral channel — clustering attacker → chance | 4 tests + exhibit |
 | `mirror-trace` | the `provenance-tracer`: backward funding-graph adversary + circularity defense + live-mainnet adapter | 7 tests + 2 exhibits |
 | `programs/mirror-pool` | the on-chain Solana program: commitment accumulator, per-round nullifier registry (PDA-per-nullifier anti-replay), published root, verifier-attested settlement | builds to `.so`; 8 e2e tests green; **deployed + exercised live on devnet** (that deployment predates the attestation change) |
-| `crates/riverrun-stark` | the post-quantum, transparent **STARK proof of set membership + nullifier binding** (Rescue-Prime + FRI, no trusted setup) | 12 tests green (excluded — pulls Winterfell) |
-| `crates/riverrun-pool-zk` | the pool with the STARK **wired in**: `Execution` carries an opaque proof + public data only, never the secret | 6 tests green (excluded — pulls Winterfell) |
+| `crates/riverrun-stark` | the post-quantum, transparent **STARK proving the whole relation** — membership, nullifier and action in one proof (Rescue-Prime + FRI, no trusted setup) | 15 tests green (excluded — pulls Winterfell) |
+| `crates/riverrun-pool-zk` | the pool with the STARK **wired in**: `Execution` carries an opaque proof + public data only, never the secret | 7 tests green (excluded — pulls Winterfell) |
 
 ```bash
 cargo test --workspace                                            # 38 tests green
@@ -208,7 +208,7 @@ cargo test --manifest-path crates/riverrun-stark/Cargo.toml                # STA
 cargo test --manifest-path crates/riverrun-pool-zk/Cargo.toml              # the pool driven by the STARK
 ```
 
-**64 tests green** in total: 38 host + 12 STARK + 6 pool-zk + 8 on-chain e2e.
+**68 tests green** in total: 38 host + 15 STARK + 7 pool-zk + 8 on-chain e2e.
 
 ## Security status & honest limitations
 
@@ -224,8 +224,12 @@ cargo test --manifest-path crates/riverrun-pool-zk/Cargo.toml              # the
 >    Two things this does **not** mean: the AIR is hand-rolled and unaudited
 >    (passing negative tests are necessary, not sufficient, for soundness), and
 >    `riverrun-core`'s original pool still uses the transparent reference proof
->    that carries the secret. The action `A` is also not yet inside the AIR — the
->    leaf commits to the secret, not to `H(secret‖A)`.
+>    that carries the secret.
+>
+>    The **action is bound too**: the leaf is `Rescue(secret, action)` and the
+>    action is a public input of the same proof, so a member executes the intent
+>    they registered and not another. Public inputs are
+>    `{root, nullifier, round, action}`.
 > 2. **On-chain, `execute` now requires a named verifier's attestation — but it
 >    still does not verify the proof itself.** The pool names a `verifier` key, and
 >    an execution must carry that key's Ed25519 signature (checked through the
@@ -265,6 +269,15 @@ ours.
   reject them. The test that actually guards the binding builds the trace an
   attacker would want — hash one secret, carry another member — and deleting the
   constraint was checked to make it fail.
+
+  The action binding repeated the lesson exactly. Announcing a different action in
+  the public inputs is rejected even with **no** action constraint at all, because
+  the action feeds the Fiat-Shamir transcript — the first two tests written for it
+  stayed green through the mutation, which is how they were caught being useless.
+  The real attack hashes the committed action into the leaf, so the Merkle path
+  still resolves, while announcing a different one; deleting the constraint makes
+  that forged proof verify. Every claim of the form "X is bound" in this repo has
+  a test that was checked to fail without the constraint it claims to test.
 - **The mainnet provenance trace is shallow** — SOL-only, depth-bounded. It
   *under*-reports the leak. Hub labels are an activity heuristic standing in for a
   real tag database (Arkham/Chainalysis); no CEX addresses are fabricated.
@@ -284,8 +297,6 @@ ours.
   across transactions, or adding a pairing-based verifier through the
   `alt_bn128` syscalls and giving up the post-quantum property on-chain. This is
   the top of the list, and the tradeoff is genuinely open.
-- Bind the action `A` into the same AIR, so the leaf commits to `H(secret‖A)` and
-  one proof covers the full relation.
 - An independent review of the hand-rolled AIR. Negative tests passing is
   necessary, not sufficient.
 - Longer-running / Surfpool soak of the on-chain program (already deployed and

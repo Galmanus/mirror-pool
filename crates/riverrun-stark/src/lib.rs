@@ -10,10 +10,13 @@
 //! the Winterfell v0.13 `merkle` example (MIT, Facebook/Meta); the public API and
 //! tests here wrap it as a clean membership prover/verifier.
 //!
-//! Scope: this proves *set membership* (the core unlinkability primitive). Binding
-//! the leaf to `commit(secret, action)` and the revealed `nullifier` inside the
-//! same AIR — so the proof also witnesses the nullifier — is the next increment
-//! (the relation is specified in `riverrun-core::membership::check_relation`).
+//! Two provers live here. `prove_membership` proves set membership alone. The
+//! **bound** prover (`bound_air.rs`, `bound_prover.rs`) proves the whole riverrun
+//! relation in one STARK: public inputs `{root, nullifier, round, action}`, and a
+//! single private secret that must simultaneously sit under the root as
+//! `Rescue(secret, action)` and produce the revealed `Rescue(secret, round)`. That
+//! is what makes an execution *the* committed intent of *a* member, rather than
+//! either half on its own.
 
 // Used only by this module's public API.
 use winterfell::crypto::hashers::Blake3_256;
@@ -147,8 +150,9 @@ impl MembershipSet {
         value: [BaseElement; 2],
         index: usize,
         round: BaseElement,
+        action: [BaseElement; 2],
     ) -> Vec<u8> {
-        prove_bound_membership(&self.tree, value, index, round).to_bytes()
+        prove_bound_membership(&self.tree, value, index, round, action).to_bytes()
     }
 }
 
@@ -159,12 +163,13 @@ pub fn prove_bound_membership(
     value: [BaseElement; 2],
     index: usize,
     round: BaseElement,
+    action: [BaseElement; 2],
 ) -> Proof {
     let (leaf, path) = tree.prove(index).expect("valid index");
     let mut branch = vec![leaf];
     branch.extend_from_slice(&path);
     let prover = BoundMerkleProver::<StarkHash>::new(proof_options());
-    let trace = prover.build_trace(value, &branch, index, round);
+    let trace = prover.build_trace(value, &branch, index, round, action);
     prover.prove(trace).expect("prove bound membership")
 }
 
@@ -174,6 +179,7 @@ pub fn verify_bound(
     root: Hash,
     nullifier: Hash,
     round: BaseElement,
+    action: [BaseElement; 2],
     proof_bytes: &[u8],
 ) -> bool {
     let proof = match Proof::from_bytes(proof_bytes) {
@@ -184,6 +190,7 @@ pub fn verify_bound(
         tree_root: root.to_elements(),
         nullifier: nullifier.to_elements(),
         round,
+        action,
     };
     let acceptable = AcceptableOptions::OptionSet(vec![proof.options().clone()]);
     winterfell::verify::<
@@ -195,9 +202,11 @@ pub fn verify_bound(
     .is_ok()
 }
 
-/// The leaf (member commitment) for a preimage `value`: its Rescue digest.
-pub fn leaf_of(value: [BaseElement; 2]) -> Hash {
-    Rescue128::digest(&value)
+/// The leaf a member commits: `Rescue(secret, action)`. Binding the action into
+/// the leaf is what lets one proof witness *which intent* the member registered,
+/// rather than only that they are in the set.
+pub fn leaf_of(value: [BaseElement; 2], action: [BaseElement; 2]) -> Hash {
+    Rescue128::digest(&[value[0], value[1], action[0], action[1]])
 }
 
 /// The per-round nullifier for a secret: `Rescue(v0, v1, round)`. This is the
@@ -276,8 +285,9 @@ mod tests {
         let mut leaves: Vec<Hash> = (0..4u128)
             .map(|i| Hash::new(BaseElement::new(2 * i + 1), BaseElement::new(2 * i + 2)))
             .collect();
-        leaves[b_index] = leaf_of(b);
-        leaves[3] = leaf_of(a);
+        let act = [BaseElement::new(0xAC01), BaseElement::new(0xAC02)];
+        leaves[b_index] = leaf_of(b, act);
+        leaves[3] = leaf_of(a, act);
         let tree = build_tree(leaves);
         let root = *tree.root();
 
@@ -287,7 +297,7 @@ mod tests {
 
         let prover = BoundMerkleProver::<StarkHash>::new(proof_options());
         // hashed = A (whose nullifier the attacker wants), carried = B (the member)
-        let forged = prover.build_trace_with_carry(a, b, &branch, b_index, round);
+        let forged = prover.build_trace_with_carry(a, b, &branch, b_index, round, act);
 
         // In a debug build the prover panics on an unsatisfied constraint; in a
         // release build it emits a proof that must not verify. Both are a rejection.
@@ -297,8 +307,52 @@ mod tests {
 
         if let Ok(Ok(proof)) = attempt {
             assert!(
-                !verify_bound(root, nullifier(a, round), round, &proof),
+                !verify_bound(root, nullifier(a, round), round, act, &proof),
                 "a forged trace must not yield a proof of B's membership under A's nullifier"
+            );
+        }
+    }
+
+    /// The action binding, attacked directly.
+    ///
+    /// Announcing a different action in the public inputs is not enough to test
+    /// this: the action feeds the Fiat-Shamir transcript, so the proof fails for
+    /// that reason alone even with no constraint at all (checked by deleting the
+    /// constraint — those tests stayed green). The real attack is to hash the
+    /// action you *did* commit into the leaf, so the Merkle path still resolves,
+    /// while announcing the action you want to execute. Only the AIR pinning
+    /// column 2 and 3 at the load row to the public action stops that.
+    #[test]
+    fn a_trace_whose_leaf_commits_one_action_cannot_announce_another() {
+        let value = [BaseElement::new(42), BaseElement::new(43)];
+        let round = BaseElement::new(7);
+        let committed = [BaseElement::new(0xAC01), BaseElement::new(0xAC02)];
+        let wanted = [BaseElement::new(0xBD01), BaseElement::new(0xBD02)];
+        let index = 1;
+
+        let mut leaves: Vec<Hash> = (0..4u128)
+            .map(|i| Hash::new(BaseElement::new(2 * i + 1), BaseElement::new(2 * i + 2)))
+            .collect();
+        leaves[index] = leaf_of(value, committed);
+        let tree = build_tree(leaves);
+        let root = *tree.root();
+
+        let (leaf, path) = tree.prove(index).expect("valid index");
+        let mut branch = vec![leaf];
+        branch.extend_from_slice(&path);
+
+        // the leaf hashes `committed` (so the path resolves), the proof announces `wanted`
+        let prover = BoundMerkleProver::<StarkHash>::declaring_action(proof_options(), wanted);
+        let trace = prover.build_trace(value, &branch, index, round, committed);
+
+        let attempt = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            prover.prove(trace).map(|p| p.to_bytes())
+        }));
+
+        if let Ok(Ok(proof)) = attempt {
+            assert!(
+                !verify_bound(root, nullifier(value, round), round, wanted, &proof),
+                "a member who committed one action must not be able to execute another"
             );
         }
     }
@@ -316,7 +370,7 @@ mod tests {
         let w = [BaseElement::new(33), BaseElement::new(22)];
         assert_ne!(nullifier(v, r1).to_bytes(), nullifier(w, r1).to_bytes());
         // and it is distinct from the leaf commitment of the same secret
-        assert_ne!(nullifier(v, r1).to_bytes(), leaf_of(v).to_bytes());
+        assert_ne!(nullifier(v, r1).to_bytes(), leaf_of(v, [r1, r2]).to_bytes());
     }
 
     #[test]
@@ -330,7 +384,7 @@ mod tests {
         let mut leaves: Vec<Hash> = (100..108u128)
             .map(|i| Hash::new(BaseElement::new(2 * i + 1), BaseElement::new(2 * i + 2)))
             .collect();
-        leaves[index] = leaf_of(value);
+        leaves[index] = Rescue128::digest(&value);
         let set = MembershipSet::new(leaves);
         let root = set.root();
 

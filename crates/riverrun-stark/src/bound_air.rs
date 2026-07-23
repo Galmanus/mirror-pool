@@ -2,10 +2,17 @@
 //!
 //! Extends the Merkle-path AIR (`air.rs`, adapted from the Winterfell v0.13
 //! `merkle` example, MIT) with one extra hash cycle that computes the per-round
-//! nullifier `n = Rescue(v0, v1, round)` from the *same* secret `v` whose Rescue
-//! digest the Merkle path then resolves to the public root.
+//! nullifier `n = Rescue(v0, v1, round)` from the *same* secret `v` whose leaf
+//! `Rescue(v0, v1, a0, a1)` the Merkle path then resolves to the public root.
 //!
-//! Public inputs: `{root, nullifier, round}`. Private: `v`, leaf index, path.
+//! The leaf commits to the **action** as well as the secret, which is what makes
+//! this "Tornado for behaviour" rather than an anonymous nullifier set: a member
+//! commits an intent and can later execute *that* intent, not any intent. The
+//! action is public, so the AIR pins it directly as a constant when the Merkle
+//! leaf preimage is loaded.
+//!
+//! Public inputs: `{root, nullifier, round, action}`. Private: `v`, leaf index,
+//! path.
 //!
 //! Layout (trace width 9, cycles of 8 steps, `d` = tree depth):
 //!
@@ -25,7 +32,8 @@
 //!
 //! - cycle 0 (rows 0..7): `[v0, v1, round, 0, 0, 0]` → 7 Rescue rounds → row 7
 //!   holds `n` in `[0,1]`. The row-7 transition then loads the Merkle leaf
-//!   preimage **from the carry**: `next[0,1] = cur[7,8]`, `next[2..5] = 0`.
+//!   preimage: `next[0,1] = cur[7,8]` (the carried secret) and
+//!   `next[2,3] = action` (public), `next[4,5] = 0`.
 //! - cycles 1..d+1: the existing Merkle logic (leaf hash, then path merges).
 //!
 //! The soundness crux is the *start-tie*: at row 0, `cur[0] == cur[7]` and
@@ -53,6 +61,7 @@ pub struct BoundPublicInputs {
     pub tree_root: [BaseElement; 2],
     pub nullifier: [BaseElement; 2],
     pub round: BaseElement,
+    pub action: [BaseElement; 2],
 }
 
 impl ToElements<BaseElement> for BoundPublicInputs {
@@ -63,6 +72,8 @@ impl ToElements<BaseElement> for BoundPublicInputs {
             self.nullifier[0],
             self.nullifier[1],
             self.round,
+            self.action[0],
+            self.action[1],
         ]
     }
 }
@@ -72,6 +83,7 @@ pub struct BoundMerkleAir {
     tree_root: [BaseElement; 2],
     nullifier: [BaseElement; 2],
     round: BaseElement,
+    action: [BaseElement; 2],
 }
 
 impl Air for BoundMerkleAir {
@@ -104,6 +116,7 @@ impl Air for BoundMerkleAir {
             tree_root: pub_inputs.tree_root,
             nullifier: pub_inputs.nullifier,
             round: pub_inputs.round,
+            action: pub_inputs.action,
         }
     }
 
@@ -152,12 +165,12 @@ impl Air for BoundMerkleAir {
         result.agg_constraint(2, merkle_ins, bit * are_equal(current[0], next[2]));
         result.agg_constraint(3, merkle_ins, bit * are_equal(current[1], next[3]));
 
-        // cycle-0 load: the value the Merkle path will hash is the carried secret,
-        // and the rest of the rate/capacity is zeroed (leaf hash of two elements).
+        // cycle-0 load: the leaf preimage is the carried secret followed by the
+        // public action, so the leaf the Merkle path resolves commits to both.
         result.agg_constraint(0, null_ins, are_equal(next[0], current[CARRY_0]));
         result.agg_constraint(1, null_ins, are_equal(next[1], current[CARRY_1]));
-        result.agg_constraint(2, null_ins, is_zero(next[2]));
-        result.agg_constraint(3, null_ins, is_zero(next[3]));
+        result.agg_constraint(2, null_ins, are_equal(next[2], E::from(self.action[0])));
+        result.agg_constraint(3, null_ins, are_equal(next[3], E::from(self.action[1])));
 
         // capacity registers are reset to zero at every cycle boundary, of either kind
         result.agg_constraint(4, hash_init_flag, is_zero(next[4]));
