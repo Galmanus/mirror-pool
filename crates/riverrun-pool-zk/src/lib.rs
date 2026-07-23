@@ -9,27 +9,32 @@
 //! Flow:
 //! - **commit**: publish `leaf = Rescue(secret)` into the set.
 //! - **execute**: produce an opaque STARK proof that *some* committed leaf is
-//!   yours, plus the round nullifier — the secret is not transmitted.
-//! - **settle**: verify the opaque proof against the public root and spend the
-//!   nullifier. No witness required.
+//!   yours *and* that the revealed round nullifier came from that same secret —
+//!   the secret itself is not transmitted.
+//! - **settle**: verify the opaque proof against the public root, round and
+//!   nullifier, then spend the nullifier. No witness required.
 //!
 //! ## Honest scope (what this does and does NOT close)
 //!
-//! - ✅ Closes: the secret is no longer on the wire (confidentiality of
+//! - Closes: the secret is no longer on the wire (confidentiality of
 //!   audit-critical #1). Verified by a test asserting the `Execution` carries no
 //!   witness.
-//! - ❌ Not yet closed (audit-critical #1c): the nullifier is **not bound inside
-//!   the STARK**, so the proof does not witness that the revealed nullifier was
-//!   derived from the *same* secret that proved membership. Until the nullifier
-//!   is folded into the AIR, a member can prove membership and pair it with a
-//!   nullifier of their choosing — so the "one action per member per round"
-//!   soundness is not cryptographically enforced here. This is the next
-//!   increment; it is not hidden.
-//! - Verification is off-chain (the chosen trusted-relayer, post-quantum model).
+//! - Closes: the nullifier is now **bound inside the STARK** (audit-critical #1c).
+//!   The proof's public inputs are `{root, nullifier, round}`, and the AIR
+//!   witnesses both halves from one secret, so pairing a valid membership proof
+//!   with a nullifier of one's choosing no longer verifies — "one action per
+//!   member per round" is cryptographically enforced here.
+//! - Still open: the AIR is hand-rolled and **unaudited**. Passing negative tests
+//!   are necessary, not sufficient, for soundness.
+//! - Still open: verification is off-chain (the chosen trusted-relayer,
+//!   post-quantum model). The on-chain `execute` still verifies no membership —
+//!   audit-critical #2.
+//! - The proof keeps the witness off the wire but Winterfell 0.13 has no witness
+//!   randomization, so this is not a formal zero-knowledge guarantee.
 
 use std::collections::HashSet;
 
-use riverrun_stark::{leaf_of, verify_bytes, BaseElement, Hash, MembershipSet, Rescue128};
+use riverrun_stark::{leaf_of, nullifier, verify_bound, BaseElement, Hash, MembershipSet};
 
 /// A member's secret witness: the two field-element preimage of their leaf.
 pub type Secret = [BaseElement; 2];
@@ -80,10 +85,11 @@ impl ZkPool {
         self.leaves.is_empty()
     }
 
-    /// Valid Merkle widths for the STARK: the trace length is `(depth+1)·8`,
-    /// which is a power of two (required for the FFT) only when `depth+1` is a
-    /// power of two — i.e. tree sizes 2, 8, 128, 32768 (depths 1, 3, 7, 15).
-    const VALID_WIDTHS: [usize; 4] = [2, 8, 128, 32768];
+    /// Valid Merkle widths for the STARK: the bound trace spends one cycle on the
+    /// nullifier and one per Merkle level, so its length is `(depth+2)·8`, a power
+    /// of two (required for the FFT) only when `depth+2` is — i.e. tree sizes 4, 64
+    /// and 16384 (depths 2, 6, 14).
+    const VALID_WIDTHS: [usize; 3] = [4, 64, 16384];
 
     /// Leaves padded up to the smallest valid width that fits the members, with a
     /// fixed empty leaf appended after the real members so real indices stay stable.
@@ -92,7 +98,7 @@ impl ZkPool {
         let width = Self::VALID_WIDTHS
             .into_iter()
             .find(|&w| n <= w)
-            .expect("pool exceeds the largest fixed STARK tree size (32768)");
+            .expect("pool exceeds the largest fixed STARK tree size (16384)");
         let mut v = self.leaves.clone();
         let empty = Hash::new(BaseElement::new(0), BaseElement::new(0));
         v.resize(width, empty);
@@ -113,9 +119,14 @@ impl ZkPool {
     }
 
     /// The per-round nullifier for a secret: `Rescue(secret[0], secret[1], round)`.
-    /// (Not yet bound inside the membership proof — see the module-level scope note.)
+    /// The membership proof witnesses this same derivation, so a nullifier that
+    /// does not come from the proving member's secret makes the proof fail.
     fn nullifier(secret: &Secret, round: u64) -> Hash {
-        Rescue128::digest(&[secret[0], secret[1], BaseElement::new(round as u128)])
+        nullifier(*secret, Self::round_element(round))
+    }
+
+    fn round_element(round: u64) -> BaseElement {
+        BaseElement::new(round as u128)
     }
 
     /// Produce an execution: an opaque STARK membership proof plus the round
@@ -126,7 +137,7 @@ impl ZkPool {
             root: set.root(),
             round,
             nullifier: Self::nullifier(&secret, round),
-            proof: set.prove(secret, index),
+            proof: set.prove_bound(secret, index, Self::round_element(round)),
         }
     }
 
@@ -137,7 +148,12 @@ impl ZkPool {
         if current.to_bytes() != exec.root.to_bytes() {
             return Err(ZkPoolError::StaleRoot);
         }
-        if !verify_bytes(exec.root, &exec.proof) {
+        if !verify_bound(
+            exec.root,
+            exec.nullifier,
+            Self::round_element(exec.round),
+            &exec.proof,
+        ) {
             return Err(ZkPoolError::BadProof);
         }
         let n = exec.nullifier.to_bytes();
@@ -209,6 +225,22 @@ mod tests {
         let (s, idx) = members[0];
         assert!(pool.settle(&pool.prove_execution(s, idx, 1)).is_ok());
         assert!(pool.settle(&pool.prove_execution(s, idx, 2)).is_ok());
+    }
+
+    #[test]
+    fn an_execution_carrying_someone_elses_nullifier_is_rejected() {
+        // Audit-critical #1c at the pool level. Before the nullifier was bound
+        // inside the AIR, the proof only said "a member is here" and the nullifier
+        // beside it was unchecked — a member could act, then act again in the same
+        // round under a nullifier of their choosing.
+        let (mut pool, members) = pool_with(3);
+        let (s_a, idx_a) = members[0];
+        let (s_b, _) = members[1];
+
+        let mut exec = pool.prove_execution(s_a, idx_a, 4);
+        exec.nullifier = ZkPool::nullifier(&s_b, 4);
+
+        assert_eq!(pool.settle(&exec).unwrap_err(), ZkPoolError::BadProof);
     }
 
     #[test]

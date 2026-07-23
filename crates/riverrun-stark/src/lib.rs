@@ -21,6 +21,8 @@ use winterfell::crypto::MerkleTree;
 use winterfell::{AcceptableOptions, BatchingMethod, FieldExtension, Proof, VerifierError};
 
 mod air;
+mod bound_air;
+mod bound_prover;
 mod prover;
 mod utils;
 
@@ -28,6 +30,8 @@ mod utils;
 // `crate::{...}` imports (they were `super::{...}` in the Winterfell example),
 // and so this module can name them too.
 pub(crate) use air::{MerkleAir, PublicInputs};
+pub(crate) use bound_air::{BoundMerkleAir, BoundPublicInputs};
+pub(crate) use bound_prover::BoundMerkleProver;
 pub(crate) use core::marker::PhantomData;
 pub(crate) use prover::MerkleProver;
 pub(crate) use rescue::{
@@ -42,6 +46,12 @@ pub(crate) use winterfell::{ProofOptions, Prover};
 pub use winterfell::math::fields::f128::BaseElement;
 
 pub(crate) const TRACE_WIDTH: usize = 7;
+
+/// Trace width of the nullifier-binding AIR: the seven columns above plus the two
+/// carry columns that hold the secret constant across the whole trace.
+pub(crate) const BOUND_TRACE_WIDTH: usize = 9;
+pub(crate) const CARRY_0: usize = 7;
+pub(crate) const CARRY_1: usize = 8;
 
 /// The in-circuit Merkle hash is Rescue-Prime; re-exported for building trees.
 pub use rescue::{Hash, Rescue128};
@@ -127,6 +137,62 @@ impl MembershipSet {
     pub fn prove(&self, value: [BaseElement; 2], index: usize) -> Vec<u8> {
         prove_membership(&self.tree, value, index).to_bytes()
     }
+
+    /// Prove membership of the leaf whose preimage is `value` **and** that the
+    /// per-round nullifier `Rescue(value, round)` comes from that same preimage —
+    /// in one proof. Public inputs are `{root, nullifier, round}`; `value` and
+    /// `index` stay private. See [`verify_bound`].
+    pub fn prove_bound(
+        &self,
+        value: [BaseElement; 2],
+        index: usize,
+        round: BaseElement,
+    ) -> Vec<u8> {
+        prove_bound_membership(&self.tree, value, index, round).to_bytes()
+    }
+}
+
+/// Prove membership *and* the per-round nullifier in a single STARK. The verifier
+/// learns only `{root, nullifier, round}`; which member acted stays hidden.
+pub fn prove_bound_membership(
+    tree: &MerkleTree<Rescue128>,
+    value: [BaseElement; 2],
+    index: usize,
+    round: BaseElement,
+) -> Proof {
+    let (leaf, path) = tree.prove(index).expect("valid index");
+    let mut branch = vec![leaf];
+    branch.extend_from_slice(&path);
+    let prover = BoundMerkleProver::<StarkHash>::new(proof_options());
+    let trace = prover.build_trace(value, &branch, index, round);
+    prover.prove(trace).expect("prove bound membership")
+}
+
+/// Verify a bound proof: accepts iff the proof witnesses a secret that is both a
+/// member under `root` and the preimage of `nullifier` for this `round`.
+pub fn verify_bound(
+    root: Hash,
+    nullifier: Hash,
+    round: BaseElement,
+    proof_bytes: &[u8],
+) -> bool {
+    let proof = match Proof::from_bytes(proof_bytes) {
+        Ok(proof) => proof,
+        Err(_) => return false,
+    };
+    let pub_inputs = BoundPublicInputs {
+        tree_root: root.to_elements(),
+        nullifier: nullifier.to_elements(),
+        round,
+    };
+    let acceptable = AcceptableOptions::OptionSet(vec![proof.options().clone()]);
+    winterfell::verify::<
+        BoundMerkleAir,
+        StarkHash,
+        DefaultRandomCoin<StarkHash>,
+        MerkleTree<StarkHash>,
+    >(proof, pub_inputs, &acceptable)
+    .is_ok()
 }
 
 /// The leaf (member commitment) for a preimage `value`: its Rescue digest.
@@ -190,6 +256,51 @@ mod tests {
         let real = tree.root().to_elements();
         let wrong = Hash::new(real[1], real[0]);
         assert!(verify_membership(wrong, proof).is_err(), "a wrong root must be rejected");
+    }
+
+    /// The start-tie, attacked directly.
+    ///
+    /// The public-input tests in `tests/bound_nullifier.rs` would pass even with no
+    /// tie at all — they only vary what the verifier is told. This one builds the
+    /// trace an attacker would want: hash secret A into the nullifier cycle, but
+    /// carry member B into the Merkle path, so the proof would show membership of B
+    /// under A's nullifier. That is the "act under someone else's nullifier" break,
+    /// and only constraint (3) of the design doc stops it.
+    #[test]
+    fn a_trace_that_hashes_one_secret_and_carries_another_yields_no_accepted_proof() {
+        let a = [BaseElement::new(42), BaseElement::new(43)];
+        let b = [BaseElement::new(99), BaseElement::new(100)];
+        let round = BaseElement::new(7);
+        let b_index = 0;
+
+        let mut leaves: Vec<Hash> = (0..4u128)
+            .map(|i| Hash::new(BaseElement::new(2 * i + 1), BaseElement::new(2 * i + 2)))
+            .collect();
+        leaves[b_index] = leaf_of(b);
+        leaves[3] = leaf_of(a);
+        let tree = build_tree(leaves);
+        let root = *tree.root();
+
+        let (leaf, path) = tree.prove(b_index).expect("valid index");
+        let mut branch = vec![leaf];
+        branch.extend_from_slice(&path);
+
+        let prover = BoundMerkleProver::<StarkHash>::new(proof_options());
+        // hashed = A (whose nullifier the attacker wants), carried = B (the member)
+        let forged = prover.build_trace_with_carry(a, b, &branch, b_index, round);
+
+        // In a debug build the prover panics on an unsatisfied constraint; in a
+        // release build it emits a proof that must not verify. Both are a rejection.
+        let attempt = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            prover.prove(forged).map(|p| p.to_bytes())
+        }));
+
+        if let Ok(Ok(proof)) = attempt {
+            assert!(
+                !verify_bound(root, nullifier(a, round), round, &proof),
+                "a forged trace must not yield a proof of B's membership under A's nullifier"
+            );
+        }
     }
 
     #[test]

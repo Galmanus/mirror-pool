@@ -1,6 +1,26 @@
 # 1c — Binding the nullifier into the membership AIR (implementation blueprint)
 
-Status: **design complete, implementation pending.** This is the de-risked plan
+Status: **implemented, tests pass, unaudited** — `crates/riverrun-stark/src/bound_air.rs`
+and `bound_prover.rs`, wired into `riverrun-pool-zk`. Two deviations from the plan
+below, both found while implementing:
+
+1. **The carry must not be constant.** The plan said "held constant for the whole
+   trace". A constant trace column has a *constant* low-degree extension, so every
+   FRI query opening returns the secret verbatim: measured at 20 leaked proofs out
+   of 20 before the fix, against 0 out of 20 for the unbound prover. The carry is
+   now held only across cycle 0 (a `carry_hold` mask over rows 0..6) and zeroed
+   afterwards, which is exactly as long as it is load-bearing. 0 out of 20 after.
+   Winterfell 0.13 has no witness randomization, so "not verbatim on the wire" is
+   the honest claim; formal zero-knowledge is not.
+2. **The public-input negative tests are not the soundness gate.** Tests 2 and 3
+   below only vary what the verifier is told, and the boundary assertions alone
+   make them pass — they would pass with no start-tie at all. The gate is a forged
+   *trace* (hash secret A, carry member B), in `riverrun-stark`'s
+   `a_trace_that_hashes_one_secret_and_carries_another_yields_no_accepted_proof`.
+   Deleting the start-tie was checked to make that test fail (the forged proof
+   verifies), so it is load-bearing rather than decorative.
+
+The original plan follows. It is the de-risked plan
 for audit-critical #1c. It is deliberately detailed so the implementation is a
 careful mechanical exercise, not a research gamble — because a subtly-wrong AIR
 here is *false soundness* (the proof appears to bind the nullifier but doesn't),
