@@ -60,11 +60,23 @@ pub struct RoundPlan {
     /// The smallest provenance class among the admitted members: the anonymity of
     /// the least-protected member in the round.
     pub worst_personal_k: usize,
+    /// The provenance-class histogram of the admitted set. The evidence a
+    /// certificate carries; no member identity.
+    pub admitted_class_sizes: Vec<usize>,
+    /// The floor this round was formed against.
+    pub k_min: usize,
 }
 
 impl RoundPlan {
     pub fn advertised_k(&self) -> usize {
         self.admitted.len()
+    }
+
+    /// A proof-carrying privacy certificate for this round (see [`crate::cert`]).
+    /// The agent hands this to admitted members, who verify it independently
+    /// rather than trusting that the round is private.
+    pub fn certificate(&self) -> crate::cert::PrivacyCertificate {
+        crate::cert::certify(&self.admitted, &self.admitted_class_sizes, self.k_min)
     }
 }
 
@@ -120,7 +132,14 @@ pub fn coordinate(pending: &[PendingIntent], k_min: usize) -> RoundPlan {
     let effective_k = effective_k(&admitted_sizes).effective;
     let worst_personal_k = admitted_sizes.iter().copied().min().unwrap_or(0);
 
-    RoundPlan { admitted, deferred, effective_k, worst_personal_k }
+    RoundPlan {
+        admitted,
+        deferred,
+        effective_k,
+        worst_personal_k,
+        admitted_class_sizes: admitted_sizes,
+        k_min,
+    }
 }
 
 /// The effective-k of the round you would get by naively admitting *everyone* in
@@ -199,6 +218,20 @@ mod tests {
         assert!(plan.admitted.is_empty());
         assert_eq!(plan.deferred.len(), 4);
         assert_eq!(plan.effective_k, 0.0);
+    }
+
+    #[test]
+    fn a_fired_round_hands_out_a_verifiable_certificate() {
+        use crate::cert::{verify, PrivacyCertificate};
+        let p = intents(&[("A", 5), ("B", 3), ("C", 1)]);
+        let plan = coordinate(&p, 2);
+        let cert = plan.certificate();
+        assert!(matches!(cert, PrivacyCertificate::Issued { .. }));
+        // a member re-checks the coordinator's claim against the admitted set,
+        // trusting nothing the coordinator said
+        let v = verify(&cert, &plan.admitted).expect("the round's certificate must verify");
+        assert!(v.effective_k > 4.0);
+        assert_eq!(v.crowd, plan.admitted.len());
     }
 
     #[test]

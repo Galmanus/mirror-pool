@@ -77,3 +77,31 @@ proving to batch, which riverrun names as open rather than pretends to have. And
 provenance classes come from a bounded, public-RPC trace, so "well-populated" means
 "well-populated as far as a cheap trace can see" --- a floor, like every live
 number in this repo.
+
+## Proof-carrying privacy certificates (AXL)
+
+The coordinator's claim---"this round is private"---should not require trust. So
+each fired round carries a **proof-carrying certificate**, applying the AXL
+pattern (Galmanus, *AXL: Proof-Carrying Certificates for Bounded Autonomy*) to a
+privacy bound instead of a spending bound.
+
+`plan.certificate()` emits an artifact carrying the admitted set's
+provenance-class histogram, the floor `k_min`, and the round's effective-k.
+`riverrun_trace::cert::verify` re-checks it, following AXL's three properties:
+
+- **inescapable** --- it recomputes effective-k from the histogram and checks the
+  floor directly, so a coordinator cannot certify a bound the evidence does not
+  support. A tampered effective-k or histogram fails verification (tested).
+- **portable** --- the certificate is a small object a member, auditor, or a
+  settling program verifies without trusting the coordinator and without
+  re-tracing the funding graph.
+- **bound to the round** --- a blake3 commitment ties it to the exact admitted
+  set, so it cannot be replayed onto a different round (tested).
+
+Two honest points. Unlike AXL's original sliding-window bound, this one needs no
+SMT solver: $\keff = 2^{\sum (n_c/n)\log_2 n_c}$ and $\min_c n_c \geq k_{\min}$ are
+closed-form, so verification is cheap arithmetic --- and the integer floor is
+exactly what an on-chain settling program could enforce with no floating point, a
+natural next step. And the certificate carries only the histogram, never member
+identities, so it proves the crowd meets the floor without revealing who is in
+which class: the certificate is itself privacy-preserving.

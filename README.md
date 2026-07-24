@@ -11,7 +11,7 @@
 
 [![Rust](https://img.shields.io/badge/Rust-end%20to%20end-000000?logo=rust)](https://www.rust-lang.org)
 [![Solana](https://img.shields.io/badge/Solana-SBF%20program-14F195?logo=solana&logoColor=black)](https://solana.com/privacy)
-[![tests](https://img.shields.io/badge/tests-87%20green-4c1)](#workspace)
+[![tests](https://img.shields.io/badge/tests-94%20green-4c1)](#workspace)
 [![clippy](https://img.shields.io/badge/clippy-D%20warnings%20clean-4c1)](https://github.com/rust-lang/rust-clippy)
 [![post-quantum](https://img.shields.io/badge/STARK-post--quantum%2C%20no%20setup-8A2BE2)](#why-post-quantum-and-transparent)
 [![license](https://img.shields.io/badge/license-MIT-blue)](#license)
@@ -92,10 +92,12 @@ cargo run --release -p riverrun-trace --example coordinator
 ```
 
 Every fired round beats naively batching everyone on effective-k, with a *smaller*
-crowd, and never exposes a member --- proven by test, shown live in the loop. This
-is the passive pre-flight gate turned generative: not "don't act", but "act in
-*this* crowd, and here is the number that says it is private."
-**[docs/COORDINATOR.md](docs/COORDINATOR.md)**.
+crowd, and never exposes a member --- proven by test, shown live in the loop. And
+each round carries a **proof-carrying privacy certificate** (the AXL pattern: an
+admitted member re-verifies the round's effective-k and floor independently,
+trusting nothing the agent said). This is the passive pre-flight gate turned
+generative: not "don't act", but "act in *this* crowd, and here is a certificate
+that says it is private." **[docs/COORDINATOR.md](docs/COORDINATOR.md)**.
 
 ## Your k is not your k
 
@@ -343,7 +345,7 @@ cargo test --manifest-path crates/riverrun-stark/Cargo.toml                # STA
 cargo test --manifest-path crates/riverrun-pool-zk/Cargo.toml              # the pool driven by the STARK
 ```
 
-**87 tests green** in total: 43 host + 23 STARK + 7 pool-zk + 10 on-chain e2e.
+**94 tests green** in total: 50 host + 23 STARK + 7 pool-zk + 10 on-chain e2e.
 
 ## Security status & honest limitations
 

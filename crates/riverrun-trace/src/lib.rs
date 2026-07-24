@@ -21,6 +21,7 @@
 //! funding graph — the sorohunter pattern (build the attacker; the defense falls
 //! out as its dual).
 
+pub mod cert;
 pub mod coordinator;
 pub mod graph;
 pub mod rng;

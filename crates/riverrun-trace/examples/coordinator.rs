@@ -12,6 +12,7 @@
 //!
 //! Run: `cargo run --release --example coordinator`
 
+use riverrun_trace::cert::{verify, PrivacyCertificate};
 use riverrun_trace::coordinator::{coordinate, naive_effective_k, PendingIntent};
 
 fn main() {
@@ -61,6 +62,27 @@ fn main() {
             "     admitted: {}",
             plan.admitted.join(", ")
         );
+
+        // AXL-style proof-carrying certificate: the agent issues it, and an
+        // admitted member verifies it independently before joining --- recomputing
+        // the effective-k from the carried evidence, trusting nothing the agent
+        // said. (Design credit: AXL, Proof-Carrying Certificates for Bounded
+        // Autonomy.)
+        let cert = plan.certificate();
+        match verify(&cert, &plan.admitted) {
+            Ok(v) => {
+                let commit8 = if let PrivacyCertificate::Issued { round_commit, .. } = &cert {
+                    hex8(round_commit)
+                } else {
+                    String::new()
+                };
+                println!(
+                    "     certificate: floor k_min={} met, effective-k {:.1} re-verified by a member  [round {commit8}]",
+                    v.k_min, v.effective_k
+                );
+            }
+            Err(e) => println!("     certificate FAILED verification: {e:?}"),
+        }
         println!(
             "     vs batching all {} waiting: effective-k {:.1}  --  the smaller round is more private",
             pending.len(),
@@ -90,4 +112,9 @@ fn main() {
 /// Trim the remedy to one clause for the compact per-line display.
 fn short(reason: &str) -> String {
     reason.split(';').next().unwrap_or(reason).trim().to_string()
+}
+
+/// First four bytes of a commitment as hex, for a compact round tag.
+fn hex8(b: &[u8; 32]) -> String {
+    b[..4].iter().map(|x| format!("{x:02x}")).collect()
 }
