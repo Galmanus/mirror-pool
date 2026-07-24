@@ -26,9 +26,85 @@ advertised members were worth an effective **6.5**, and one member, alone in the
 origin of their money, was worth exactly **1**. It is protocol-agnostic — it works
 against any pool it has never seen, including the other submissions in this bounty.
 
+**Who it's for** — anyone who doesn't want to be an open book on-chain:
+**algotraders** whose strategies get reverse-engineered · **whales** whose every move
+is shadowed and front-run · **market makers** protecting flow and inventory ·
+**protocols & agents** operating without broadcasting their playbook · **everyday
+users** who simply don't want to be clustered and profiled. The privacy that used to
+need a specialist, in one command.
+
+### Install
+
 ```bash
-cargo run --features onchain --bin riverrun -- audit <POOL> --json
+# from a clone (installs the `riverrun` binary onto your PATH)
+cargo install --path crates/riverrun-trace --features onchain
+
+# or straight from git
+cargo install --git https://github.com/solanabr/mirror-pool \
+  --features onchain riverrun-trace
 ```
+
+### Run it
+
+The simplest question, *"am I exposed?"* — one command, one argument, your wallet:
+
+```console
+$ riverrun preflight <YOUR_WALLET>
+```
+
+It samples the pool, traces your funding graph against it, and answers in plain
+words: **EXPOSED**, **WEAK**, or **OK** — with what to do about it. To score a whole
+pool instead of one wallet:
+
+```console
+$ riverrun audit 9fhQBbumKEFuXtMBDw8AaQyAjCorLGJQiS3skWZdQyQD
+=== funding-graph exposure of a live anonymity set ===
+pool                   : 9fhQBbumKEFuXtMBDw8AaQyAjCorLGJQiS3skWZdQyQD
+severity               : CRITICAL
+depositors sampled     : 30
+reach an origin        : 11/30 (37%)
+advertised k           : 30  ->  effective k : 6.5  (worst case 1)
+```
+
+A set advertising 30 delivers an effective 6.5, and one member is alone in their
+provenance class (`severity: critical` fires whenever any member is fully exposed).
+Method and the arithmetic behind the number: [`docs/EFFECTIVE_K.md`](docs/EFFECTIVE_K.md).
+
+Machine-readable, for pipelines and CI — and it reports its **own reliability**, so
+a rate-limited or unreachable RPC can never be mistaken for a clean "private"
+result. A real run just now, over the public mainnet-beta endpoint (verbatim, `jq`
+selecting fields):
+
+```console
+$ riverrun audit 9fhQBbumKEFuXtMBDw8AaQyAjCorLGJQiS3skWZdQyQD 6 --json \
+    | jq '{severity, advertised_k, effective_k, worst_case, reliable, rpc_failures}'
+{
+  "severity": "critical",
+  "advertised_k": 6,
+  "effective_k": 1.2599210498948732,
+  "worst_case": 1,
+  "reliable": false,
+  "rpc_failures": 2
+}
+```
+
+`reliable: false` because the public RPC rate-limited two calls: the tool marks the
+result **partial** rather than silently reporting a smaller number as fact. Point
+`$SOLANA_RPC` at a paid endpoint for a clean, complete run.
+
+| command | what it answers |
+|---|---|
+| `preflight <wallet> [pool]` | the anonymity **you** would get in a pool, before you deposit |
+| `audit <pool>` | a live pool's effective k vs the k it advertises, with a severity |
+| `trace <wallet>` | one wallet's funding provenance, hop by hop |
+| `exhibit` | the metric on riverrun's own constructions — offline, deterministic |
+
+Global flags: `--json` (machine-readable on stdout, progress on stderr — `| jq` is
+clean), `--version`. Exit codes: `0` ok, `1` no data (RPC unreachable **or** empty
+pool — a network failure never reads as "private"), `2` bad usage or address.
+Endpoint is `$SOLANA_RPC`, else mainnet-beta. Every live result is a **floor**:
+a bounded, SOL-only trace, so "OK" means "no cheap attribution found", never
+"anonymous".
 
 **Two maturity levels, kept honest — and this is the whole story of the repo.**
 The **measurement tooling** (`preflight` / `audit` / `trace` / `exhibit`) is

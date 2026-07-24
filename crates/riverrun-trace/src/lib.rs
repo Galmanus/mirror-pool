@@ -112,6 +112,47 @@ pub fn effective_k(class_sizes: &[usize]) -> EffectiveK {
     }
 }
 
+/// Whether `s` is a syntactically valid Solana address: base58 that decodes to
+/// exactly 32 bytes. Dependency-free so the pure library keeps no crates, and
+/// used by the CLI to reject typos *before* spending RPC calls that would come
+/// back empty and be mistaken for "rootless".
+pub fn valid_pubkey(s: &str) -> bool {
+    base58_decode(s).map(|b| b.len() == 32).unwrap_or(false)
+}
+
+/// Minimal base58 (Bitcoin alphabet) decode. Returns `None` on any character
+/// outside the alphabet. Not constant-time and not for cryptographic use — it
+/// exists only to length-check addresses.
+fn base58_decode(s: &str) -> Option<Vec<u8>> {
+    const ALPHABET: &[u8; 58] = b"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+    if s.is_empty() {
+        return None;
+    }
+    let mut bytes: Vec<u8> = Vec::with_capacity(s.len());
+    for c in s.bytes() {
+        let mut carry = ALPHABET.iter().position(|&a| a == c)? as u32;
+        for b in bytes.iter_mut() {
+            carry += (*b as u32) * 58;
+            *b = (carry & 0xff) as u8;
+            carry >>= 8;
+        }
+        while carry > 0 {
+            bytes.push((carry & 0xff) as u8);
+            carry >>= 8;
+        }
+    }
+    // each leading '1' is one leading zero byte
+    for c in s.bytes() {
+        if c == b'1' {
+            bytes.push(0);
+        } else {
+            break;
+        }
+    }
+    bytes.reverse();
+    Some(bytes)
+}
+
 /// A pre-flight anonymity assessment for **one wallet about to act**.
 ///
 /// The tracer and `effective_k` audit a pool *after the fact*. This is the
@@ -180,6 +221,33 @@ pub fn preflight<K: PartialEq>(user_class: &K, population: &[K]) -> Preflight {
     };
 
     Preflight { personal_k, advertised_k, pool_effective_k, verdict }
+}
+
+#[cfg(test)]
+mod pubkey_tests {
+    use super::valid_pubkey;
+
+    #[test]
+    fn accepts_real_solana_addresses() {
+        // the system program: 32 base58 '1's, decodes to 32 zero bytes
+        assert!(valid_pubkey("11111111111111111111111111111111"));
+        // a live pool address and a real wallet, both canonical 32-byte keys
+        assert!(valid_pubkey("9fhQBbumKEFuXtMBDw8AaQyAjCorLGJQiS3skWZdQyQD"));
+        assert!(valid_pubkey("F9neSDGmb6tyPtuSFp4we2zvFA5WAaQYuFjBbagzmvTK"));
+    }
+
+    #[test]
+    fn rejects_non_addresses() {
+        assert!(!valid_pubkey(""), "empty");
+        assert!(!valid_pubkey("hello"), "too short to be 32 bytes");
+        // contains characters outside the base58 alphabet (0, O, I, l)
+        assert!(!valid_pubkey("0OIl0OIl0OIl0OIl0OIl0OIl0OIl0OIl"), "bad alphabet");
+        // valid base58 but decodes to far more than 32 bytes
+        assert!(
+            !valid_pubkey("1111111111111111111111111111111111111111111111111111111111111111"),
+            "too long"
+        );
+    }
 }
 
 #[cfg(test)]

@@ -15,7 +15,7 @@ use std::collections::HashSet;
 
 use crate::rpc::{fee_payer, provenance_class, system_transfers, Rpc, HUB_THRESHOLD};
 use crate::rng::SplitMix64;
-use crate::{effective_k, evaluate, preflight, scenario, SchemeStats, Verdict};
+use crate::{effective_k, evaluate, preflight, scenario, valid_pubkey, SchemeStats, Verdict};
 
 /// Privacy Cash — a live Tornado-style SOL pool, the default when none is given.
 const DEFAULT_POOL: &str = "9fhQBbumKEFuXtMBDw8AaQyAjCorLGJQiS3skWZdQyQD";
@@ -63,6 +63,51 @@ fn version() {
     println!("riverrun {}", env!("CARGO_PKG_VERSION"));
 }
 
+/// Reject a malformed address before spending any RPC calls: a typo would
+/// otherwise come back empty and be misread as "rootless" / "no crowd".
+fn require_pubkey(kind: &str, s: &str) {
+    if !valid_pubkey(s) {
+        eprintln!("riverrun: '{s}' is not a valid Solana {kind} (base58, 32 bytes).");
+        std::process::exit(2);
+    }
+}
+
+/// Map an anonymity result to a scanner-style severity, so `audit` reads like a
+/// finding and not just a metric. `critical` when any member is alone in their
+/// provenance class (fully de-anonymized), then by how far effective k has fallen
+/// below the advertised set.
+fn severity(effective: f64, advertised: usize, worst_case: usize) -> &'static str {
+    if advertised == 0 {
+        return "unknown";
+    }
+    if worst_case <= 1 {
+        return "critical";
+    }
+    match effective / advertised as f64 {
+        r if r < 0.5 => "high",
+        r if r < 0.8 => "medium",
+        _ => "low",
+    }
+}
+
+/// Exit cleanly when a live command recovered no data, distinguishing a genuine
+/// empty result from an RPC that could not be reached — because for a privacy
+/// tool a network failure must never be reported as "private".
+fn no_data_exit(rpc: &Rpc, empty_reason: &str) -> ! {
+    if rpc.failures > 0 {
+        eprintln!(
+            "\ncould not reach the RPC at {} ({} failed call(s)). Not reporting a\n\
+             result: a network failure must never read as 'private'. Point $SOLANA_RPC\n\
+             at a reliable endpoint and retry.",
+            rpc.endpoint(),
+            rpc.failures
+        );
+    } else {
+        eprintln!("\n{empty_reason}");
+    }
+    std::process::exit(1);
+}
+
 fn help() {
     println!(
         "riverrun — measure and defend behavioural anonymity on Solana\n\
@@ -103,6 +148,8 @@ fn cmd_preflight(args: &[String], json: bool) {
     };
     let pool = args.get(1).map(String::as_str).unwrap_or(DEFAULT_POOL);
     let n: usize = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(15);
+    require_pubkey("wallet", wallet);
+    require_pubkey("pool", pool);
 
     let mut rpc = Rpc::new();
     let mut budget = 3000;
@@ -114,8 +161,7 @@ fn cmd_preflight(args: &[String], json: bool) {
     eprintln!("\nsampling the pool's current depositors...");
     let depositors = pool_depositors(&mut rpc, pool, n, &mut budget);
     if depositors.is_empty() {
-        eprintln!("could not sample this pool's depositors (RPC, or no recent SOL deposits).");
-        std::process::exit(1);
+        no_data_exit(&rpc, "no recent SOL deposits found for this pool (inactive, or not a SOL pool).");
     }
     let population: Vec<String> = depositors
         .iter()
@@ -136,7 +182,10 @@ fn cmd_preflight(args: &[String], json: bool) {
             Verdict::Ok => "ok",
         };
         let obj = serde_json::json!({
+            "tool": "riverrun",
+            "version": env!("CARGO_PKG_VERSION"),
             "command": "preflight",
+            "endpoint": rpc.endpoint(),
             "pool": pool,
             "wallet": wallet,
             "advertised_k": p.advertised_k,
@@ -144,7 +193,9 @@ fn cmd_preflight(args: &[String], json: bool) {
             "personal_k": p.personal_k,
             "verdict": verdict,
             "is_floor": true,
+            "reliable": rpc.failures == 0,
             "rpc_calls": rpc.calls,
+            "rpc_failures": rpc.failures,
         });
         println!("{}", serde_json::to_string_pretty(&obj).unwrap());
         return;
@@ -185,6 +236,7 @@ fn cmd_preflight(args: &[String], json: bool) {
 fn cmd_audit(args: &[String], json: bool) {
     let pool = args.first().map(String::as_str).unwrap_or(DEFAULT_POOL);
     let n: usize = args.get(1).and_then(|s| s.parse().ok()).unwrap_or(15);
+    require_pubkey("pool", pool);
 
     let mut rpc = Rpc::new();
     let mut budget = 4000;
@@ -192,8 +244,7 @@ fn cmd_audit(args: &[String], json: bool) {
     eprintln!("pool : {pool}\n\nenumerating depositors...");
     let depositors = pool_depositors(&mut rpc, pool, n, &mut budget);
     if depositors.is_empty() {
-        eprintln!("no depositors recovered (RPC, or no recent SOL deposits).");
-        std::process::exit(1);
+        no_data_exit(&rpc, "no depositors recovered: no recent SOL deposits (inactive, or not a SOL pool).");
     }
     eprintln!("tracing each one's funding graph...");
     let classes: Vec<String> = depositors
@@ -219,10 +270,16 @@ fn cmd_audit(args: &[String], json: bool) {
     let sizes: Vec<usize> = seen.iter().map(|(_, n)| *n).collect();
     let ek = effective_k(&sizes);
 
+    let sev = severity(ek.effective, classes.len(), ek.worst_case);
+
     if json {
         let obj = serde_json::json!({
+            "tool": "riverrun",
+            "version": env!("CARGO_PKG_VERSION"),
             "command": "audit",
+            "endpoint": rpc.endpoint(),
             "pool": pool,
+            "severity": sev,
             "depositors_sampled": classes.len(),
             "reach_origin": rooted,
             "reach_origin_pct": (100.0 * rooted as f64 / classes.len() as f64),
@@ -232,7 +289,9 @@ fn cmd_audit(args: &[String], json: bool) {
             "worst_case": ek.worst_case,
             "residual_bits": ek.residual_bits,
             "is_floor": true,
+            "reliable": rpc.failures == 0,
             "rpc_calls": rpc.calls,
+            "rpc_failures": rpc.failures,
             "note": "floor: bounded trace, SOL-only; see docs/EFFECTIVE_K.md",
         });
         println!("{}", serde_json::to_string_pretty(&obj).unwrap());
@@ -241,6 +300,7 @@ fn cmd_audit(args: &[String], json: bool) {
 
     println!("\n=== funding-graph exposure of a live anonymity set ===");
     println!("pool                   : {pool}");
+    println!("severity               : {}", sev.to_uppercase());
     println!("depositors sampled     : {}", classes.len());
     println!("reach an origin        : {rooted}/{} ({:.0}%)", classes.len(), 100.0 * rooted as f64 / classes.len() as f64);
     println!("provenance classes     : {}", ek.classes);
@@ -250,7 +310,10 @@ fn cmd_audit(args: &[String], json: bool) {
          worth once an adversary sorts them by funding provenance. A floor: bounded\n\
          trace, SOL only. See docs/EFFECTIVE_K.md."
     );
-    println!("(RPC calls: {})", rpc.calls);
+    if rpc.failures > 0 {
+        println!("WARNING: {} RPC call(s) failed — this is a partial floor, not the full picture.", rpc.failures);
+    }
+    println!("(RPC calls: {}, failures: {})", rpc.calls, rpc.failures);
 }
 
 // --- trace ------------------------------------------------------------------
@@ -260,6 +323,7 @@ fn cmd_trace(args: &[String], json: bool) {
         eprintln!("usage: riverrun trace <wallet>");
         std::process::exit(2);
     };
+    require_pubkey("wallet", wallet);
     let mut rpc = Rpc::new();
     let mut budget = 1500;
 
@@ -274,13 +338,18 @@ fn cmd_trace(args: &[String], json: bool) {
             class.split('+').map(String::from).collect()
         };
         let obj = serde_json::json!({
+            "tool": "riverrun",
+            "version": env!("CARGO_PKG_VERSION"),
             "command": "trace",
+            "endpoint": rpc.endpoint(),
             "wallet": wallet,
             "attributable_origin": !rootless,
             "hubs": hubs,
             "trace_depth": DEPTH,
             "is_floor": true,
+            "reliable": rpc.failures == 0,
             "rpc_calls": rpc.calls,
+            "rpc_failures": rpc.failures,
         });
         println!("{}", serde_json::to_string_pretty(&obj).unwrap());
         return;
@@ -336,7 +405,10 @@ fn cmd_exhibit(json: bool) {
             })
             .collect();
         let obj = serde_json::json!({
+            "tool": "riverrun",
+            "version": env!("CARGO_PKG_VERSION"),
             "command": "exhibit",
+            "offline": true,
             "members_per_row": N,
             "seed": format!("{SEED:#018x}"),
             "constructions": constructions,

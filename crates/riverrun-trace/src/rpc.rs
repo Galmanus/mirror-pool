@@ -22,7 +22,12 @@ pub const HUB_THRESHOLD: usize = 1000;
 pub struct Rpc {
     agent: ureq::Agent,
     url: String,
+    /// Total RPC requests issued.
     pub calls: usize,
+    /// Requests that failed at the transport layer or returned a JSON-RPC error.
+    /// A caller that gets an empty result *and* sees failures here must not read
+    /// the emptiness as "nothing to find" — it may be "could not look".
+    pub failures: usize,
 }
 
 impl Rpc {
@@ -32,7 +37,13 @@ impl Rpc {
         let agent = ureq::AgentBuilder::new()
             .timeout(Duration::from_secs(20))
             .build();
-        Self { agent, url, calls: 0 }
+        Self { agent, url, calls: 0, failures: 0 }
+    }
+
+    /// The RPC endpoint in use (`$SOLANA_RPC`, else mainnet-beta). Surfaced so the
+    /// CLI can name it in an error instead of failing opaquely.
+    pub fn endpoint(&self) -> &str {
+        &self.url
     }
 
     pub fn call(&mut self, method: &str, params: Value) -> Option<Value> {
@@ -41,16 +52,38 @@ impl Rpc {
         let body = json!({"jsonrpc":"2.0","id":1,"method":method,"params":params});
         for attempt in 0..3 {
             match self.agent.post(&self.url).send_json(body.clone()) {
-                Ok(resp) => {
-                    if let Ok(v) = resp.into_json::<Value>() {
-                        return Some(v.get("result")?.clone());
+                Ok(resp) => match resp.into_json::<Value>() {
+                    Ok(v) => {
+                        if let Some(err) = v.get("error") {
+                            let msg = err
+                                .get("message")
+                                .and_then(|m| m.as_str())
+                                .unwrap_or("unknown JSON-RPC error");
+                            eprintln!("  rpc: {method} -> error: {msg}");
+                            self.failures += 1;
+                            return None;
+                        }
+                        return v.get("result").cloned();
                     }
-                    return None;
-                }
+                    Err(_) => {
+                        eprintln!("  rpc: {method} -> unparseable response");
+                        self.failures += 1;
+                        return None;
+                    }
+                },
                 Err(ureq::Error::Status(429, _)) if attempt < 2 => {
                     std::thread::sleep(Duration::from_millis(900 * (attempt as u64 + 1)));
                 }
-                Err(_) => return None,
+                Err(ureq::Error::Status(code, _)) => {
+                    eprintln!("  rpc: {method} -> HTTP {code} from {}", self.url);
+                    self.failures += 1;
+                    return None;
+                }
+                Err(e) => {
+                    eprintln!("  rpc: {method} -> transport error: {e}");
+                    self.failures += 1;
+                    return None;
+                }
             }
         }
         None
