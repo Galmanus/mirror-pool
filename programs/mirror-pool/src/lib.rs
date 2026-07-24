@@ -52,9 +52,19 @@ use solana_sha256_hasher::hashv;
 
 /// Domain separator for the verifier's attestation, so a signature made for
 /// riverrun cannot be replayed as a signature for anything else the key signs.
-const ATTESTATION_DOMAIN: &[u8; 16] = b"riverrun-exec-v1";
-/// domain(16) + pool(32) + root(32) + action(32) + nullifier(32) + round(8)
-const ATTESTATION_LEN: usize = 152;
+/// Bumped to v2 when the message grew a recipient field, so a v1 attestation can
+/// never be replayed against the payout-carrying execution.
+const ATTESTATION_DOMAIN: &[u8; 16] = b"riverrun-exec-v2";
+/// domain(16) + pool(32) + root(32) + action(32) + nullifier(32) + round(8) +
+/// recipient(32). Binding the recipient is what stops a relayer from redirecting
+/// the payout: the committee attests to *where* the value goes, not just that it goes.
+const ATTESTATION_LEN: usize = 184;
+
+/// The fixed denomination each execution pays out from the shared vault. Fixed so
+/// that the amount leaving the pool reveals nothing about which member acted —
+/// every payout looks identical. Small on purpose: the demo moves real value, not
+/// a fortune, while the circuit is still unaudited.
+const PAYOUT_LAMPORTS: u64 = 1_000_000; // 0.001 SOL
 
 /// Layout of the native Ed25519 instruction's data (one signature): a 16-byte
 /// header, then the public key, the signature, and the message.
@@ -192,15 +202,44 @@ pub mod riverrun_program {
             &ctx.accounts.instructions,
             &pool.verifiers,
             pool.threshold,
-            &attestation_message(&pool.key(), &root, &action_hash, &nullifier, round),
+            &attestation_message(
+                &pool.key(),
+                &root,
+                &action_hash,
+                &nullifier,
+                round,
+                &ctx.accounts.recipient.key(),
+            ),
         )?;
 
         let record = &mut ctx.accounts.nullifier_record;
         record.round = round;
         record.bump = ctx.bumps.nullifier_record;
 
+        // The action, made real: pay the fixed denomination from the shared vault
+        // to the committed recipient. The vault PDA signs (no member does), and the
+        // amount is identical for every execution, so the value leaving the pool
+        // does not reveal which member acted. The recipient is bound into the
+        // attestation above, so a relayer cannot redirect it.
+        let pool_key = ctx.accounts.pool.key();
+        let vault_seeds: &[&[u8]] = &[b"vault", pool_key.as_ref(), &[ctx.bumps.vault]];
+        let transfer_ix = anchor_lang::solana_program::system_instruction::transfer(
+            &ctx.accounts.vault.key(),
+            &ctx.accounts.recipient.key(),
+            PAYOUT_LAMPORTS,
+        );
+        anchor_lang::solana_program::program::invoke_signed(
+            &transfer_ix,
+            &[
+                ctx.accounts.vault.to_account_info(),
+                ctx.accounts.recipient.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
+            &[vault_seeds],
+        )?;
+
         emit!(Executed {
-            pool: pool.key(),
+            pool: pool_key,
             action_hash,
             nullifier,
             round,
@@ -225,6 +264,7 @@ fn attestation_message(
     action_hash: &[u8; 32],
     nullifier: &[u8; 32],
     round: u64,
+    recipient: &Pubkey,
 ) -> [u8; ATTESTATION_LEN] {
     let mut m = [0u8; ATTESTATION_LEN];
     m[..16].copy_from_slice(ATTESTATION_DOMAIN);
@@ -233,6 +273,7 @@ fn attestation_message(
     m[80..112].copy_from_slice(action_hash);
     m[112..144].copy_from_slice(nullifier);
     m[144..152].copy_from_slice(&round.to_le_bytes());
+    m[152..184].copy_from_slice(recipient.as_ref());
     m
 }
 
@@ -416,6 +457,17 @@ pub struct Execute<'info> {
     /// the execution — the actor is unlinked from the action.
     #[account(mut)]
     pub relayer: Signer<'info>,
+    /// The shared vault the payout leaves from. System-owned PDA, seeded by the
+    /// pool, so the program can sign the transfer with `invoke_signed` and no
+    /// member's key is involved. Funded by members' deposits (equal, so the
+    /// outflow is unlinkable).
+    #[account(mut, seeds = [b"vault", pool.key().as_ref()], bump)]
+    pub vault: SystemAccount<'info>,
+    /// Where the action sends the value. Its key is bound into the attestation, so
+    /// the committee vouches for this exact recipient and a relayer cannot swap it.
+    /// CHECK: identity is enforced cryptographically via the attestation, not by type.
+    #[account(mut)]
+    pub recipient: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
     /// CHECK: address-checked below; read only through the instructions-sysvar
     /// helpers to find the verifier's Ed25519 attestation in this transaction.

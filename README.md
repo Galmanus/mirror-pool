@@ -10,7 +10,7 @@
 
 [![Rust](https://img.shields.io/badge/Rust-end%20to%20end-000000?logo=rust)](https://www.rust-lang.org)
 [![Solana](https://img.shields.io/badge/Solana-SBF%20program-14F195?logo=solana&logoColor=black)](https://solana.com/privacy)
-[![tests](https://img.shields.io/badge/tests-99%20green-4c1)](#workspace)
+[![tests](https://img.shields.io/badge/tests-101%20green-4c1)](#workspace)
 [![CLI](https://img.shields.io/badge/CLI-preflight%20%C2%B7%20audit%20%C2%B7%20--json-14F195)](#the-tool-runs-today)
 [![post-quantum](https://img.shields.io/badge/STARK-post--quantum%2C%20no%20setup-8A2BE2)](#why-post-quantum-and-transparent)
 [![license](https://img.shields.io/badge/license-MIT-blue)](#license)
@@ -113,7 +113,7 @@ deliverable.* Behind it is a **research** pool — a post-quantum STARK that sev
 the actor↔action link — that is implemented and tested but hand-rolled and
 unaudited: a prototype, not for production, and marked as such wherever it appears.
 Collapsing the two would be dishonest in both directions, so the repo never does.
-Everything is Rust, MIT, **99 tests green**. See all of it in one command —
+Everything is Rust, MIT, **101 tests green**. See all of it in one command —
 `./demo.sh` — or read the **[whitepaper (PDF)](paper/riverrun.pdf)**.
 
 ---
@@ -511,28 +511,34 @@ that transparent, post-quantum, on-chain verification is *available today* on
 Solana at 31k CU. riverrun proves a different statement, but there is no excuse
 left for proving it off-chain forever.
 
-## Cost — cheap by construction
+## The action, made real — money moves, the actor does not
 
-Because riverrun hides *behavior* and not funds, its on-chain footprint is a
-**17-byte nullifier account** and an event — no value moves, so a private action is
-on the order of **$0.0002**.
+The cloak is not a settlement stub: on `execute`, the program moves a **fixed
+denomination** of real value from a **shared vault** to a recipient the member
+committed to — the vault PDA signs the transfer, so **no member's key touches the
+action**, and the amount is identical for every execution, so the value leaving the
+pool reveals nothing about *which* member acted. The recipient is bound into the
+committee's attestation, so a relayer **cannot redirect** it (proven by test:
+`a_relayer_cannot_redirect_the_payout`). Amounts stay public by design — riverrun
+hides *who*, not *how much*.
 
-**Proven live on devnet, on the current M-of-N committee code** (program
+**Proven live on devnet, on the current CPI + M-of-N committee code** (program
 `BFy2ehVxpBrtwMCWwufpfbbsoWtZVYVaZBzDE2eAG7az`, pool
-`CoSHQ1rFvBe6hVzCWKyqDUGdbyGftWxByiuueDp1GnLH`). The full behavioral-cloak lifecycle
-ran end to end with four distinct roles — authority, verifier, member, relayer —
-kept separate on purpose, because the claim *is* who signs what:
+`ECMvkQSiQS6ko2kHhyDV5tCi2o9MViy5pqsdfNWpu3fX`). Four distinct roles — authority,
+verifier, member, relayer — kept separate on purpose, because the claim *is* who
+signs what:
 
-| step | signed by | signature |
-|---|---|---|
-| `commit` | the **member** | [`4jdxSfVe…`](https://explorer.solana.com/tx/4jdxSfVedXG723C6vP3RCJmDMfrsitXkzkKF6ydSBPxBV7mdPoYzLfdYyoCaVjnjwrnQKqz4rFfvaNe314VULzqx?cluster=devnet) |
-| **`execute`** | the **relayer alone** | [`23Uz6pjh…`](https://explorer.solana.com/tx/23Uz6pjh4Bqb6pQjMHpwKESzdNddy8bmZ9mMedm5hQHFCXFKyJLKTRggyGs1Xdghbo5zvP237D9Tcgwv9EGLFi25?cluster=devnet) |
-| `execute` (double-spend) | rejected on-chain | nullifier PDA already exists |
+| step | signed by | on-chain effect | signature |
+|---|---|---|---|
+| `commit` | the **member** | joins the crowd | [`bcjJUbwY…`](https://explorer.solana.com/tx/bcjJUbwY4PGTAwazba6Btp2STnYRDaN1z2kcMcZbiYngGcmB2rvK35ZmsdWeyvKCnKL7qfah3nzR5eABTWUT9ei?cluster=devnet) |
+| **`execute`** | the **relayer alone** | **0.001 SOL vault → recipient** (member's key absent) | [`5rmZVsgZ…`](https://explorer.solana.com/tx/5rmZVsgZPUD8MxZTxRuJWK2A94jBUWD6bD7F27FHE52VGoFKviM1Yz8qcVaGf2TomVNptUhci6LJ8xp7DHWY7qdT?cluster=devnet) |
+| `execute` (double-spend) | rejected on-chain | nullifier anti-replay | — |
 
-Open the `execute` transaction and check the signer set: it is the **relayer** only.
-The member's key signed `commit` (joining the crowd) and **nothing else** — it is
-absent from the action itself. That is the behavioral cloak, on a permanent public
-ledger, verifiable by anyone. Reproduce: `cargo run --manifest-path
+Recipient `FkoPZwk4…` went **0 → 1,000,000 lamports** on that `execute`, whose only
+signer is the relayer. Open it and check: the member signed `commit` and **nothing
+else** — real value moved, and the actor is nowhere in the transaction that moved it.
+The nullifier + event footprint keeps a private action on the order of **$0.0002**
+plus the denomination itself. Reproduce: `cargo run --manifest-path
 programs/mirror-pool/Cargo.toml --example devnet_demo`.
 
 ## Workspace
@@ -542,7 +548,7 @@ programs/mirror-pool/Cargo.toml --example devnet_demo`.
 | `riverrun-core` | the post-quantum primitives and the membership *relation* (commitment, Merkle set, nullifier). Specification only — nothing here proves anything | 19 tests |
 | `riverrun-eval` | adversarial harness for the behavioral channel — clustering attacker → chance | 4 tests + exhibit |
 | `riverrun-trace` | the `provenance-tracer`: backward funding-graph adversary + circularity defense + live-mainnet adapter | 7 tests + 2 exhibits |
-| `programs/mirror-pool` | the on-chain Solana program: commitment accumulator, per-round nullifier registry (PDA-per-nullifier anti-replay), published root, verifier-attested settlement, entry fee + anonymity-set floor | builds to `.so`; 15 e2e tests green (10 committee-of-one for back-compat + 5 M-of-N quorum); **the current committee code is deployed and exercised live on devnet** (full commit + relayer-execute lifecycle, [signatures](#cost--cheap-by-construction)) |
+| `programs/mirror-pool` | the on-chain Solana program: commitment accumulator, per-round nullifier registry (PDA-per-nullifier anti-replay), published root, verifier-attested settlement, entry fee + anonymity-set floor | builds to `.so`; 17 e2e tests green (10 committee-of-one + 5 M-of-N quorum + 2 vault payout); **the current committee code is deployed and exercised live on devnet** (full commit + relayer-execute lifecycle, [signatures](#cost--cheap-by-construction)) |
 | `crates/riverrun-stark` | the post-quantum, transparent **STARK proving the whole relation** — membership, nullifier and action in one proof (Rescue-Prime + FRI, no trusted setup) — plus the ricorso primitives and relation | 23 tests green (excluded — pulls Winterfell) |
 | `crates/riverrun-pool-zk` | **the** pool: commit → execute → settle driven by the STARK. `Execution` carries an opaque proof + public data only, never the secret | 7 tests + demo (excluded — pulls Winterfell) |
 
@@ -579,7 +585,7 @@ cargo test --manifest-path crates/riverrun-stark/Cargo.toml                # STA
 cargo test --manifest-path crates/riverrun-pool-zk/Cargo.toml              # the pool driven by the STARK
 ```
 
-**99 tests green** in total: 50 host + 27 STARK + 7 pool-zk + 15 on-chain e2e.
+**101 tests green** in total: 50 host + 27 STARK + 7 pool-zk + 17 on-chain e2e.
 
 ## Security status & honest limitations
 

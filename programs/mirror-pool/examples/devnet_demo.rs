@@ -138,14 +138,22 @@ fn main() {
     let (nf_pda, _) =
         Pubkey::find_program_address(&[b"nullifier", pool.as_ref(), &nullifier], &PROGRAM_ID);
 
+    // The action, made real: execute pays a fixed denomination from the shared
+    // vault to this recipient. Fund the vault first (deposits would, for real).
+    let recipient = Keypair::new();
+    let (vault, _) = Pubkey::find_program_address(&[b"vault", pool.as_ref()], &PROGRAM_ID);
+    send("fund vault", &[system_instruction::transfer(&payer.pubkey(), &vault, 20_000_000)], &payer, &[&payer]);
+    let recipient_before = rpc.get_balance(&recipient.pubkey()).unwrap_or(0);
+
     let attestation = |nf: [u8; 32], round: u64| -> Instruction {
-        let mut msg = Vec::with_capacity(152);
-        msg.extend_from_slice(b"riverrun-exec-v1");
+        let mut msg = Vec::with_capacity(184);
+        msg.extend_from_slice(b"riverrun-exec-v2");
         msg.extend_from_slice(pool.as_ref());
         msg.extend_from_slice(&root);
         msg.extend_from_slice(&action);
         msg.extend_from_slice(&nf);
         msg.extend_from_slice(&round.to_le_bytes());
+        msg.extend_from_slice(recipient.pubkey().as_ref());
 
         let sig = verifier.sign_message(&msg);
         let mut data = Vec::with_capacity(16 + 32 + 64 + msg.len());
@@ -172,6 +180,8 @@ fn main() {
                 AccountMeta::new_readonly(pool, false),
                 AccountMeta::new(nf_pda, false),
                 AccountMeta::new(relayer.pubkey(), true),
+                AccountMeta::new(vault, false),
+                AccountMeta::new(recipient.pubkey(), false),
                 AccountMeta::new_readonly(system_program::ID, false),
                 AccountMeta::new_readonly(solana_sdk::sysvar::instructions::ID, false),
             ],
@@ -196,8 +206,18 @@ fn main() {
         "\ndouble-spend {}",
         if ok { "UNEXPECTEDLY SUCCEEDED (bug!)" } else { "correctly REJECTED on-chain" }
     );
+
+    let recipient_after = rpc.get_balance(&recipient.pubkey()).unwrap_or(0);
     println!(
-        "\nThe member signed only `commit`. `execute` was signed by the relayer alone —\n\
-         the actor is unlinked from the action on a permanent, public ledger."
+        "\nrecipient {}: {} -> {} lamports (+{})",
+        recipient.pubkey(),
+        recipient_before,
+        recipient_after,
+        recipient_after.saturating_sub(recipient_before)
+    );
+    println!(
+        "\nThe member signed only `commit`. `execute` was signed by the relayer alone,\n\
+         and real value moved from the shared vault to the recipient — the actor is\n\
+         unlinked from the action, and the money moved without the member's key."
     );
 }

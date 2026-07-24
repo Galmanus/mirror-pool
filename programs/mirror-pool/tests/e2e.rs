@@ -44,6 +44,23 @@ fn nullifier_pda(pool: &Pubkey, nullifier: &[u8; 32]) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[b"nullifier", pool.as_ref(), nullifier], &PROGRAM_ID)
 }
 
+fn vault_pda(pool: &Pubkey) -> (Pubkey, u8) {
+    Pubkey::find_program_address(&[b"vault", pool.as_ref()], &PROGRAM_ID)
+}
+
+/// The fixed payout each execution moves from the vault (mirrors PAYOUT_LAMPORTS).
+const PAYOUT: u64 = 1_000_000;
+
+/// The default recipient the harness binds and pays to when a test does not care
+/// which recipient — most attestation tests. The payout tests use explicit ones.
+const DEFAULT_RECIPIENT: Pubkey = Pubkey::new_from_array([0x9C; 32]);
+
+/// Give a pool's vault enough lamports to cover many payouts, so `execute`'s
+/// transfer succeeds. Real deposits would fill it; here we airdrop it directly.
+fn fund_vault(svm: &mut LiteSVM, pool: &Pubkey) {
+    svm.airdrop(&vault_pda(pool).0, 1_000_000_000).unwrap();
+}
+
 fn load() -> (LiteSVM, Keypair) {
     let mut svm = LiteSVM::new();
     let so = concat!(env!("CARGO_MANIFEST_DIR"), "/target/deploy/riverrun_program.so");
@@ -79,13 +96,27 @@ fn attestation_message(
     nullifier: &[u8; 32],
     round: u64,
 ) -> Vec<u8> {
-    let mut m = Vec::with_capacity(152);
-    m.extend_from_slice(b"riverrun-exec-v1");
+    attestation_message_to(pool, root, action_hash, nullifier, round, &DEFAULT_RECIPIENT)
+}
+
+/// The full message, binding the recipient — the program signs over this exact
+/// tuple, so an attestation for one recipient cannot settle a payout to another.
+fn attestation_message_to(
+    pool: &Pubkey,
+    root: &[u8; 32],
+    action_hash: &[u8; 32],
+    nullifier: &[u8; 32],
+    round: u64,
+    recipient: &Pubkey,
+) -> Vec<u8> {
+    let mut m = Vec::with_capacity(184);
+    m.extend_from_slice(b"riverrun-exec-v2");
     m.extend_from_slice(pool.as_ref());
     m.extend_from_slice(root);
     m.extend_from_slice(action_hash);
     m.extend_from_slice(nullifier);
     m.extend_from_slice(&round.to_le_bytes());
+    m.extend_from_slice(recipient.as_ref());
     m
 }
 
@@ -202,6 +233,7 @@ fn pool_ready_with(members: u32) -> (LiteSVM, Keypair, Keypair, Pubkey, [u8; 32]
         );
     }
 
+    fund_vault(&mut svm, &pool);
     (svm, authority, verifier, pool, root)
 }
 
@@ -212,6 +244,21 @@ fn execute_ix(
     action: [u8; 32],
     nf: [u8; 32],
     round: u64,
+) -> Instruction {
+    execute_ix_to(pool, relayer, root, action, nf, round, DEFAULT_RECIPIENT)
+}
+
+/// `execute` with an explicit payout recipient account. The recipient here need
+/// not match the one bound in the attestation — that mismatch is exactly the
+/// redirect attack the payout tests check.
+fn execute_ix_to(
+    pool: Pubkey,
+    relayer: &Keypair,
+    root: [u8; 32],
+    action: [u8; 32],
+    nf: [u8; 32],
+    round: u64,
+    recipient: Pubkey,
 ) -> Instruction {
     let mut data = disc("execute").to_vec();
     data.extend_from_slice(&action);
@@ -224,6 +271,8 @@ fn execute_ix(
             AccountMeta::new_readonly(pool, false),
             AccountMeta::new(nullifier_pda(&pool, &nf).0, false),
             AccountMeta::new(relayer.pubkey(), true),
+            AccountMeta::new(vault_pda(&pool).0, false),
+            AccountMeta::new(recipient, false),
             AccountMeta::new_readonly(system_program::ID, false),
             AccountMeta::new_readonly(
                 solana_sdk::sysvar::instructions::ID,
@@ -552,6 +601,7 @@ mod quorum {
                 "commit"
             );
         }
+        fund_vault(&mut svm, &pool);
         svm.expire_blockhash();
         (svm, pool, root)
     }
@@ -614,5 +664,68 @@ mod quorum {
         let e = try_execute(&mut svm, pool, root, [0xA4; 32], &[&a, &outsider])
             .expect_err("outsiders do not count toward the quorum");
         assert!(e.contains("NotEnoughAttestations"), "got: {e}");
+    }
+}
+
+/// The action, made real: `execute` moves a fixed denomination from the shared
+/// vault to the committed recipient. Money moves; the member's key never signs;
+/// the recipient is bound into the attestation so the relayer cannot redirect it.
+mod payout {
+    use super::*;
+
+    fn bal(svm: &LiteSVM, k: &Pubkey) -> u64 {
+        svm.get_account(k).map(|a| a.lamports).unwrap_or(0)
+    }
+
+    #[test]
+    fn execute_pays_the_recipient_from_the_vault() {
+        let (mut svm, _authority, verifier, pool, root) = pool_ready();
+        let relayer = relayer(&mut svm);
+        let action = [7u8; 32];
+        let nf = [0xC1; 32];
+
+        let vault = vault_pda(&pool).0;
+        let vault_before = bal(&svm, &vault);
+        let recipient_before = bal(&svm, &DEFAULT_RECIPIENT);
+
+        let msg = attestation_message(&pool, &root, &action, &nf, 0);
+        let ixs = [
+            ed25519_ix(&verifier, &msg, false),
+            execute_ix(pool, &relayer, root, action, nf, 0),
+        ];
+        send_many(&mut svm, &[&relayer], &ixs).expect("attested execution should pay out");
+
+        assert_eq!(
+            bal(&svm, &DEFAULT_RECIPIENT),
+            recipient_before + PAYOUT,
+            "the recipient received exactly the fixed denomination"
+        );
+        assert_eq!(
+            bal(&svm, &vault),
+            vault_before - PAYOUT,
+            "the vault paid exactly the fixed denomination"
+        );
+    }
+
+    #[test]
+    fn a_relayer_cannot_redirect_the_payout() {
+        let (mut svm, _authority, verifier, pool, root) = pool_ready();
+        let relayer = relayer(&mut svm);
+        let action = [7u8; 32];
+        let nf = [0xC2; 32];
+        let attacker_recipient = Pubkey::new_from_array([0xEE; 32]);
+
+        // The committee attests to the DEFAULT recipient, but the relayer submits an
+        // execute that pays a recipient of its own choosing. The program rebuilds the
+        // message with the attacker's recipient, which no committee member signed.
+        let msg = attestation_message(&pool, &root, &action, &nf, 0); // binds DEFAULT_RECIPIENT
+        let ixs = [
+            ed25519_ix(&verifier, &msg, false),
+            execute_ix_to(pool, &relayer, root, action, nf, 0, attacker_recipient),
+        ];
+        let e = send_many(&mut svm, &[&relayer], &ixs)
+            .expect_err("a redirected payout has no valid attestation");
+        assert!(e.contains("NotEnoughAttestations"), "got: {e}");
+        assert_eq!(bal(&svm, &attacker_recipient), 0, "the attacker received nothing");
     }
 }
