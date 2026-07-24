@@ -15,7 +15,10 @@ use std::collections::HashSet;
 
 use crate::rpc::{fee_payer, provenance_class, system_transfers, Rpc, HUB_THRESHOLD};
 use crate::rng::SplitMix64;
-use crate::{effective_k, evaluate, preflight, scenario, valid_pubkey, SchemeStats, Verdict};
+use crate::{
+    effective_k, evaluate, exposure_rank, preflight, scenario, valid_pubkey, EffectiveK,
+    SchemeStats, Verdict,
+};
 
 /// Privacy Cash — a live Tornado-style SOL pool, the default when none is given.
 const DEFAULT_POOL: &str = "9fhQBbumKEFuXtMBDw8AaQyAjCorLGJQiS3skWZdQyQD";
@@ -36,6 +39,8 @@ pub fn main() {
     match cmd.as_str() {
         "preflight" => cmd_preflight(rest, json),
         "audit" => cmd_audit(rest, json),
+        "scan" => cmd_scan(rest, json),
+        "watch" => cmd_watch(rest, json),
         "trace" => cmd_trace(rest, json),
         "exhibit" => cmd_exhibit(json),
         "help" | "-h" | "--help" => help(),
@@ -90,6 +95,60 @@ fn severity(effective: f64, advertised: usize, worst_case: usize) -> &'static st
     }
 }
 
+/// One pool's measured funding-graph exposure. The unit `audit`, `scan`, and
+/// `watch` all share — a measurement, never an inference.
+struct PoolMeasurement {
+    depositors_sampled: usize,
+    reach_origin: usize,
+    ek: EffectiveK,
+    severity: &'static str,
+}
+
+/// Measure a pool once: sample depositors, trace each one's provenance, and
+/// reduce to effective k. `None` when no depositor crowd was recovered (so the
+/// caller can tell "nothing to measure" from a real result). `verbose` prints the
+/// per-depositor progress that `audit` wants and `scan`/`watch` do not.
+fn measure_pool(
+    rpc: &mut Rpc,
+    pool: &str,
+    n: usize,
+    budget: &mut usize,
+    verbose: bool,
+) -> Option<PoolMeasurement> {
+    let depositors = pool_depositors(rpc, pool, n, budget);
+    if depositors.is_empty() {
+        return None;
+    }
+    if verbose {
+        eprintln!("tracing each one's funding graph...");
+    }
+    let classes: Vec<String> = depositors
+        .iter()
+        .enumerate()
+        .map(|(i, d)| {
+            let c = provenance_class(rpc, d, budget, DEPTH, NODES, FUNDERS, SCAN_TX);
+            if verbose {
+                eprintln!("  [{:>2}/{}] {}", i + 1, depositors.len(), short_class(&c));
+            }
+            c
+        })
+        .collect();
+
+    let mut seen: Vec<(&String, usize)> = Vec::new();
+    for c in &classes {
+        if let Some(e) = seen.iter_mut().find(|(k, _)| *k == c) {
+            e.1 += 1;
+        } else {
+            seen.push((c, 1));
+        }
+    }
+    let reach_origin = classes.iter().filter(|c| *c != "rootless").count();
+    let sizes: Vec<usize> = seen.iter().map(|(_, n)| *n).collect();
+    let ek = effective_k(&sizes);
+    let severity = severity(ek.effective, classes.len(), ek.worst_case);
+    Some(PoolMeasurement { depositors_sampled: classes.len(), reach_origin, ek, severity })
+}
+
 /// Exit cleanly when a live command recovered no data, distinguishing a genuine
 /// empty result from an RPC that could not be reached — because for a privacy
 /// tool a network failure must never be reported as "private".
@@ -119,6 +178,8 @@ fn help() {
          \x20 preflight <wallet> [pool] [n]   the anonymity YOU would get in a pool,\n\
          \x20                                 before you deposit — the one to run first\n\
          \x20 audit     <pool> [n]            a live pool's effective k vs its advertised k\n\
+         \x20 scan      [pool...]             measure many pools, ranked by exposure (worst first)\n\
+         \x20 watch     [pool...] [--interval s]  scan on a loop — the always-on screening agent\n\
          \x20 trace     <wallet>              one wallet's funding provenance, one hop at a time\n\
          \x20 exhibit                         the effective-k metric on riverrun's own\n\
          \x20                                 constructions (offline, no RPC)\n\
@@ -242,35 +303,11 @@ fn cmd_audit(args: &[String], json: bool) {
     let mut budget = 4000;
 
     eprintln!("pool : {pool}\n\nenumerating depositors...");
-    let depositors = pool_depositors(&mut rpc, pool, n, &mut budget);
-    if depositors.is_empty() {
+    let Some(m) = measure_pool(&mut rpc, pool, n, &mut budget, true) else {
         no_data_exit(&rpc, "no depositors recovered: no recent SOL deposits (inactive, or not a SOL pool).");
-    }
-    eprintln!("tracing each one's funding graph...");
-    let classes: Vec<String> = depositors
-        .iter()
-        .enumerate()
-        .map(|(i, d)| {
-            let c = provenance_class(&mut rpc, d, &mut budget, DEPTH, NODES, FUNDERS, SCAN_TX);
-            eprintln!("  [{:>2}/{}] {}", i + 1, depositors.len(), short_class(&c));
-            c
-        })
-        .collect();
-
-    // class sizes for the effective-k metric
-    let mut seen: Vec<(&String, usize)> = Vec::new();
-    for c in &classes {
-        if let Some(e) = seen.iter_mut().find(|(k, _)| *k == c) {
-            e.1 += 1;
-        } else {
-            seen.push((c, 1));
-        }
-    }
-    let rooted = classes.iter().filter(|c| *c != "rootless").count();
-    let sizes: Vec<usize> = seen.iter().map(|(_, n)| *n).collect();
-    let ek = effective_k(&sizes);
-
-    let sev = severity(ek.effective, classes.len(), ek.worst_case);
+    };
+    let PoolMeasurement { depositors_sampled, reach_origin: rooted, ek, severity: sev } = m;
+    let classes_len = depositors_sampled;
 
     if json {
         let obj = serde_json::json!({
@@ -280,11 +317,11 @@ fn cmd_audit(args: &[String], json: bool) {
             "endpoint": rpc.endpoint(),
             "pool": pool,
             "severity": sev,
-            "depositors_sampled": classes.len(),
+            "depositors_sampled": classes_len,
             "reach_origin": rooted,
-            "reach_origin_pct": (100.0 * rooted as f64 / classes.len() as f64),
+            "reach_origin_pct": (100.0 * rooted as f64 / classes_len as f64),
             "provenance_classes": ek.classes,
-            "advertised_k": classes.len(),
+            "advertised_k": classes_len,
             "effective_k": ek.effective,
             "worst_case": ek.worst_case,
             "residual_bits": ek.residual_bits,
@@ -301,10 +338,10 @@ fn cmd_audit(args: &[String], json: bool) {
     println!("\n=== funding-graph exposure of a live anonymity set ===");
     println!("pool                   : {pool}");
     println!("severity               : {}", sev.to_uppercase());
-    println!("depositors sampled     : {}", classes.len());
-    println!("reach an origin        : {rooted}/{} ({:.0}%)", classes.len(), 100.0 * rooted as f64 / classes.len() as f64);
+    println!("depositors sampled     : {classes_len}");
+    println!("reach an origin        : {rooted}/{classes_len} ({:.0}%)", 100.0 * rooted as f64 / classes_len as f64);
     println!("provenance classes     : {}", ek.classes);
-    println!("advertised k           : {}  ->  effective k : {:.1}  (worst case {})", classes.len(), ek.effective, ek.worst_case);
+    println!("advertised k           : {}  ->  effective k : {:.1}  (worst case {})", classes_len, ek.effective, ek.worst_case);
     println!(
         "\nAdvertised anonymity counts members. Effective k is what those members are\n\
          worth once an adversary sorts them by funding provenance. A floor: bounded\n\
@@ -314,6 +351,155 @@ fn cmd_audit(args: &[String], json: bool) {
         println!("WARNING: {} RPC call(s) failed — this is a partial floor, not the full picture.", rpc.failures);
     }
     println!("(RPC calls: {}, failures: {})", rpc.calls, rpc.failures);
+}
+
+// --- scan / watch (the autonomous screening agent) --------------------------
+
+/// Depositors sampled per pool in a multi-pool sweep — smaller than a single
+/// `audit`, because breadth over many pools matters more than depth on one.
+const SCAN_N: usize = 12;
+
+/// Positional pool addresses from args, ignoring flags and the value that
+/// follows `--interval`. Defaults to the built-in pool when none are given.
+fn pools_from_args(args: &[String]) -> Vec<String> {
+    let mut pools = Vec::new();
+    let mut skip_next = false;
+    for a in args {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        if a == "--interval" {
+            skip_next = true;
+            continue;
+        }
+        if a.starts_with("--") {
+            continue;
+        }
+        pools.push(a.clone());
+    }
+    if pools.is_empty() {
+        vec![DEFAULT_POOL.to_string()]
+    } else {
+        pools
+    }
+}
+
+fn arg_value(args: &[String], flag: &str) -> Option<String> {
+    args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).cloned()
+}
+
+/// Measure every pool, rank by exposure (worst first), and report. Unmeasured
+/// pools are listed but never counted as private — a pool we could not reach or
+/// that has no crowd is not a safe pool, it is an unknown one.
+fn run_scan(pools: &[String], json: bool) {
+    let mut rpc = Rpc::new();
+    let mut ranked: Vec<(String, PoolMeasurement, usize)> = Vec::new();
+    let mut unmeasured: Vec<(String, usize)> = Vec::new();
+    for p in pools {
+        eprintln!("scanning {p} ...");
+        let f0 = rpc.failures;
+        let mut budget = 2500;
+        match measure_pool(&mut rpc, p, SCAN_N, &mut budget, false) {
+            Some(m) => ranked.push((p.clone(), m, rpc.failures - f0)),
+            None => unmeasured.push((p.clone(), rpc.failures - f0)),
+        }
+    }
+    ranked.sort_by(|a, b| {
+        exposure_rank(a.1.severity, a.1.ek.effective)
+            .partial_cmp(&exposure_rank(b.1.severity, b.1.ek.effective))
+            .unwrap()
+    });
+
+    if json {
+        let rows: Vec<serde_json::Value> = ranked
+            .iter()
+            .enumerate()
+            .map(|(i, (p, m, f))| {
+                serde_json::json!({
+                    "rank": i + 1,
+                    "pool": p,
+                    "severity": m.severity,
+                    "advertised_k": m.depositors_sampled,
+                    "effective_k": m.ek.effective,
+                    "worst_case": m.ek.worst_case,
+                    "reach_origin": m.reach_origin,
+                    "reliable": *f == 0,
+                    "rpc_failures": f,
+                })
+            })
+            .collect();
+        let un: Vec<serde_json::Value> = unmeasured
+            .iter()
+            .map(|(p, f)| {
+                serde_json::json!({
+                    "pool": p,
+                    "measured": false,
+                    "reason": if *f > 0 { "rpc_unreachable" } else { "no_deposit_crowd" },
+                    "rpc_failures": f,
+                })
+            })
+            .collect();
+        let obj = serde_json::json!({
+            "tool": "riverrun",
+            "version": env!("CARGO_PKG_VERSION"),
+            "command": "scan",
+            "endpoint": rpc.endpoint(),
+            "pools_scanned": pools.len(),
+            "ranked": rows,
+            "unmeasured": un,
+            "is_floor": true,
+        });
+        println!("{}", serde_json::to_string_pretty(&obj).unwrap());
+        return;
+    }
+
+    println!("\n=== exposure ranking — most exposed first ===");
+    println!("{:>2}  {:<8}  {:>7}  {:>5}  {:>5}  pool", "#", "severity", "eff-k", "adv-k", "worst");
+    println!("{}", "-".repeat(74));
+    for (i, (p, m, f)) in ranked.iter().enumerate() {
+        let flag = if *f > 0 { "  (partial)" } else { "" };
+        println!(
+            "{:>2}  {:<8}  {:>7.1}  {:>5}  {:>5}  {}{}",
+            i + 1, m.severity, m.ek.effective, m.depositors_sampled, m.ek.worst_case, p, flag
+        );
+    }
+    for (p, f) in &unmeasured {
+        let why = if *f > 0 { "RPC unreachable — NOT counted as private" } else { "no deposit crowd to measure" };
+        println!(" -  {:<8}  {:>7}  {:>5}  {:>5}  {}  [{}]", "unknown", "-", "-", "-", p, why);
+    }
+    println!(
+        "\nA floor: bounded, SOL-only traces. 'critical' = at least one member alone in its\n\
+         provenance class. Unmeasured pools are unknown, never private."
+    );
+}
+
+fn cmd_scan(args: &[String], json: bool) {
+    let pools = pools_from_args(args);
+    for p in &pools {
+        require_pubkey("pool", p);
+    }
+    run_scan(&pools, json);
+}
+
+fn cmd_watch(args: &[String], json: bool) {
+    let pools = pools_from_args(args);
+    for p in &pools {
+        require_pubkey("pool", p);
+    }
+    let interval: u64 = arg_value(args, "--interval").and_then(|s| s.parse().ok()).unwrap_or(300);
+    eprintln!(
+        "riverrun watch — screening {} pool(s) every {interval}s. Every pass is a fresh\n\
+         measurement, never a cached inference. Ctrl-C to stop.",
+        pools.len()
+    );
+    let mut pass = 1u64;
+    loop {
+        eprintln!("\n════ pass {pass} ════");
+        run_scan(&pools, json);
+        pass += 1;
+        std::thread::sleep(std::time::Duration::from_secs(interval));
+    }
 }
 
 // --- trace ------------------------------------------------------------------

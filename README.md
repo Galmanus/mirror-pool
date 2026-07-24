@@ -261,6 +261,35 @@ an admitted member re-verifies the round's anonymity themselves, trusting nothin
 agent said. Not "don't act" — "act in *this* crowd, and here is the proof it is
 private." **[docs/COORDINATOR.md](docs/COORDINATOR.md)**.
 
+## The autonomous agent: `scan` and `watch`
+
+The coordinator is the brain; `watch` is the body that keeps it fed with fresh
+measurements. `scan` sweeps many pools at once and **ranks them by exposure, worst
+first**; `watch` runs that sweep on a loop — the always-on anonymity screener.
+
+```bash
+riverrun scan  <pool> <pool> ...              # one ranked sweep
+riverrun watch <pool> ... --interval 300      # screen forever, every 5 min
+```
+
+```console
+$ riverrun scan <poolA> <poolB> <poolC>
+=== exposure ranking — most exposed first ===
+ #  severity     eff-k  adv-k  worst  pool
+--------------------------------------------------------------------------
+ 1  critical       1.3     12      1  <poolA>
+ 2  high           4.8     12      2  <poolB>
+ 3  low           11.1     12      9  <poolC>
+ -  unknown          -      -      -  <poolD>  [RPC unreachable — NOT counted as private]
+```
+
+The discipline is one rule, and it is the whole reason to trust the output: **a claim
+is a measured trace, never an inference.** A pool the agent could not reach or could
+not measure is listed as **unknown, never private** — a network failure must never
+read as anonymity. Every pass is a fresh measurement, because the funding graph moves
+and a cached number is a lie waiting to happen. The full doctrine — read-only, never
+signs, never names a person, precision-first — is in **[AGENT.md](AGENT.md)**.
+
 ---
 
 ## Who this is for

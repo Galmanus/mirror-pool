@@ -112,6 +112,20 @@ pub fn effective_k(class_sizes: &[usize]) -> EffectiveK {
     }
 }
 
+/// Sort key for ranking pools by exposure, worst first: a severity bucket, then
+/// lower effective k. An ascending sort on this tuple puts the most-exposed pool
+/// at the top of a `scan`. Pure, so the scanner's ordering is testable offline.
+pub fn exposure_rank(severity: &str, effective_k: f64) -> (u8, f64) {
+    let bucket = match severity {
+        "critical" => 0,
+        "high" => 1,
+        "medium" => 2,
+        "low" => 3,
+        _ => 4,
+    };
+    (bucket, effective_k)
+}
+
 /// Whether `s` is a syntactically valid Solana address: base58 that decodes to
 /// exactly 32 bytes. Dependency-free so the pure library keeps no crates, and
 /// used by the CLI to reject typos *before* spending RPC calls that would come
@@ -221,6 +235,22 @@ pub fn preflight<K: PartialEq>(user_class: &K, population: &[K]) -> Preflight {
     };
 
     Preflight { personal_k, advertised_k, pool_effective_k, verdict }
+}
+
+#[cfg(test)]
+mod exposure_rank_tests {
+    use super::exposure_rank;
+
+    #[test]
+    fn critical_outranks_high_even_with_larger_k() {
+        // worst-first: a critical pool sorts ahead of a high one no matter the k.
+        assert!(exposure_rank("critical", 9.0) < exposure_rank("high", 1.0));
+    }
+
+    #[test]
+    fn within_a_bucket_lower_effective_k_is_more_exposed() {
+        assert!(exposure_rank("high", 2.0) < exposure_rank("high", 8.0));
+    }
 }
 
 #[cfg(test)]
