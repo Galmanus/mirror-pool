@@ -11,7 +11,7 @@
 
 [![Rust](https://img.shields.io/badge/Rust-end%20to%20end-000000?logo=rust)](https://www.rust-lang.org)
 [![Solana](https://img.shields.io/badge/Solana-SBF%20program-14F195?logo=solana&logoColor=black)](https://solana.com/privacy)
-[![tests](https://img.shields.io/badge/tests-94%20green-4c1)](#workspace)
+[![tests](https://img.shields.io/badge/tests-99%20green-4c1)](#workspace)
 [![clippy](https://img.shields.io/badge/clippy-D%20warnings%20clean-4c1)](https://github.com/rust-lang/rust-clippy)
 [![post-quantum](https://img.shields.io/badge/STARK-post--quantum%2C%20no%20setup-8A2BE2)](#why-post-quantum-and-transparent)
 [![license](https://img.shields.io/badge/license-MIT-blue)](#license)
@@ -315,7 +315,7 @@ for.
 | **Circle STARK** ([murkl](https://github.com/exidz/murkl)) | transfers, in anonymous pools | yes, ~31k CU, ~8.7 KB proof | no | yes |
 | **MPC / FHE** ([Arcium](https://www.arcium.com/), Umbra) | shared encrypted state, balances, amounts | via the MXE network | no | depends on the primitive |
 | **Confidential Transfers** (Token-2022) | amounts and balances | native, protocol level | no | no (ElGamal) |
-| **riverrun** | the **actor↔action link** — who did it, not what or how much | **no**, a named verifier attests | no | yes (hash-based) |
+| **riverrun** | the **actor↔action link** — who did it, not what or how much | **no**, an M-of-N committee attests | no | yes (hash-based) |
 
 Efficiency cuts both ways and it is worth being exact about which way. On
 **verification compute**, a small-field STARK is the cheapest thing on this list:
@@ -357,7 +357,7 @@ programs/mirror-pool/Cargo.toml --example devnet_demo`.
 | `riverrun-core` | the post-quantum primitives and the membership *relation* (commitment, Merkle set, nullifier). Specification only — nothing here proves anything | 19 tests |
 | `riverrun-eval` | adversarial harness for the behavioral channel — clustering attacker → chance | 4 tests + exhibit |
 | `riverrun-trace` | the `provenance-tracer`: backward funding-graph adversary + circularity defense + live-mainnet adapter | 7 tests + 2 exhibits |
-| `programs/mirror-pool` | the on-chain Solana program: commitment accumulator, per-round nullifier registry (PDA-per-nullifier anti-replay), published root, verifier-attested settlement, entry fee + anonymity-set floor | builds to `.so`; 10 e2e tests green; **deployed + exercised live on devnet** (that deployment predates the attestation change) |
+| `programs/mirror-pool` | the on-chain Solana program: commitment accumulator, per-round nullifier registry (PDA-per-nullifier anti-replay), published root, verifier-attested settlement, entry fee + anonymity-set floor | builds to `.so`; 15 e2e tests green (10 committee-of-one for back-compat + 5 M-of-N quorum); **deployed + exercised live on devnet** (that deployment predates the committee change) |
 | `crates/riverrun-stark` | the post-quantum, transparent **STARK proving the whole relation** — membership, nullifier and action in one proof (Rescue-Prime + FRI, no trusted setup) — plus the ricorso primitives and relation | 23 tests green (excluded — pulls Winterfell) |
 | `crates/riverrun-pool-zk` | **the** pool: commit → execute → settle driven by the STARK. `Execution` carries an opaque proof + public data only, never the secret | 7 tests + demo (excluded — pulls Winterfell) |
 
@@ -394,7 +394,7 @@ cargo test --manifest-path crates/riverrun-stark/Cargo.toml                # STA
 cargo test --manifest-path crates/riverrun-pool-zk/Cargo.toml              # the pool driven by the STARK
 ```
 
-**94 tests green** in total: 50 host + 23 STARK + 7 pool-zk + 10 on-chain e2e.
+**99 tests green** in total: 50 host + 27 STARK + 7 pool-zk + 15 on-chain e2e.
 
 ## Security status & honest limitations
 
@@ -431,15 +431,19 @@ below is a trust assumption rather than a proof.
 >    action is a public input of the same proof, so a member executes the intent
 >    they registered and not another. Public inputs are
 >    `{root, nullifier, round, action}`.
-> 2. **On-chain, `execute` now requires a named verifier's attestation — but it
->    still does not verify the proof itself.** The pool names a `verifier` key, and
->    an execution must carry that key's Ed25519 signature (checked through the
+> 2. **On-chain, `execute` requires an M-of-N verifier *committee* attestation —
+>    but it still does not verify the proof itself.** The pool names a **committee**
+>    of verifier keys and a threshold **M**, and an execution must carry Ed25519
+>    signatures from at least M **distinct** committee members (checked through the
 >    native sigverify precompile and instruction introspection) over exactly the
 >    `(pool, root, action, nullifier, round)` being settled, where `root` must be
 >    the one the authority published for the round. An arbitrary signer can no
 >    longer settle an action, and a watcher can no longer front-run a nullifier out
->    of the mempool. **This is a named trust assumption, not soundness:** a
->    dishonest verifier can attest to a membership proof that does not exist.
+>    of the mempool. **This is a named, quorum-bounded trust assumption, not
+>    soundness:** a false attestation now requires **M colluding verifiers**, not
+>    one. This is the Wake's Four (Mamalujo) — the annalists who judge as a quorum,
+>    none authoritative alone — read out of the book and built
+>    ([docs/FINNEGANS_WAKE_STUDY.md](docs/FINNEGANS_WAKE_STUDY.md)).
 >
 >    Why not verify on-chain — and the honest correction. An earlier version of
 >    this README said on-chain STARK verification does not fit on Solana. **That

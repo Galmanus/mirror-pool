@@ -107,7 +107,7 @@ book is a circle. It is written in a dream-language where every word carries man
 meanings at once, and it runs on Giambattista Vico's theory that history moves in
 cycles that return to their start; the pun ``a commodius vicus of recirculation''
 hides Vico's name. Its river, Anna Livia, flows to the sea and comes back as rain.
-We did not choose the name for the poetry. Three of the book's ideas turn out to
+We did not choose the name for the poetry. Several of the book's ideas turn out to
 be load-bearing, and each is cashed out as a number or a construction later:
 \begin{itemize}[leftmargin=1.2em,itemsep=0.1em,topsep=0.2em]
 \item \textbf{A circle has no beginning.} The book's core structural fact --- no
@@ -127,6 +127,11 @@ and everyone --- an identity dissolved into the crowd, which is what an anonymit
 set is. \emph{Disanalogy:} HCE is a single dream-figure who is everyone, whereas
 here there are many real members and the cryptography makes which one acted
 genuinely undefined, not merely hard to guess.
+\item \textbf{The Four.} The recurring quartet Mamalujo --- judges, observers,
+inquisitors --- is never authoritative in any single one of them; truth is what
+enough of them agree on. Read across the whole book, this prescribes the on-chain
+fix of Section~\ref{sec:fw}: replace the single settlement verifier with an
+$M$-of-$N$ committee, so a false attestation needs $M$ colluding signers, not one.
 \end{itemize}
 \end{intuition}
 
@@ -677,6 +682,39 @@ carries only the histogram, never member identities: it proves the crowd meets t
 floor without revealing who is in which class, so it is itself privacy-preserving.
 \end{honest}
 
+% ===================== 8b. THE FOUR =====================
+\section{What the whole book prescribes: the Four}
+\label{sec:fw}
+
+Three of the insights above are numbers already: circularity, ambiguity, ricorso.
+A fourth comes not from one image but from the structure that recurs across the
+\emph{entire} book, and it is a claim about \emph{verification}, so it belongs here,
+next to the on-chain reality.
+
+Read start to end, \emph{Finnegans Wake} keeps returning to \textbf{the Four} ---
+Mamalujo, the four old men, drawn from the Four Masters who compiled the \emph{Annals
+of Ireland}. They appear as judges at HCE's trial, as four observers watching from
+the four corners, and as inquisitors questioning the sleeping Yawn. In every
+appearance they are senile and they \emph{contradict each other}; Joyce never lets a
+single one of them be authoritative. When a truth appears at all, it is what enough of
+the Four agree on. The book's most structurally strange chapter (the Night Lessons)
+enacts the same thing on the page: a central text flanked by independent margins that
+mock and correct it. One voice speaking alone is exactly what the book refuses.
+
+That is a prescription, and \river's deployed program had exactly the weakness it
+answers. Settlement trusted \emph{one} named verifier's signature, so one dishonest
+verifier could attest to a proof that does not exist. We replaced it with the Four:
+the pool names a committee of $N$ verifier keys and a threshold $M$, and \texttt{execute}
+requires signatures from at least $M$ \emph{distinct} committee members over the same
+tuple, none authoritative alone. A false attestation now costs $M$ colluding
+verifiers, not one. It is a bounded, real change to the on-chain program --- the code
+already checked one Ed25519 signature through instruction introspection; the committee
+generalizes that to a distinct-signer quorum --- and it is covered by five on-chain
+tests: a $2$-of-$3$ quorum settles, one vote alone does not, a member signing twice
+still counts once, and an outsider's signature does not count. This is the one insight
+from studying the whole book, rather than a single line of it, that crossed from the
+page into the program.
+
 % ===================== 9. COST =====================
 \section{Cost, and the on-chain reality}
 \label{sec:cost}
@@ -729,16 +767,20 @@ both proof and cost. Porting to a small field is the concrete roadmap, a field c
 not a possibility proof.
 
 \begin{honest}
-Until that port, the deployed program does not verify the proof. Rather than leave
-that implicit, it makes the trust explicit and bounded: the pool names a
-\emph{verifier} key, and an execution must carry that key's signature over exactly the
+Until that port, the deployed program does not verify the proof itself. Rather than
+leave that implicit, it makes the trust explicit, bounded, and \emph{distributed}: the
+pool names a committee of $N$ verifier keys and a threshold $M$, and an execution must
+carry at least $M$ signatures from \emph{distinct} committee members over exactly the
 tuple being settled, checked through the runtime's signature precompile. This removes
 the two cheap attacks --- an arbitrary signer settling an action, a watcher
-front-running a nullifier --- because neither can produce the verifier's signature. It
-does \emph{not} remove trust: a dishonest verifier can attest to a proof that does not
-exist. It is a named assumption, and the roadmap above is how it goes away. The
-program also prices a seat (an entry fee) and refuses to settle below an anonymity
-floor --- anti-Sybil that is honestly ``priced, not prevented'', with the stronger
+front-running a nullifier --- because none can produce a committee member's signature.
+It does \emph{not} remove trust, but it prices it: a false attestation now requires
+$M$ colluding verifiers, not one. This is the Wake's Four (Mamalujo) --- judges,
+observers, inquisitors, no single one of them ever authoritative --- read out of the
+book and built as $M$-of-$N$ threshold attestation (\S\ref{sec:fw}); it is covered by
+five on-chain tests, and the roadmap above is how the trust goes to zero. The program
+also prices a seat (an entry fee) and refuses to settle below an anonymity floor ---
+anti-Sybil that is honestly ``priced, not prevented'', with the stronger
 one-nullifier-per-verifier construction \cite{selfcred} named as the real fix.
 \end{honest}
 
@@ -765,8 +807,8 @@ public here (hiding them is a separate, composable problem). The value layer of
 consensus: the ledger records that value moved one way, and no circularity changes
 that; the circularity lives on the attribution layer an analyst reads, not the
 settlement layer consensus enforces. And, in the deployed program today, the
-correctness of the membership proof, delegated to a named verifier until on-chain
-verification lands. Every number in this paper is stated against this adversary.
+correctness of the membership proof, delegated to a named verifier committee
+(threshold $M$-of-$N$) until on-chain verification lands. Every number in this paper is stated against this adversary.
 
 % ===================== 11. WHAT DOES NOT HOLD =====================
 \section{What does not hold yet}
@@ -780,8 +822,9 @@ does not yet do:
 \item \textbf{It is not formally zero-knowledge.} The prover does not randomize the
       witness, so the honest claim is ``the secret is not on the wire'', checked
       empirically.
-\item \textbf{Verification is off-chain today}, behind the named-verifier
-      attestation; the measured cost and the M31 path are how that changes.
+\item \textbf{Verification is off-chain today}, behind the $M$-of-$N$ committee
+      attestation (\S\ref{sec:fw}); the measured cost and the M31 path are how that
+      changes.
 \item \textbf{Security parameters are example-grade}, roughly $84$ bits, not the
       $128$ a deployment needs.
 \item \textbf{``Rootless'' provenance is conditional}: the circularity holds only

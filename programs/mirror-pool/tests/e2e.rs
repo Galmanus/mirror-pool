@@ -142,12 +142,12 @@ fn commit_ix(pool: Pubkey, committer: &Keypair, commitment: [u8; 32]) -> Instruc
 
 fn pool_member_count(svm: &LiteSVM, pool: &Pubkey) -> u32 {
     let data = svm.get_account(pool).unwrap().data;
-    u32::from_le_bytes(data[148..152].try_into().unwrap())
+    u32::from_le_bytes(data[153..157].try_into().unwrap())
 }
 
 fn pool_round(svm: &LiteSVM, pool: &Pubkey) -> u64 {
     let data = svm.get_account(pool).unwrap().data;
-    u64::from_le_bytes(data[152..160].try_into().unwrap())
+    u64::from_le_bytes(data[157..165].try_into().unwrap())
 }
 
 /// An initialized pool with a published root and enough members to clear the
@@ -166,7 +166,9 @@ fn pool_ready_with(members: u32) -> (LiteSVM, Keypair, Keypair, Pubkey, [u8; 32]
     let root = [0x5A; 32];
 
     let mut data = disc("initialize").to_vec();
+    data.extend_from_slice(&1u32.to_le_bytes()); // committee: Vec len = 1
     data.extend_from_slice(verifier.pubkey().as_ref());
+    data.push(1); // threshold = 1 (a committee of one is the old single-verifier case)
     data.extend_from_slice(&ENTRY_FEE.to_le_bytes());
     data.extend_from_slice(&K_MIN.to_le_bytes());
     let ix = Instruction {
@@ -343,7 +345,7 @@ mod attestation {
             ],
         )
         .expect_err("only a self-contained sigverify instruction may attest");
-        assert!(err.contains("AttestationMismatch"), "got: {err}");
+        assert!(err.contains("NotEnoughAttestations"), "got: {err}");
     }
 
     #[test]
@@ -357,7 +359,7 @@ mod attestation {
             &[execute_ix(pool, &relayer, root, [7u8; 32], [0xAB; 32], 0)],
         )
         .expect_err("an unattested execution must be rejected");
-        assert!(err.contains("MissingAttestation"), "got: {err}");
+        assert!(err.contains("NotEnoughAttestations"), "got: {err}");
     }
 
     #[test]
@@ -377,7 +379,7 @@ mod attestation {
             ],
         )
         .expect_err("only the pool's named verifier may attest");
-        assert!(err.contains("UnknownVerifier"), "got: {err}");
+        assert!(err.contains("NotEnoughAttestations"), "got: {err}");
     }
 
     #[test]
@@ -398,7 +400,7 @@ mod attestation {
             ],
         )
         .expect_err("the attestation must bind the nullifier it settles");
-        assert!(err.contains("AttestationMismatch"), "got: {err}");
+        assert!(err.contains("NotEnoughAttestations"), "got: {err}");
     }
 
     #[test]
@@ -498,4 +500,119 @@ fn full_lifecycle() {
     };
     assert!(send(&mut svm, &[&authority], ix), "advance_round should succeed");
     assert_eq!(pool_round(&svm, &pool), 1, "round advanced to 1");
+}
+
+/// The Four (Mamalujo) as a verifier committee: M-of-N threshold attestation.
+/// "Impassable tissue of improbable liyers" (FW III.4) — no single verifier is
+/// trusted; a quorum of distinct committee members must attest.
+mod quorum {
+    use super::*;
+
+    /// A pool with an N-member committee, threshold M, root published, K_MIN members.
+    fn committee_pool(committee: &[&Keypair], threshold: u8) -> (LiteSVM, Pubkey, [u8; 32]) {
+        let (mut svm, authority) = load();
+        let (pool, _) = pool_pda(&authority.pubkey());
+        let root = [0x5A; 32];
+
+        let mut data = disc("initialize").to_vec();
+        data.extend_from_slice(&(committee.len() as u32).to_le_bytes());
+        for v in committee {
+            data.extend_from_slice(v.pubkey().as_ref());
+        }
+        data.push(threshold);
+        data.extend_from_slice(&ENTRY_FEE.to_le_bytes());
+        data.extend_from_slice(&K_MIN.to_le_bytes());
+        let ix = Instruction {
+            program_id: PROGRAM_ID,
+            accounts: vec![
+                AccountMeta::new(pool, false),
+                AccountMeta::new(authority.pubkey(), true),
+                AccountMeta::new_readonly(system_program::ID, false),
+            ],
+            data,
+        };
+        assert!(send(&mut svm, &[&authority], ix), "initialize committee");
+
+        let mut d = disc("publish_root").to_vec();
+        d.extend_from_slice(&root);
+        let ix = Instruction {
+            program_id: PROGRAM_ID,
+            accounts: vec![
+                AccountMeta::new(pool, false),
+                AccountMeta::new_readonly(authority.pubkey(), true),
+            ],
+            data: d,
+        };
+        assert!(send(&mut svm, &[&authority], ix), "publish_root");
+
+        for i in 0..K_MIN {
+            svm.expire_blockhash();
+            assert!(
+                send(&mut svm, &[&authority], commit_ix(pool, &authority, [(i + 1) as u8; 32])),
+                "commit"
+            );
+        }
+        svm.expire_blockhash();
+        (svm, pool, root)
+    }
+
+    /// Attempt an execution carrying one ed25519 attestation per signer in `signers`.
+    fn try_execute(
+        svm: &mut LiteSVM,
+        pool: Pubkey,
+        root: [u8; 32],
+        nf: [u8; 32],
+        signers: &[&Keypair],
+    ) -> Result<(), String> {
+        let relayer = relayer(svm);
+        let action = [7u8; 32];
+        let msg = attestation_message(&pool, &root, &action, &nf, 0);
+        let mut ixs: Vec<Instruction> = signers.iter().map(|k| ed25519_ix(k, &msg, false)).collect();
+        ixs.push(execute_ix(pool, &relayer, root, action, nf, 0));
+        send_many(svm, &[&relayer], &ixs)
+    }
+
+    #[test]
+    fn a_quorum_of_two_of_three_settles() {
+        let (a, b, c) = (Keypair::new(), Keypair::new(), Keypair::new());
+        let (mut svm, pool, root) = committee_pool(&[&a, &b, &c], 2);
+        try_execute(&mut svm, pool, root, [0xA1; 32], &[&a, &b]).expect("two of three is a quorum");
+    }
+
+    #[test]
+    fn all_three_also_settles() {
+        let (a, b, c) = (Keypair::new(), Keypair::new(), Keypair::new());
+        let (mut svm, pool, root) = committee_pool(&[&a, &b, &c], 2);
+        try_execute(&mut svm, pool, root, [0xA5; 32], &[&a, &b, &c]).expect("above quorum is fine");
+    }
+
+    #[test]
+    fn one_of_three_is_below_quorum() {
+        let (a, b, c) = (Keypair::new(), Keypair::new(), Keypair::new());
+        let (mut svm, pool, root) = committee_pool(&[&a, &b, &c], 2);
+        let e = try_execute(&mut svm, pool, root, [0xA2; 32], &[&a])
+            .expect_err("one signature is below the threshold");
+        assert!(e.contains("NotEnoughAttestations"), "got: {e}");
+    }
+
+    #[test]
+    fn one_member_signing_twice_does_not_make_a_quorum() {
+        let (a, b, c) = (Keypair::new(), Keypair::new(), Keypair::new());
+        let (mut svm, pool, root) = committee_pool(&[&a, &b, &c], 2);
+        // `a` attests twice; still one distinct committee member, so below threshold
+        let e = try_execute(&mut svm, pool, root, [0xA3; 32], &[&a, &a])
+            .expect_err("a duplicate signer counts once");
+        assert!(e.contains("NotEnoughAttestations"), "got: {e}");
+    }
+
+    #[test]
+    fn an_outsider_signature_does_not_count() {
+        let (a, b, c) = (Keypair::new(), Keypair::new(), Keypair::new());
+        let outsider = Keypair::new();
+        let (mut svm, pool, root) = committee_pool(&[&a, &b, &c], 2);
+        // one committee member + one outsider = one valid vote, below threshold
+        let e = try_execute(&mut svm, pool, root, [0xA4; 32], &[&a, &outsider])
+            .expect_err("outsiders do not count toward the quorum");
+        assert!(e.contains("NotEnoughAttestations"), "got: {e}");
+    }
 }

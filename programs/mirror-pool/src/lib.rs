@@ -28,20 +28,22 @@
 //! side of that trade, and makes the trust **explicit and bounded** instead of
 //! implicit:
 //!
-//! - the pool names a **verifier** key;
-//! - `execute` requires an Ed25519 signature from that key, checked through the
-//!   native sigverify precompile and instruction introspection, over exactly the
-//!   `(pool, root, action, nullifier, round)` being settled;
-//! - the root in that attestation must equal the root the authority published for
-//!   this round.
+//! - the pool names a **committee** of verifier keys and a **threshold** M;
+//! - `execute` requires Ed25519 signatures from at least M **distinct** committee
+//!   members, checked through the native sigverify precompile and instruction
+//!   introspection, over exactly the `(pool, root, action, nullifier, round)`
+//!   being settled;
+//! - the root in those attestations must equal the root the authority published
+//!   for this round.
 //!
 //! What that buys: an arbitrary signer can no longer settle an action, and a
 //! watcher can no longer front-run a nullifier out of the mempool, because
-//! neither can produce the verifier's signature over their own tuple. What it
-//! does **not** buy: soundness. A dishonest verifier can attest to a membership
-//! proof that does not exist. This is a named trust assumption, not a proof — and
-//! the root is *published* rather than computed here because the canonical tree
-//! is Rescue-Prime, whose inverse S-box is not something to run on-chain.
+//! neither can produce a committee signature over their own tuple. What it does
+//! **not** buy: soundness. But a false attestation now requires **M colluding
+//! verifiers**, not one --- the Wake's Four, generalized to M-of-N (see
+//! `verify_quorum`). This is a named, quorum-bounded trust assumption, not a
+//! proof --- and the root is *published* rather than computed here because the
+//! canonical tree is Rescue-Prime, whose inverse S-box is not for on-chain.
 
 use anchor_lang::prelude::*;
 use solana_instructions_sysvar::{load_current_index_checked, load_instruction_at_checked};
@@ -61,6 +63,10 @@ const ED25519_PUBKEY_OFFSET: usize = ED25519_HEADER_LEN;
 const ED25519_SIGNATURE_OFFSET: usize = ED25519_PUBKEY_OFFSET + 32;
 const ED25519_MESSAGE_OFFSET: usize = ED25519_SIGNATURE_OFFSET + 64;
 
+/// Cap on the size of the verifier committee. Named for the Wake's Four Old Men
+/// (Mamalujo), who judge as a quorum and never as one; generalized to M-of-N.
+const MAX_VERIFIERS: usize = 8;
+
 declare_id!("BFy2ehVxpBrtwMCWwufpfbbsoWtZVYVaZBzDE2eAG7az");
 
 #[program]
@@ -71,13 +77,16 @@ pub mod riverrun_program {
     /// attestation every execution must carry.
     pub fn initialize(
         ctx: Context<Initialize>,
-        verifier: Pubkey,
+        verifiers: Vec<Pubkey>,
+        threshold: u8,
         entry_fee: u64,
         k_min: u32,
     ) -> Result<()> {
+        validate_committee(&verifiers, threshold)?;
         let pool = &mut ctx.accounts.pool;
         pool.authority = ctx.accounts.authority.key();
-        pool.verifier = verifier;
+        pool.verifiers = verifiers;
+        pool.threshold = threshold;
         pool.entry_fee = entry_fee;
         pool.k_min = k_min;
         pool.accumulator = [0u8; 32];
@@ -88,10 +97,18 @@ pub mod riverrun_program {
         Ok(())
     }
 
-    /// Rotate the verifier key. Authority-gated — a compromised verifier can
-    /// attest to executions that were never proven, so this is the recovery path.
-    pub fn set_verifier(ctx: Context<AdvanceRound>, verifier: Pubkey) -> Result<()> {
-        ctx.accounts.pool.verifier = verifier;
+    /// Replace the verifier committee and threshold. Authority-gated — a
+    /// compromised verifier can attest to executions that were never proven, so
+    /// rotating the committee is the recovery path. Requiring a quorum means one
+    /// compromised member is no longer enough.
+    pub fn set_committee(
+        ctx: Context<AdvanceRound>,
+        verifiers: Vec<Pubkey>,
+        threshold: u8,
+    ) -> Result<()> {
+        validate_committee(&verifiers, threshold)?;
+        ctx.accounts.pool.verifiers = verifiers;
+        ctx.accounts.pool.threshold = threshold;
         Ok(())
     }
 
@@ -171,9 +188,10 @@ pub mod riverrun_program {
         require!(pool.membership_root != [0u8; 32], PoolError::RootNotPublished);
         require!(root == pool.membership_root, PoolError::RootMismatch);
 
-        verify_attestation(
+        verify_quorum(
             &ctx.accounts.instructions,
-            &pool.verifier,
+            &pool.verifiers,
+            pool.threshold,
             &attestation_message(&pool.key(), &root, &action_hash, &nullifier, round),
         )?;
 
@@ -218,49 +236,98 @@ fn attestation_message(
     m
 }
 
-/// Require that the transaction carries, immediately before this instruction, a
-/// native Ed25519 sigverify instruction for `verifier` over `expected`.
+/// Validate a committee declaration: at least one verifier, no more than the cap,
+/// a threshold in `1..=N`, and no duplicate keys.
+fn validate_committee(verifiers: &[Pubkey], threshold: u8) -> Result<()> {
+    let n = verifiers.len();
+    require!((1..=MAX_VERIFIERS).contains(&n), PoolError::InvalidCommittee);
+    require!(threshold >= 1 && (threshold as usize) <= n, PoolError::InvalidCommittee);
+    for i in 0..n {
+        for j in (i + 1)..n {
+            require_keys_neq!(verifiers[i], verifiers[j], PoolError::InvalidCommittee);
+        }
+    }
+    Ok(())
+}
+
+/// If `ix` is a self-contained native Ed25519 sigverify instruction over exactly
+/// `expected`, return the signer's public key bytes; otherwise `None`.
 ///
 /// The signature itself is checked by the precompile, not here: if the runtime
-/// executes the transaction at all, the signature is valid. What is checked here
-/// is that the precompile was asked about *this* key and *this* message, and that
-/// the key and message live inside the sigverify instruction's own data
-/// (index `0xFFFF`) rather than being read from elsewhere in the transaction.
-fn verify_attestation(
+/// executes the transaction, the signature is valid. What is checked is that the
+/// precompile was asked about *this* message, and that the key and message live
+/// inside the sigverify instruction's own data (source index `0xFFFF`) rather than
+/// being read from elsewhere in the transaction.
+fn attestation_signer(
+    ix: &anchor_lang::solana_program::instruction::Instruction,
+    expected: &[u8; ATTESTATION_LEN],
+) -> Option<[u8; 32]> {
+    if ix.program_id != ed25519_program::ID {
+        return None;
+    }
+    let data = &ix.data;
+    if data.len() != ED25519_MESSAGE_OFFSET + ATTESTATION_LEN {
+        return None;
+    }
+    if data[0] != 1 || data[1] != 0 {
+        return None;
+    }
+    let field = |at: usize| u16::from_le_bytes([data[at], data[at + 1]]);
+    let self_contained = field(2) as usize == ED25519_SIGNATURE_OFFSET
+        && field(6) as usize == ED25519_PUBKEY_OFFSET
+        && field(10) as usize == ED25519_MESSAGE_OFFSET
+        && field(12) as usize == ATTESTATION_LEN
+        && field(4) == u16::MAX
+        && field(8) == u16::MAX
+        && field(14) == u16::MAX;
+    if !self_contained {
+        return None;
+    }
+    if &data[ED25519_MESSAGE_OFFSET..] != expected.as_ref() {
+        return None;
+    }
+    let mut signer = [0u8; 32];
+    signer.copy_from_slice(&data[ED25519_PUBKEY_OFFSET..ED25519_PUBKEY_OFFSET + 32]);
+    Some(signer)
+}
+
+/// Require that the transaction carries attestations over `expected` from at least
+/// `threshold` **distinct** members of the verifier committee.
+///
+/// This is the Wake's Four (Mamalujo) --- the annalists who judge and record as a
+/// quorum, none authoritative alone. "Impassable tissue of improbable liyers"
+/// (FW III.4): no single layer/liar is trusted; the truth is what enough of them
+/// attest. A false attestation now needs `threshold` colluding verifiers, not one.
+/// The sigverify instructions must precede this instruction; each one the runtime
+/// accepted carries a valid signature, and this scans them for committee members
+/// signing exactly the settled tuple, counting each member once.
+fn verify_quorum(
     instructions: &UncheckedAccount,
-    verifier: &Pubkey,
+    verifiers: &[Pubkey],
+    threshold: u8,
     expected: &[u8; ATTESTATION_LEN],
 ) -> Result<()> {
     let index = load_current_index_checked(instructions)?;
-    require!(index > 0, PoolError::MissingAttestation);
-    let ix = load_instruction_at_checked((index - 1) as usize, instructions)
-        .map_err(|_| error!(PoolError::MissingAttestation))?;
+    let mut counted = [false; MAX_VERIFIERS];
+    let mut have = 0u8;
 
-    require_keys_eq!(ix.program_id, ed25519_program::ID, PoolError::MissingAttestation);
-    let data = &ix.data;
-    require!(
-        data.len() == ED25519_MESSAGE_OFFSET + ATTESTATION_LEN,
-        PoolError::AttestationMismatch
-    );
-    // exactly one signature, and every part sourced from this instruction's data
-    require!(data[0] == 1 && data[1] == 0, PoolError::AttestationMismatch);
-    let field = |at: usize| u16::from_le_bytes([data[at], data[at + 1]]);
-    require!(
-        field(2) as usize == ED25519_SIGNATURE_OFFSET
-            && field(6) as usize == ED25519_PUBKEY_OFFSET
-            && field(10) as usize == ED25519_MESSAGE_OFFSET
-            && field(12) as usize == ATTESTATION_LEN
-            && field(4) == u16::MAX
-            && field(8) == u16::MAX
-            && field(14) == u16::MAX,
-        PoolError::AttestationMismatch
-    );
+    for i in 0..index {
+        let Ok(ix) = load_instruction_at_checked(i as usize, instructions) else {
+            continue;
+        };
+        let Some(signer) = attestation_signer(&ix, expected) else {
+            continue;
+        };
+        // a committee member we have not already counted this transaction
+        if let Some(slot) = verifiers.iter().position(|v| v.as_ref() == signer) {
+            if !counted[slot] {
+                counted[slot] = true;
+                have += 1;
+            }
+        }
+    }
 
-    let signer = &data[ED25519_PUBKEY_OFFSET..ED25519_PUBKEY_OFFSET + 32];
-    require!(signer == verifier.as_ref(), PoolError::UnknownVerifier);
-    let message = &data[ED25519_MESSAGE_OFFSET..];
-    require!(message == expected.as_ref(), PoolError::AttestationMismatch);
-
+    require!(have >= threshold, PoolError::NotEnoughAttestations);
     Ok(())
 }
 
@@ -272,9 +339,12 @@ pub struct Pool {
     pub entry_fee: u64,
     /// Executions are refused while the set has fewer than this many members.
     pub k_min: u32,
-    /// The key whose Ed25519 attestation every execution must carry. It attests
-    /// that it checked the off-chain membership proof; it is trusted to do so.
-    pub verifier: Pubkey,
+    /// The verifier committee — the Wake's Four, generalized. Each attests that it
+    /// checked the off-chain membership proof; a quorum of `threshold` of them is
+    /// trusted, no single one.
+    pub verifiers: Vec<Pubkey>,
+    /// How many distinct committee members must sign an execution (M of N).
+    pub threshold: u8,
     /// Ordered hash accumulator over committed commitments (not the canonical
     /// Merkle root; that is rebuilt off-chain from `Committed` events).
     pub accumulator: [u8; 32],
@@ -287,7 +357,7 @@ pub struct Pool {
 }
 
 impl Pool {
-    pub const SPACE: usize = 8 + 32 + 32 + 32 + 32 + 4 + 8 + 1 + 8 + 4;
+    pub const SPACE: usize = 8 + 32 + (4 + MAX_VERIFIERS * 32) + 1 + 32 + 32 + 4 + 8 + 1 + 8 + 4;
 }
 
 /// Marker account whose mere existence means "this nullifier is spent."
@@ -393,8 +463,10 @@ pub enum PoolError {
     RoundMismatch,
     #[msg("no verifier attestation precedes this instruction")]
     MissingAttestation,
-    #[msg("the attestation was signed by a key that is not this pool's verifier")]
-    UnknownVerifier,
+    #[msg("fewer than the required threshold of committee verifiers attested")]
+    NotEnoughAttestations,
+    #[msg("the verifier committee is empty, too large, has a bad threshold, or has duplicates")]
+    InvalidCommittee,
     #[msg("the attestation does not cover this exact pool, root, action, nullifier and round")]
     AttestationMismatch,
     #[msg("the pool has not published a membership root yet")]

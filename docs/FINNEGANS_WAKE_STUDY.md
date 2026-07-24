@@ -161,18 +161,22 @@ other**; the Wake never lets a single one of them be authoritative. Truth, when 
 appears at all, is what enough of the Four agree on. The II.2 page enacts the same
 thing typographically — a center flanked by independent, disagreeing margins.
 
-riverrun's deployed program has exactly the weakness the Four are the answer to.
-Today `execute` trusts **one** named verifier's signature, and the whitepaper says
-so plainly: *"a dishonest verifier can attest to a proof that does not exist."*
-The Wake's structure prescribes the fix: replace the single verifier with **M-of-N
-threshold attestation** — N named verifiers (the committee, the Four), of whom **M
-must independently sign** the same execution tuple, none authoritative alone. A
-false attestation now requires **M colluding verifiers**, not one. It is a bounded,
-real change to the on-chain program (the code already checks one Ed25519 signature
-via instruction introspection; extend to M distinct verifiers over the same tuple),
-and it upgrades a named, honest weakness into a quorum.
+riverrun's deployed program had exactly the weakness the Four are the answer to.
+`execute` trusted **one** named verifier's signature, and a dishonest verifier
+could attest to a proof that does not exist. **This is now built.** The single
+verifier was replaced with **M-of-N threshold attestation**: the pool names a
+committee of N verifier keys and a threshold M, and `execute` requires Ed25519
+signatures from at least M **distinct** committee members over the same tuple,
+none authoritative alone. A false attestation now requires **M colluding
+verifiers**, not one. It is covered by five on-chain tests (a 2-of-3 quorum
+settles; one vote is below threshold; a member signing twice counts once; an
+outsider's signature does not count; more than a quorum settles), and the
+program's `verify_quorum` carries the III.4 epigraph "Impassable tissue of
+improbable liyers."
 
-This is the one insight from studying the whole book that is (a) grounded in the
-book's most recurrent structure, verified against the primary text, (b) buildable,
-and (c) a fix to a gap the system already admits. Everything else above is either
-already implemented or honestly marked as resonance.
+This is the one insight from studying the whole book that made it from the page
+into the on-chain program — grounded in the book's most recurrent structure,
+buildable, and a fix to a gap the system admitted.
+
+Everything else above is either already implemented or honestly marked as
+resonance. The Four are the one that crossed from reading into code.

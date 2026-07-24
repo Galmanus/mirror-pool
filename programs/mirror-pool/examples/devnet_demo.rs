@@ -79,7 +79,9 @@ fn main() {
             ],
             data: {
                 let mut d = disc("initialize").to_vec();
+                d.extend_from_slice(&1u32.to_le_bytes()); // committee: Vec len = 1
                 d.extend_from_slice(verifier.pubkey().as_ref());
+                d.push(1); // threshold = 1
                 d.extend_from_slice(&5_000_000u64.to_le_bytes()); // entry fee: 0.005 SOL a seat
                 d.extend_from_slice(&1u32.to_le_bytes()); // k_min for the demo
                 d
@@ -123,8 +125,8 @@ fn main() {
 
     // read the pool's current round
     let pool_data = rpc.get_account_data(&pool).unwrap();
-    let round = u64::from_le_bytes(pool_data[152..160].try_into().unwrap());
-    let member_count = u32::from_le_bytes(pool_data[148..152].try_into().unwrap());
+    let round = u64::from_le_bytes(pool_data[157..165].try_into().unwrap());
+    let member_count = u32::from_le_bytes(pool_data[153..157].try_into().unwrap());
     println!("  (pool now: round={round}, members={member_count})");
 
     // 3. execute via a fresh relayer key (no member signs) — unique nullifier
