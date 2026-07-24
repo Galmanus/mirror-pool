@@ -366,19 +366,41 @@ Same action, distinct nullifiers, one root. The nullifier is `Rescue(secret‖ro
 — unlinkable to any commitment. Grow the set to `k` and the actor↔action link is
 `1/k`, by construction. (`crates/riverrun-pool-zk/src/lib.rs`)
 
-## Why post-quantum and transparent
+## Why post-quantum — and why that means *now*
 
-The whole core — commitment, Merkle set, nullifier, membership relation — is built
-from one collision-resistant hash. No pairings, no trusted setup, no per-circuit
-ceremony. That makes it **post-quantum** (hash-based) and **transparent** (nothing
-to trust).
+This is the one property riverrun has that a pairing-based design cannot retrofit,
+and the reason it has to be built today rather than "when quantum arrives."
 
-That's a tradeoff, not a free win. Pairing-based systems (Groth16) are mature,
-battle-tested and produce far smaller proofs — for most applications they're the
-right call. What they ask for in exchange is a per-circuit ceremony and security
-resting on elliptic curves. For privacy meant to outlast a quantum adversary,
-riverrun takes the other side of that trade: bigger proofs, hash-based
-assumptions, nothing to trust.
+**A blockchain is a permanent, public record.** Every commitment, every nullifier,
+every action is written down forever. So consider *harvest now, decrypt later*: an
+adversary records the chain today and waits. The day a cryptographically-relevant
+quantum computer exists, it turns that saved copy over and breaks every privacy
+guarantee that rested on elliptic curves — **retroactively**, on activity that is
+years old. Migrating to post-quantum crypto *after* the machine exists does nothing,
+because the data was already harvested. For a ledger that never forgets, behavioral
+privacy has to be post-quantum **from the first transaction**.
+
+riverrun's whole core — commitment, Merkle set, nullifier, membership relation — is
+one collision-resistant hash (Rescue-Prime, FRI). No pairings, no elliptic curves in
+the property that hides *who acted*, no trusted setup, no per-circuit ceremony. A
+future quantum computer **cannot retroactively unmask** a past actor, because the
+hiding rests on hashes, which Shor's algorithm does not break.
+
+**The honest boundary, stated so it can't be used against us.** The interim on-chain
+attestation is an Ed25519 signature, which is *classical*. But it protects
+**soundness** (that a valid membership proof existed), not **anonymity**. A quantum
+computer that broke Ed25519 could *forge* an attestation — a liveness/soundness
+failure — but it still could not say *which member* acted, because that is hidden by
+the hash layer, not the signature. So the precise claim is exact and defensible:
+**riverrun's anonymity is post-quantum; no future quantum computer retroactively
+unmasks who acted.**
+
+The tradeoff is real and named: hash-based STARKs mean bigger proofs than Groth16,
+and higher on-chain verification cost (the M31 port in [What one execution
+costs](#what-one-execution-costs) is how that shrinks). Pairing-based designs get
+small proofs by resting privacy on elliptic curves and a ceremony — a fine trade for
+data that is *not* meant to outlive the decade on a permanent ledger. riverrun takes
+the other side on purpose.
 
 ## The privacy is proven by adversaries in this repo
 
@@ -463,15 +485,25 @@ left for proving it off-chain forever.
 ## Cost — cheap by construction
 
 Because riverrun hides *behavior* and not funds, its on-chain footprint is a
-**17-byte nullifier account** and an event — no value moves. Measured live on
-**devnet** (program `BFy2ehVxpBrtwMCWwufpfbbsoWtZVYVaZBzDE2eAG7az`): a full
-`initialize + commit + execute` run cost **0.002507 SOL** by wallet-balance delta,
-so **~0.00102 SOL per action** (commit + execute), on the order of $0.0002. The
-double-spend was rejected on-chain
-([execute tx](https://explorer.solana.com/tx/coUCBWh4dsbRsUZHHZy62bK28JCfrF47RzhxPhSdSq1mpHRkucuxq5EiwSL8j1azxqPZdcetpMCB9rnAukYSbzX?cluster=devnet)).
-That deployment predates the verifier attestation, which adds one Ed25519
-precompile instruction — no new account, no rent — so the figures hold but were
-not re-measured. Reproduce: `cargo run --manifest-path
+**17-byte nullifier account** and an event — no value moves, so a private action is
+on the order of **$0.0002**.
+
+**Proven live on devnet, on the current M-of-N committee code** (program
+`BFy2ehVxpBrtwMCWwufpfbbsoWtZVYVaZBzDE2eAG7az`, pool
+`CoSHQ1rFvBe6hVzCWKyqDUGdbyGftWxByiuueDp1GnLH`). The full behavioral-cloak lifecycle
+ran end to end with four distinct roles — authority, verifier, member, relayer —
+kept separate on purpose, because the claim *is* who signs what:
+
+| step | signed by | signature |
+|---|---|---|
+| `commit` | the **member** | [`4jdxSfVe…`](https://explorer.solana.com/tx/4jdxSfVedXG723C6vP3RCJmDMfrsitXkzkKF6ydSBPxBV7mdPoYzLfdYyoCaVjnjwrnQKqz4rFfvaNe314VULzqx?cluster=devnet) |
+| **`execute`** | the **relayer alone** | [`23Uz6pjh…`](https://explorer.solana.com/tx/23Uz6pjh4Bqb6pQjMHpwKESzdNddy8bmZ9mMedm5hQHFCXFKyJLKTRggyGs1Xdghbo5zvP237D9Tcgwv9EGLFi25?cluster=devnet) |
+| `execute` (double-spend) | rejected on-chain | nullifier PDA already exists |
+
+Open the `execute` transaction and check the signer set: it is the **relayer** only.
+The member's key signed `commit` (joining the crowd) and **nothing else** — it is
+absent from the action itself. That is the behavioral cloak, on a permanent public
+ledger, verifiable by anyone. Reproduce: `cargo run --manifest-path
 programs/mirror-pool/Cargo.toml --example devnet_demo`.
 
 ## Workspace
@@ -481,7 +513,7 @@ programs/mirror-pool/Cargo.toml --example devnet_demo`.
 | `riverrun-core` | the post-quantum primitives and the membership *relation* (commitment, Merkle set, nullifier). Specification only — nothing here proves anything | 19 tests |
 | `riverrun-eval` | adversarial harness for the behavioral channel — clustering attacker → chance | 4 tests + exhibit |
 | `riverrun-trace` | the `provenance-tracer`: backward funding-graph adversary + circularity defense + live-mainnet adapter | 7 tests + 2 exhibits |
-| `programs/mirror-pool` | the on-chain Solana program: commitment accumulator, per-round nullifier registry (PDA-per-nullifier anti-replay), published root, verifier-attested settlement, entry fee + anonymity-set floor | builds to `.so`; 15 e2e tests green (10 committee-of-one for back-compat + 5 M-of-N quorum); **deployed + exercised live on devnet** (that deployment predates the committee change) |
+| `programs/mirror-pool` | the on-chain Solana program: commitment accumulator, per-round nullifier registry (PDA-per-nullifier anti-replay), published root, verifier-attested settlement, entry fee + anonymity-set floor | builds to `.so`; 15 e2e tests green (10 committee-of-one for back-compat + 5 M-of-N quorum); **the current committee code is deployed and exercised live on devnet** (full commit + relayer-execute lifecycle, [signatures](#cost--cheap-by-construction)) |
 | `crates/riverrun-stark` | the post-quantum, transparent **STARK proving the whole relation** — membership, nullifier and action in one proof (Rescue-Prime + FRI, no trusted setup) — plus the ricorso primitives and relation | 23 tests green (excluded — pulls Winterfell) |
 | `crates/riverrun-pool-zk` | **the** pool: commit → execute → settle driven by the STARK. `Execution` carries an opaque proof + public data only, never the secret | 7 tests + demo (excluded — pulls Winterfell) |
 
