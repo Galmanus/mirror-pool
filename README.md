@@ -30,26 +30,32 @@ claims, the repo ships the adversaries that check them — one of them run again
 live Solana mainnet. Where a claim doesn't hold yet, it's written down in
 [Security status](#security-status--honest-limitations).
 
+**See all of it in one command** — `./demo.sh` — or read the
+**[whitepaper (PDF)](paper/riverrun.pdf)** for the full story. The rest of this page
+is the short version, in plain words.
+
 ---
 
 ### The three things worth your 30 seconds
 
 1. **A ruler nobody had built.** Every pool advertises `1/k`. We measured a live
    mainnet pool: advertised **k=30**, effective **6.5**, worst case **1**. The
-   funding graph is public, and it collapses anonymity that member-count hides.
+   funding graph is public, and it collapses the anonymity that member-count hides.
    → [Your k is not your k](#your-k-is-not-your-k)
-2. **A tool that protects users, not just audits pools.** `riverrun preflight
-   <wallet>` tells you the anonymity *you* would get in any pool before you
-   deposit — protocol-agnostic, runs against any program.
-   → [Pre-flight](#pre-flight-know-your-anonymity-before-you-act)
-3. **Post-quantum, no ceremony, and now measured on-chain.** One STARK binds
-   membership + nullifier + action; a synchronized round batches into one proof
-   (**24.6×** at k=64); verification runs on SBF at a measured **3.77M CU**,
-   pointing the way to a small-field port. → [How this compares](#how-this-compares)
+2. **Tools built on it.** `preflight` tells a user their anonymity before they act;
+   a **coordinator** agent forms crowds that maximize it and certifies each round.
+   → [Pre-flight](#pre-flight-your-anonymity-before-you-act) ·
+   [Coordinator](#the-coordinator-an-agent-that-forms-private-crowds)
+3. **Post-quantum, no ceremony, measured on-chain.** One STARK binds membership +
+   nullifier + action; a synchronized round batches into one proof (**24.6×** at
+   k=64); verification runs on SBF at a measured **3.77M CU**, which points the way
+   to a small-field port. → [How this compares](#how-this-compares)
 
-**Contents:** [pre-flight](#pre-flight-know-your-anonymity-before-you-act) ·
-[the ruler](#your-k-is-not-your-k) · [the coordinator](#the-coordinator-an-agent-that-forms-private-crowds) · [who it's for](#who-this-is-for) ·
-[the mechanism](#the-mechanism) · [post-quantum](#why-post-quantum-and-transparent) ·
+**Contents:** [the ruler](#your-k-is-not-your-k) ·
+[pre-flight](#pre-flight-your-anonymity-before-you-act) ·
+[the coordinator](#the-coordinator-an-agent-that-forms-private-crowds) ·
+[who it's for](#who-this-is-for) · [the mechanism](#the-mechanism) ·
+[post-quantum](#why-post-quantum-and-transparent) ·
 [the adversaries](#the-privacy-is-proven-by-adversaries-in-this-repo) ·
 [cost](#what-one-execution-costs) · [comparison](#how-this-compares) ·
 [workspace & run it](#workspace) · [security status](#security-status--honest-limitations) ·
@@ -57,57 +63,20 @@ live Solana mainnet. Where a claim doesn't hold yet, it's written down in
 
 ---
 
-## Pre-flight: know your anonymity before you act
-
-The measurement above audits pools. Its dual **protects users**: before you
-deposit into *any* pool on Solana, `preflight` traces your own funding graph,
-samples the pool's current depositors, and tells you the anonymity **you
-personally** would get — because the advertised number is the pool's, not yours.
-
-```bash
-cargo run --features onchain --bin riverrun -- preflight <YOUR_WALLET> [POOL]
-```
-
-Against a real wallet and the live Privacy Cash pool: *"7 of 9 depositors share
-your provenance class — OK"*, or, for a wallet alone in its class, *"EXPOSED: the
-pool's size is irrelevant to you; fund a fresh wallet from a source other
-depositors use, or wait for a same-origin crowd."* It is protocol-agnostic — it
-reads public chain data, not the pool's internals — so it works against any pool
-program, including the other repos in this bounty. That is the leverage: auditing
-pools reaches auditors; protecting a user at the moment they act reaches every
-user of every privacy protocol on Solana. **[docs/PREFLIGHT.md](docs/PREFLIGHT.md)**.
-
-## The coordinator: an agent that forms private crowds
-
-Measured privacy is *optimizable* privacy. Because riverrun can measure a crowd's
-anonymity, an agent can form a good one on purpose --- which is the coordination
-layer the brief asks for. The non-obvious rule: a round where everyone shares a
-funding origin is strong (learning the origin narrows nothing); a round of distinct
-origins is weak (a member alone in their class has an effective anonymity of one).
-So the agent admits members whose origin is well-populated and defers the rest with
-a remedy.
-
-```bash
-cargo run --release -p riverrun-trace --example coordinator
-```
-
-Every fired round beats naively batching everyone on effective-k, with a *smaller*
-crowd, and never exposes a member --- proven by test, shown live in the loop. And
-each round carries a **proof-carrying privacy certificate** (the AXL pattern: an
-admitted member re-verifies the round's effective-k and floor independently,
-trusting nothing the agent said). This is the passive pre-flight gate turned
-generative: not "don't act", but "act in *this* crowd, and here is a certificate
-that says it is private." **[docs/COORDINATOR.md](docs/COORDINATOR.md)**.
-
 ## Your k is not your k
 
-Every pool in this space reports `1/k`. That number counts members. It says
-nothing about where those members' money came from, and on a public ledger that
-is public. Sort a set into classes by funding provenance and learning the actor's
-class leaves only that class to guess within.
+Start here, because everything clever below is built on this one idea.
 
-Nobody had measured it. Run against a **live Tornado-style SOL privacy pool on
-Solana mainnet**, sampling 30 real depositors:
+Every pool reports its privacy as `1/k`: there are `k` members, so a one-in-`k`
+guess. **That number counts members, and it is wrong.** It ignores where the members'
+money came from — and on a public ledger, that is public. Trace a member's wallet
+backward and you often reach a known origin: an exchange, a service. Sort the crowd
+by origin, and learning the actor's origin no longer leaves `k` suspects. It leaves
+only the members who share it. The crowd you are hidden in is your *provenance
+class*, not the whole set.
+
+Nobody had measured this on Solana. We did, against a **live SOL privacy pool on
+mainnet**, sampling 30 real depositors:
 
 | | |
 |---|---|
@@ -120,12 +89,53 @@ Solana mainnet**, sampling 30 real depositors:
 cargo run --features onchain --bin riverrun -- audit <POOL> 30
 ```
 
-This is not a flaw in that pool: no deposit-pool design controls where its users'
-money came from, which is exactly why the channel goes unmeasured and keeps
-working. It applies to riverrun too — so the same ruler runs over riverrun's own
-constructions, where the same 2000 members are worth **500** under the
-construction the field ships and **2000** under circularity. Method, caveats and
-the arithmetic that was wrong the first time: **[docs/EFFECTIVE_K.md](docs/EFFECTIVE_K.md)**.
+A set advertising 30 delivers 6.5, and one member gets nothing at all. This is not a
+flaw in that pool — no pool controls where its users' money came from, which is
+exactly why the channel goes unmeasured and keeps working. The measure is the
+effective anonymity-set size of Serjantov & Danezis (2002), and it runs on riverrun
+too: the same 2000 members are worth **500** under the construction the field ships
+and **2000** under circularity (a funding cycle with no origin — the *Finnegans Wake*
+image, as a number). Method and the arithmetic that was wrong the first time:
+**[docs/EFFECTIVE_K.md](docs/EFFECTIVE_K.md)**.
+
+## Pre-flight: your anonymity, before you act
+
+That measurement audits a pool. Turn it around and it **protects a user**. Before you
+deposit into *any* pool, `preflight` traces *your* funding graph, samples the pool's
+depositors, and tells you the anonymity *you* would get there:
+
+```bash
+cargo run --features onchain --bin riverrun -- preflight <YOUR_WALLET> [POOL]
+```
+
+It answers in plain words — *"7 of 9 share your provenance class — OK"*, or *"EXPOSED:
+the pool's size is irrelevant to you; fund from a common origin, or wait for a
+same-origin crowd."* It reads public chain data, not any pool's internals, so it
+works against a program it has never seen — including the other repos in this bounty.
+Auditing pools reaches auditors; protecting a user at the moment they act reaches
+every user of every privacy protocol on the chain.
+**[docs/PREFLIGHT.md](docs/PREFLIGHT.md)**.
+
+## The coordinator: an agent that forms private crowds
+
+If you can *measure* a crowd's anonymity, an agent can *form* a good one on purpose.
+That is the coordination layer the brief asks for. The rule is backwards from
+intuition until you see the formula: a crowd where everyone shares a funding origin
+is **strong** (learning the origin narrows nothing — everyone's is the same); a crowd
+of distinct origins is **weak** (the origin names the one member who has it). So the
+agent groups members who share an origin and holds back the singletons who would be
+exposed.
+
+```bash
+cargo run --release -p riverrun-trace --example coordinator
+```
+
+A *smaller* round, chosen well, beats batching everyone: a round of 8 at effective-k
+4.1 versus a round of 10 at 3.1, with nobody exposed — proven by test, shown live.
+And each round hands its members a **proof-carrying certificate** (the AXL pattern):
+an admitted member re-verifies the round's anonymity themselves, trusting nothing the
+agent said. Not "don't act" — "act in *this* crowd, and here is the proof it is
+private." **[docs/COORDINATOR.md](docs/COORDINATOR.md)**.
 
 ---
 
@@ -146,6 +156,37 @@ That serves anyone who doesn't want to be an open book on-chain:
 It hides *who did it*, which is orthogonal to and composes with value/recipient
 confidentiality (the roadmap target is the author's Stellar rail **Vineland**,
 which hides *how much / to whom* — not yet integrated).
+
+---
+
+## Why "riverrun" — and what the book gave us
+
+*Finnegans Wake* (James Joyce, 1939) is a novel with **no beginning**. Its last
+sentence breaks off mid-phrase — *"a way a lone a last a loved a long the"* — and
+runs straight into its first word, *"riverrun."* The book is a circle. It is written
+in a dream-language where every word carries many meanings at once, and it runs on
+Giambattista Vico's idea that history moves in cycles that return to their start —
+the pun *"a commodius vicus of recirculation"* hides Vico's name. Its river, Anna
+Livia, flows to the sea and comes back as rain.
+
+That is not decoration here. Three of the book's ideas are load-bearing:
+
+- **A circle has no beginning.** The book's core structural fact — no origin, no
+  source — is exactly the defense against the funding-graph attack. A funding trail
+  that loops back on itself has no origin to trace, so an adversary who walks it
+  backward never reaches an attributable start. The same 2000 members are worth
+  **500** with an origin and **2000** without one — measured in
+  [the ruler](#your-k-is-not-your-k).
+- **The *ricorso* — the return that begins again.** Vico's fourth age restarts the
+  cycle. riverrun borrows it to let the anonymity set be **reborn** each cycle, so a
+  member's history stops accumulating and no one is linked across epochs
+  (whitepaper §5).
+- **Here Comes Everybody.** The book's protagonist, HCE, is at once one man and
+  everyone — an identity that dissolves into the crowd. That is the anonymity set:
+  you act as *everybody*, and which one you are is undecidable.
+  *(Disanalogy: HCE is a single dream-figure who is everyone; here there are many
+  real members, and the cryptography makes which one acted genuinely undefined, not
+  merely hidden.)*
 
 ---
 
