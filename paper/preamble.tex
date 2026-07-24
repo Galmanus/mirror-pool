@@ -1,0 +1,99 @@
+% ==== riverrun whitepaper — shared preamble (design level: Slippay) ====
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[letterpaper,margin=1in,headheight=15pt]{geometry}
+\usepackage{amsmath}
+\usepackage{newpxtext}
+\usepackage{newpxmath}
+\let\Bbbk\relax
+\usepackage{amssymb}
+\let\openbox\relax
+\usepackage{amsthm}
+\usepackage[scaled=0.85]{beramono}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{enumitem}
+\usepackage{titlesec}
+\usepackage{fancyhdr}
+\usepackage{listings}
+\usepackage[most]{tcolorbox}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc,backgrounds}
+\usepackage{seqsplit}
+\usepackage[hidelinks]{hyperref}
+
+% ---- riverrun palette: river teal + desert gold ----
+\definecolor{river}{HTML}{0E4D64}   % deep teal — the accent (sections, links)
+\definecolor{riversoft}{HTML}{2C6B80}
+\definecolor{ink}{HTML}{14181F}
+\definecolor{steel}{HTML}{5B6270}
+\definecolor{rule}{HTML}{C9CDD6}
+\definecolor{paper}{HTML}{FBFAF7}
+\definecolor{gold}{HTML}{9A6B00}    % desert gold — measured / on-chain artifacts
+\definecolor{codebg}{HTML}{F4F5F8}
+\definecolor{good}{HTML}{1E7A46}
+\definecolor{soft}{HTML}{EAF1F3}    % pale teal for intuition boxes
+
+\hypersetup{colorlinks=true,linkcolor=river,urlcolor=river,citecolor=river}
+
+% ---- section styling ----
+\titleformat{\section}{\normalfont\Large\bfseries\color{river}}{\thesection}{0.7em}{}
+\titleformat{\subsection}{\normalfont\large\bfseries\color{ink}}{\thesubsection}{0.6em}{}
+\titlespacing*{\section}{0pt}{1.5\baselineskip}{0.5\baselineskip}
+
+% ---- header/footer ----
+\pagestyle{fancy}\fancyhf{}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}
+\fancyhead[L]{\footnotesize\color{steel}\textsc{riverrun}}
+\fancyhead[R]{\footnotesize\color{steel}Behavioral Privacy on Solana, Measured}
+\fancyfoot[C]{\footnotesize\color{steel}\thepage}
+
+% ---- theorem-like environments ----
+\newtheoremstyle{riv}{0.8em}{0.8em}{}{}{\bfseries\color{river}}{.}{0.5em}{}
+\theoremstyle{riv}
+\newtheorem{claimx}{Claim}[section]
+\newtheorem{property}{Property}[section]
+
+% ---- Feynman intuition box (pale teal) ----
+\newtcolorbox{intuition}{
+  enhanced,breakable,colback=soft,colframe=river,boxrule=0pt,
+  leftrule=2.5pt,arc=1pt,left=8pt,right=8pt,top=6pt,bottom=6pt,
+  fonttitle=\bfseries\footnotesize\color{river},title={THE IDEA, PLAINLY}
+}
+% ---- measured / on-chain artifact box (gold) ----
+\newtcolorbox{measured}[1][]{
+  enhanced,breakable,colback=paper,colframe=gold,boxrule=0pt,
+  leftrule=2.5pt,arc=1pt,left=8pt,right=8pt,top=6pt,bottom=6pt,
+  fonttitle=\bfseries\footnotesize\color{gold},title={\MakeUppercase{Measured}\ #1}
+}
+% ---- honest-limit box (steel) ----
+\newtcolorbox{honest}{
+  enhanced,breakable,colback=codebg,colframe=steel,boxrule=0pt,
+  leftrule=2.5pt,arc=1pt,left=8pt,right=8pt,top=6pt,bottom=6pt,
+  fonttitle=\bfseries\footnotesize\color{steel},title={WHAT THIS IS NOT}
+}
+
+% ---- code listing style ----
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  backgroundcolor=\color{codebg},
+  frame=single,framesep=6pt,rulecolor=\color{rule},
+  breaklines=true,columns=fullflexible,keepspaces=true,
+  showstringspaces=false,commentstyle=\color{steel}\itshape,
+  xleftmargin=4pt,xrightmargin=4pt,aboveskip=1em,belowskip=1em,
+}
+
+% ---- helpers ----
+\newcommand{\rescue}{\mathrm{Rescue}}
+\newcommand{\keff}{k_{\mathrm{eff}}}
+\newcommand{\code}[1]{{\ttfamily #1}}
+\newcommand{\river}{\textsc{riverrun}}
+\setlist{itemsep=2pt,topsep=3pt,parsep=0pt}
+\renewcommand{\arraystretch}{1.15}
+\setlength{\parskip}{0.45em}
+\setlength{\parindent}{0pt}
