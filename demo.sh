@@ -53,6 +53,12 @@ note "Every pool reports 1/k. This is what k is worth once the adversary sorts t
 note "set by where the money came from. Same metric, applied to riverrun itself."
 cargo run --quiet --release -p riverrun-trace --features onchain --bin riverrun -- exhibit
 
+stage "4b/6  the coordinator --- an agent that forms private crowds"
+note "An agent that turns the ruler into a decision: it forms synchronized rounds"
+note "that maximize effective-k, admitting same-origin crowds and deferring the"
+note "members who would be exposed. A smaller, better round beats batching everyone."
+cargo run --quiet --release -p riverrun-trace --example coordinator
+
 if [[ $LIVE -eq 1 ]]; then
   stage "5/6  the same ruler, against a live pool on Solana mainnet"
   note "Real depositors of a live Tornado-style SOL privacy pool. Aggregates only:"

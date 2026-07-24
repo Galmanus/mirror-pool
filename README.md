@@ -11,7 +11,7 @@
 
 [![Rust](https://img.shields.io/badge/Rust-end%20to%20end-000000?logo=rust)](https://www.rust-lang.org)
 [![Solana](https://img.shields.io/badge/Solana-SBF%20program-14F195?logo=solana&logoColor=black)](https://solana.com/privacy)
-[![tests](https://img.shields.io/badge/tests-74%20green-4c1)](#workspace)
+[![tests](https://img.shields.io/badge/tests-87%20green-4c1)](#workspace)
 [![clippy](https://img.shields.io/badge/clippy-D%20warnings%20clean-4c1)](https://github.com/rust-lang/rust-clippy)
 [![post-quantum](https://img.shields.io/badge/STARK-post--quantum%2C%20no%20setup-8A2BE2)](#why-post-quantum-and-transparent)
 [![license](https://img.shields.io/badge/license-MIT-blue)](#license)
@@ -48,7 +48,7 @@ live Solana mainnet. Where a claim doesn't hold yet, it's written down in
    pointing the way to a small-field port. → [How this compares](#how-this-compares)
 
 **Contents:** [pre-flight](#pre-flight-know-your-anonymity-before-you-act) ·
-[the ruler](#your-k-is-not-your-k) · [who it's for](#who-this-is-for) ·
+[the ruler](#your-k-is-not-your-k) · [the coordinator](#the-coordinator-an-agent-that-forms-private-crowds) · [who it's for](#who-this-is-for) ·
 [the mechanism](#the-mechanism) · [post-quantum](#why-post-quantum-and-transparent) ·
 [the adversaries](#the-privacy-is-proven-by-adversaries-in-this-repo) ·
 [cost](#what-one-execution-costs) · [comparison](#how-this-compares) ·
@@ -76,6 +76,26 @@ reads public chain data, not the pool's internals — so it works against any po
 program, including the other repos in this bounty. That is the leverage: auditing
 pools reaches auditors; protecting a user at the moment they act reaches every
 user of every privacy protocol on Solana. **[docs/PREFLIGHT.md](docs/PREFLIGHT.md)**.
+
+## The coordinator: an agent that forms private crowds
+
+Measured privacy is *optimizable* privacy. Because riverrun can measure a crowd's
+anonymity, an agent can form a good one on purpose --- which is the coordination
+layer the brief asks for. The non-obvious rule: a round where everyone shares a
+funding origin is strong (learning the origin narrows nothing); a round of distinct
+origins is weak (a member alone in their class has an effective anonymity of one).
+So the agent admits members whose origin is well-populated and defers the rest with
+a remedy.
+
+```bash
+cargo run --release -p riverrun-trace --example coordinator
+```
+
+Every fired round beats naively batching everyone on effective-k, with a *smaller*
+crowd, and never exposes a member --- proven by test, shown live in the loop. This
+is the passive pre-flight gate turned generative: not "don't act", but "act in
+*this* crowd, and here is the number that says it is private."
+**[docs/COORDINATOR.md](docs/COORDINATOR.md)**.
 
 ## Your k is not your k
 
@@ -323,7 +343,7 @@ cargo test --manifest-path crates/riverrun-stark/Cargo.toml                # STA
 cargo test --manifest-path crates/riverrun-pool-zk/Cargo.toml              # the pool driven by the STARK
 ```
 
-**74 tests green** in total: 34 host + 23 STARK + 7 pool-zk + 10 on-chain e2e.
+**87 tests green** in total: 43 host + 23 STARK + 7 pool-zk + 10 on-chain e2e.
 
 ## Security status & honest limitations
 

@@ -740,7 +740,7 @@ what riverrun does not yet do, so that no reader has to discover it by accident.
       version of the attack visible to the very ruler of Section~\ref{sec:ruler}.
 \end{itemize}
 
-The whole implementation is Rust, MIT-licensed, with $74$ passing tests across the
+The whole implementation is Rust, MIT-licensed, with $87$ passing tests across the
 cryptographic core, the STARK, the pool, and the on-chain program, and clean
 static analysis. Every measurement in this paper is reproducible from the
 repository with a single command.
@@ -844,7 +844,7 @@ program and its tests. Individually:
 \toprule
 claim & command \\
 \midrule
-$74$ tests green & \code{cargo test --workspace} (+ the two excluded crates) \\
+$87$ tests green & \code{cargo test --workspace} (+ the two excluded crates) \\
 one execution's cost (Table~\ref{tab:cost}) & \code{cargo run --release -\,-example bench} \\
 the mechanism, batched round (Table~\ref{tab:batch}) & \code{cargo run --release -\,-example behavior\_pool} \\
 $\keff$ on riverrun's designs & \code{riverrun exhibit} \\
