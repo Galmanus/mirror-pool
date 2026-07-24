@@ -18,7 +18,7 @@ LIVE=0
 [[ "${1:-}" == "--live" ]] && LIVE=1
 
 stage "1/6  the whole test suite"
-note "34 host + 23 STARK + 7 pool-zk. The on-chain e2e needs the SBF toolchain and runs in stage 6."
+note "50 host + 27 STARK + 7 pool-zk = 92 here; the 15 on-chain e2e need the SBF toolchain and run in stage 6 (99 total)."
 suite() { # <label> <extra cargo args...>
   local label="$1"; shift
   local out; out=$(cargo test --quiet "$@" 2>/dev/null)
@@ -48,9 +48,9 @@ note "A clustering attacker that fingerprints wallets by co-buy timing and posit
 note "sizing, run against the same population with and without a synchronized round."
 cargo run --quiet --release -p riverrun-eval
 
-stage "4/6  adversary 2 — the funding graph, and the ruler"
+stage "4/6  the ruler — the repo's finished deliverable"
 note "Every pool reports 1/k. This is what k is worth once the adversary sorts the"
-note "set by where the money came from. Same metric, applied to riverrun itself."
+note "set by where the money came from — the production CLI, here offline (exhibit)."
 cargo run --quiet --release -p riverrun-trace --features onchain --bin riverrun -- exhibit
 
 stage "4b/6  the coordinator --- an agent that forms private crowds"
@@ -72,8 +72,8 @@ fi
 
 stage "6/6  the on-chain program"
 if command -v cargo-build-sbf >/dev/null 2>&1; then
-  note "Builds to a deployable .so, then 10 e2e tests against the compiled program"
-  note "in LiteSVM: attestation, nullifier anti-replay, stale round, anonymity floor."
+  note "Builds to a deployable .so, then 15 e2e tests against the compiled program"
+  note "in LiteSVM: M-of-N committee attestation, nullifier anti-replay, stale round, floor."
   # the Anchor derives emit a wall of cfg warnings that drown the signal here
   if cargo build-sbf --manifest-path programs/mirror-pool/Cargo.toml >/tmp/riverrun-sbf.log 2>&1; then
     echo "built programs/mirror-pool/target/deploy/riverrun_program.so"

@@ -4,54 +4,61 @@
   <img src="assets/banner.jpg" alt="riverrun — a glitched desert valley, the ledger's terrain scrambled" width="480">
 </p>
 
-> The submission for the **`mirror-pool`** bounty ("Tornado cash for synchronized
-> actions"). *riverrun* is the first word of Joyce's *Finnegans Wake* — the river
-> that flows in a circle back to its own beginning. That circle is the system's
-> core defense: a funding trail with no origin to trace.
+> Built for the **`mirror-pool`** bounty — *Privacy-Through-Noise tooling for
+> Solana*. *riverrun* is the first word of Joyce's *Finnegans Wake*, the river that
+> flows in a circle back to its own beginning: a funding trail with no origin to trace.
 
 [![Rust](https://img.shields.io/badge/Rust-end%20to%20end-000000?logo=rust)](https://www.rust-lang.org)
 [![Solana](https://img.shields.io/badge/Solana-SBF%20program-14F195?logo=solana&logoColor=black)](https://solana.com/privacy)
 [![tests](https://img.shields.io/badge/tests-99%20green-4c1)](#workspace)
-[![clippy](https://img.shields.io/badge/clippy-D%20warnings%20clean-4c1)](https://github.com/rust-lang/rust-clippy)
+[![CLI](https://img.shields.io/badge/CLI-preflight%20%C2%B7%20audit%20%C2%B7%20--json-14F195)](#the-tool-runs-today)
 [![post-quantum](https://img.shields.io/badge/STARK-post--quantum%2C%20no%20setup-8A2BE2)](#why-post-quantum-and-transparent)
 [![license](https://img.shields.io/badge/license-MIT-blue)](#license)
 
-**Tornado Cash for behavioral patterns and actions — not funds.**
+**A production tool that measures the real anonymity any Solana privacy pool gives you — before you trust it.**
 
-Tornado Cash breaks the link between a *deposit* and a *withdrawal* of money.
-`riverrun` breaks the link between a **committed intent** and an **executed
-action**: a swap, a claim, a vote, a withdrawal from a protocol. Amounts are
-neither hidden nor the point — what is severed is the **actor ↔ action** link, the
-thing modern chain-analysis clusters on. Post-quantum and transparent: built from
-hashes, no trusted setup, no ceremony.
+Every privacy pool advertises `1/k`: k members, so a one-in-k guess. That number
+counts members, and as a measure of anonymity it overstates, because it ignores
+where the members' money came from — and on a public ledger, that is public.
+`riverrun` is a finished CLI that reads public chain data and returns the anonymity
+a pool *actually* delivers. Run against a live SOL pool on mainnet, the **30**
+advertised members were worth an effective **6.5**, and one member, alone in the
+origin of their money, was worth exactly **1**. It is protocol-agnostic — it works
+against any pool it has never seen, including the other submissions in this bounty.
 
-Everything here is Rust, MIT, and runs today. Rather than assert the privacy
-claims, the repo ships the adversaries that check them — one of them run against
-live Solana mainnet. Where a claim doesn't hold yet, it's written down in
-[Security status](#security-status--honest-limitations).
+```bash
+cargo run --features onchain --bin riverrun -- audit <POOL> --json
+```
 
-**See all of it in one command** — `./demo.sh` — or read the
-**[whitepaper (PDF)](paper/riverrun.pdf)** for the full story. The rest of this page
-is the short version, in plain words.
+**Two maturity levels, kept honest — and this is the whole story of the repo.**
+The **measurement tooling** (`preflight` / `audit` / `trace` / `exhibit`) is
+finished, machine-readable, and runs today against mainnet. *That is the
+deliverable.* Behind it is a **research** pool — a post-quantum STARK that severs
+the actor↔action link — that is implemented and tested but hand-rolled and
+unaudited: a prototype, not for production, and marked as such wherever it appears.
+Collapsing the two would be dishonest in both directions, so the repo never does.
+Everything is Rust, MIT, **99 tests green**. See all of it in one command —
+`./demo.sh` — or read the **[whitepaper (PDF)](paper/riverrun.pdf)**.
 
 ---
 
 ### The three things worth your 30 seconds
 
-1. **A ruler nobody had built.** Every pool advertises `1/k`. We measured a live
-   mainnet pool: advertised **k=30**, effective **6.5**, worst case **1**. The
-   funding graph is public, and it collapses the anonymity that member-count hides.
+1. **The tool, and it runs today.** `preflight` / `audit` read public chain data and
+   return the anonymity *you* would actually get in any pool — protocol-agnostic,
+   `--json`, works against pools it has never seen. Measured live on mainnet:
+   advertised **k=30**, effective **6.5**, worst case **1**.
+   → [The tool runs today](#the-tool-runs-today) · [Your k is not your k](#your-k-is-not-your-k)
+2. **Why that number is the whole story.** On a public chain, what identifies you is
+   not the amount, it is *who* acted. The funding graph is public, so it collapses
+   the anonymity that member-count hides — and almost nobody measures it.
    → [Your k is not your k](#your-k-is-not-your-k)
-2. **Tools built on it.** `preflight` tells a user their anonymity before they act;
-   a **coordinator** agent forms crowds that maximize it and certifies each round.
-   → [Pre-flight](#pre-flight-your-anonymity-before-you-act) ·
-   [Coordinator](#the-coordinator-an-agent-that-forms-private-crowds)
-3. **Post-quantum, no ceremony, measured on-chain.** One STARK binds membership +
-   nullifier + action; a synchronized round batches into one proof (**24.6×** at
-   k=64); verification runs on SBF at a measured **3.77M CU**, which points the way
-   to a small-field port. → [How this compares](#how-this-compares)
+3. **The research behind the tool.** A post-quantum STARK pool (membership +
+   nullifier + action in one proof, no trusted setup) and a **coordinator** agent
+   that forms crowds maximizing effective-k. Implemented, tested, honestly marked a
+   prototype. → [Security status](#security-status--honest-limitations)
 
-**Contents:** [the ruler](#your-k-is-not-your-k) ·
+**Contents:** [the tool](#the-tool-runs-today) · [the ruler](#your-k-is-not-your-k) ·
 [pre-flight](#pre-flight-your-anonymity-before-you-act) ·
 [the coordinator](#the-coordinator-an-agent-that-forms-private-crowds) ·
 [who it's for](#who-this-is-for) · [the mechanism](#the-mechanism) ·
@@ -62,6 +69,47 @@ is the short version, in plain words.
 [related work](#related-work)
 
 ---
+
+## The tool runs today
+
+The deliverable is a finished CLI. No custody, no novel crypto on anyone's funds:
+it reads public chain data and returns numbers, so it works against any pool in this
+class — including ones it has never seen.
+
+```bash
+# your anonymity in a pool, before you deposit (the one to run first)
+cargo run --features onchain --bin riverrun -- preflight <YOUR_WALLET> [POOL]
+
+# a live pool's effective k vs the k it advertises
+cargo run --features onchain --bin riverrun -- audit <POOL> 30
+
+# one wallet's funding provenance, one hop at a time
+cargo run --features onchain --bin riverrun -- trace <WALLET>
+
+# the metric on riverrun's own constructions — offline, no RPC, deterministic
+cargo run --features onchain --bin riverrun -- exhibit --json
+```
+
+Every command takes `--json` for a machine-readable result on stdout (progress stays
+on stderr, so `| jq` is clean). Exit codes: `0` ok, `1` no data (RPC or empty pool),
+`2` usage. Results from live data are a **floor**: a bounded, SOL-only backward
+trace, so "OK" means "no cheap attribution found", never "anonymous". The offline
+`exhibit` is deterministic and needs no network — the fastest way to see the metric:
+
+```json
+{
+  "command": "exhibit",
+  "constructions": [
+    { "construction": "rooted_decoy",     "effective_k": 500.2 },
+    { "construction": "cyclic_ambiguous", "effective_k": 2000.0 },
+    { "construction": "cyclic_rootless",  "effective_k": 2000.0 }
+  ]
+}
+```
+
+Same 2000 members each row: decoys that still trace to one origin are worth 500;
+circularity dissolves the origin and they are worth the full 2000. That is the idea
+the next section measures on real money.
 
 ## Your k is not your k
 
