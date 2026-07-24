@@ -116,6 +116,12 @@ Section~\ref{sec:ruler}: a funding trail that loops has no origin to trace.
 \item \textbf{The \emph{ricorso}}, Vico's return that begins the cycle again, is
 how the anonymity set is reborn each cycle so history stops accumulating
 (Section~\ref{sec:ricorso}).
+\item \textbf{Irreducible polysemy.} Every word in the book has many valid
+meanings at once, none privileged; ``which is the real one'' is a category error,
+not a puzzle. This is the ambiguous-origin construction of
+Section~\ref{sec:ruler}, where the funding trail reaches many origins with none
+privileged, so which is real is \emph{undefined} rather than hidden --- measured
+at $2.90$ bits of doubt.
 \item \textbf{``Here Comes Everybody.''} The protagonist HCE is at once one man
 and everyone --- an identity dissolved into the crowd, which is what an anonymity
 set is. \emph{Disanalogy:} HCE is a single dream-figure who is everyone, whereas
@@ -492,10 +498,55 @@ check on the tool, not the pool.
 \subsection{The same ruler, turned on \river\ --- and on the user}
 
 Measuring others' pools and not your own is marketing. The same function runs over
-\river's constructions. Against $2000$ synthetic members, the ``rooted decoy'' the
-field ships is worth an effective $500$; the circular, origin-free construction ---
-the funding cycle with no beginning, \emph{Finnegans Wake} made numeric
-(Figure~\ref{fig:cycle}) --- is worth the full $2000$.
+\river's own constructions, against $2000$ synthetic members. There are three, and
+they form a spectrum of increasing privacy that maps, exactly, onto three ideas
+from the book (Figure~\ref{fig:cycle}):
+
+\begin{center}\small
+\begin{tabular}{lrrr}
+\toprule
+construction & reaches an origin & ``which origin'' & $\keff$ of $2000$ \\
+\midrule
+rooted decoy (the field) & $100\%$ & $0$ bits & $500$ \\
+cyclic, \textbf{ambiguous} origin & $100\%$ & $\mathbf{2.90}$ bits & $2000$ \\
+cyclic, \textbf{rootless} & $0\%$ & --- & $2000$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The first row is what the field ships: every trail ends at one attributable origin,
+so there is no doubt about where the money came from, and the crowd collapses to
+$500$. The third row is the \emph{circularity} insight --- a funding cycle with no
+beginning, so there is no origin at all to trace, and the set is worth its full
+$2000$.
+
+The middle row is the fourth insight, and it is worth dwelling on because it is the
+strongest one in practice. In \emph{Finnegans Wake}, a word does not hide its ``real''
+meaning behind the others; it \emph{has} no single real meaning. Every reading is
+valid, none is privileged, and asking which one Joyce intended is a category error
+--- the ambiguity is the meaning. The \textbf{ambiguous-origin} construction is that
+idea made numeric. The funding trail does reach origins --- $100\%$ of the time --- but
+it reaches \emph{many}, arranged so that none is privileged, so ``which is the real
+origin'' is not hidden, it is \emph{undefined}. We measure $2.90$ bits of residual
+doubt about which, and the set stays worth its full $2000$.
+
+Why this is the strongest in practice: rootlessness is an idealization. It holds
+only while a construction's funding sources are \emph{themselves} unattributable,
+and the moment one of them is a known exchange, the ``no origin'' claim fails. But it
+does not fail to nothing --- it degrades exactly to \emph{ambiguity}: now there is a
+reachable origin, but still no way to say it is \emph{the} one. Ambiguity is where
+rootlessness lands when it meets the real world, and it is where the defense actually
+lives.
+
+\begin{honest}
+The disanalogy, and the limit. The book's polysemy is inherent to language; here the
+ambiguity is \emph{constructed} --- a funding graph deliberately built so that
+multiple origins are symmetric, so no attribution can privilege one. And it defends a
+specific thing: attribution to a \emph{particular} origin, not membership in the
+\emph{group} of origins. If an adversary needs only ``this came from one of these
+three exchanges'' rather than which, ambiguity does not stop them. It buys $2.90$ bits
+of ``which'', not membership secrecy.
+\end{honest}
 
 \begin{figure}[h]
 \centering

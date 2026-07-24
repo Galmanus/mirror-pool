@@ -181,6 +181,14 @@ That is not decoration here. Three of the book's ideas are load-bearing:
   cycle. riverrun borrows it to let the anonymity set be **reborn** each cycle, so a
   member's history stops accumulating and no one is linked across epochs
   (whitepaper §5).
+- **Irreducible polysemy.** In the book, a word doesn't hide its "real" meaning — it
+  *has* no single one; every reading is valid, none privileged. That is the
+  **ambiguous-origin** construction: the funding trail reaches *many* origins, none
+  privileged, so "which is the real one" is **undefined**, not hidden. We measure
+  **2.90 bits** of doubt about which, at full effective-k. And it is the *robust*
+  version: "no origin" (the circle above) is an idealization that, the moment one
+  funding source is a known exchange, degrades exactly to this — ambiguity is where
+  the defense actually lives.
 - **Here Comes Everybody.** The book's protagonist, HCE, is at once one man and
   everyone — an identity that dissolves into the crowd. That is the anonymity set:
   you act as *everybody*, and which one you are is undecidable.
