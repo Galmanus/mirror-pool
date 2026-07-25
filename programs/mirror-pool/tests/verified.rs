@@ -32,7 +32,8 @@ const B_ROOT: usize = 41;
 const B_NULLIFIER: usize = 73;
 const B_ROUND: usize = 105;
 const B_ACTION: usize = 121;
-const B_LEN: usize = 153;
+const B_RECIPIENT: usize = 153;
+const B_LEN: usize = 185;
 
 fn disc(name: &str) -> [u8; 8] {
     let mut h = Sha256::new();
@@ -139,8 +140,10 @@ fn pool_verified_ready(verifier_id: &Pubkey) -> (LiteSVM, Keypair, Pubkey, [u8; 
     (svm, authority, pool, root)
 }
 
-/// A finalized verifier buffer carrying `{root, nullifier, round, action}`.
-fn make_buffer(root: &[u8; 32], nf: &[u8; 32], round: u64, action: &[u8; 32], finalized: bool) -> Vec<u8> {
+/// A finalized verifier buffer carrying `{root, nullifier, round, action, recipient}`.
+fn make_buffer(
+    root: &[u8; 32], nf: &[u8; 32], round: u64, action: &[u8; 32], finalized: bool, recipient: &Pubkey,
+) -> Vec<u8> {
     let mut b = vec![0u8; B_LEN];
     b[B_FINALIZED] = finalized as u8;
     b[B_ROOT..B_ROOT + 32].copy_from_slice(root);
@@ -149,6 +152,7 @@ fn make_buffer(root: &[u8; 32], nf: &[u8; 32], round: u64, action: &[u8; 32], fi
     r[..8].copy_from_slice(&round.to_le_bytes());
     b[B_ROUND..B_ROUND + 16].copy_from_slice(&r);
     b[B_ACTION..B_ACTION + 32].copy_from_slice(action);
+    b[B_RECIPIENT..B_RECIPIENT + 32].copy_from_slice(recipient.as_ref());
     b
 }
 
@@ -203,7 +207,7 @@ fn a_finalized_matching_buffer_settles_without_a_committee() {
     let nf = [0x11; 32];
     let recipient = Pubkey::new_from_array([0x9C; 32]);
 
-    let buffer = install_buffer(&mut svm, &verifier_id, make_buffer(&root, &nf, 0, &action, true));
+    let buffer = install_buffer(&mut svm, &verifier_id, make_buffer(&root, &nf, 0, &action, true, &recipient));
     let r = relayer(&mut svm);
 
     let before = svm.get_account(&recipient).map(|a| a.lamports).unwrap_or(0);
@@ -219,10 +223,11 @@ fn an_unfinalized_buffer_is_rejected() {
     let (mut svm, _auth, pool, root) = pool_verified_ready(&verifier_id);
     let action = [0xA1; 32];
     let nf = [0x22; 32];
+    let recipient = Pubkey::new_unique();
     // finalized = false: the verifier never certified this proof
-    let buffer = install_buffer(&mut svm, &verifier_id, make_buffer(&root, &nf, 0, &action, false));
+    let buffer = install_buffer(&mut svm, &verifier_id, make_buffer(&root, &nf, 0, &action, false, &recipient));
     let r = relayer(&mut svm);
-    let err = send(&mut svm, &[&r], execute_verified_ix(pool, &r, buffer, Pubkey::new_unique(), root, action, nf, 0))
+    let err = send(&mut svm, &[&r], execute_verified_ix(pool, &r, buffer, recipient, root, action, nf, 0))
         .expect_err("an unfinalized buffer must not settle");
     assert!(err.contains("FINALIZED") || err.contains("ProofNotFinalized"), "{err}");
 }
@@ -232,11 +237,30 @@ fn a_buffer_for_a_different_action_is_rejected() {
     let verifier_id = Keypair::new().pubkey();
     let (mut svm, _auth, pool, root) = pool_verified_ready(&verifier_id);
     let nf = [0x33; 32];
+    let recipient = Pubkey::new_unique();
     // buffer certifies action 0xAA, but we settle action 0xBB
-    let buffer = install_buffer(&mut svm, &verifier_id, make_buffer(&root, &nf, 0, &[0xAA; 32], true));
+    let buffer = install_buffer(&mut svm, &verifier_id, make_buffer(&root, &nf, 0, &[0xAA; 32], true, &recipient));
     let r = relayer(&mut svm);
-    let err = send(&mut svm, &[&r], execute_verified_ix(pool, &r, buffer, Pubkey::new_unique(), root, [0xBB; 32], nf, 0))
+    let err = send(&mut svm, &[&r], execute_verified_ix(pool, &r, buffer, recipient, root, [0xBB; 32], nf, 0))
         .expect_err("public inputs must match the settled tuple");
+    assert!(err.contains("public inputs") || err.contains("ProofPublicInputMismatch"), "{err}");
+}
+
+#[test]
+fn a_relayer_cannot_redirect_the_payout_on_the_verified_path() {
+    // The buffer binds the payout to `intended`; the relayer submits it but names
+    // its own account as recipient, trying to steal the denomination. The recipient
+    // is a verified public input, so the settlement must be rejected.
+    let verifier_id = Keypair::new().pubkey();
+    let (mut svm, _auth, pool, root) = pool_verified_ready(&verifier_id);
+    let action = [0xA1; 32];
+    let nf = [0x55; 32];
+    let intended = Pubkey::new_from_array([0x9C; 32]);
+    let buffer = install_buffer(&mut svm, &verifier_id, make_buffer(&root, &nf, 0, &action, true, &intended));
+    let r = relayer(&mut svm);
+    // the attacker (the relayer) redirects to itself, keeping every other field valid
+    let err = send(&mut svm, &[&r], execute_verified_ix(pool, &r, buffer, r.pubkey(), root, action, nf, 0))
+        .expect_err("a relayer must not redirect the payout to an unbound recipient");
     assert!(err.contains("public inputs") || err.contains("ProofPublicInputMismatch"), "{err}");
 }
 
@@ -246,11 +270,12 @@ fn a_buffer_owned_by_the_wrong_program_is_rejected() {
     let (mut svm, _auth, pool, root) = pool_verified_ready(&verifier_id);
     let action = [0xA1; 32];
     let nf = [0x44; 32];
+    let recipient = Pubkey::new_unique();
     // correct contents, but owned by an impostor, not the pool's named verifier
     let impostor = Keypair::new().pubkey();
-    let buffer = install_buffer(&mut svm, &impostor, make_buffer(&root, &nf, 0, &action, true));
+    let buffer = install_buffer(&mut svm, &impostor, make_buffer(&root, &nf, 0, &action, true, &recipient));
     let r = relayer(&mut svm);
-    let err = send(&mut svm, &[&r], execute_verified_ix(pool, &r, buffer, Pubkey::new_unique(), root, action, nf, 0))
+    let err = send(&mut svm, &[&r], execute_verified_ix(pool, &r, buffer, recipient, root, action, nf, 0))
         .expect_err("a buffer not owned by the named verifier must not settle");
     assert!(err.contains("owned") || err.contains("WrongVerifierOwner"), "{err}");
 }

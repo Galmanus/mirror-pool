@@ -90,7 +90,9 @@ const B_ROOT: usize = 41; //     [41, 73)   membership root proven against
 const B_NULLIFIER: usize = 73; // [73, 105)  revealed, spent-once nullifier
 const B_ROUND: usize = 105; //   [105, 121)  round as u128 LE (low 8 bytes used)
 const B_ACTION: usize = 121; //  [121, 153)  action hash the leaf commits to
-const B_MIN_LEN: usize = 153; // buffer must be at least this long to be parseable
+const B_RECIPIENT: usize = 153; // [153, 185) payout recipient, a verified public input
+                                //            so a relayer cannot redirect the payout
+const B_MIN_LEN: usize = 185; // buffer must be at least this long to be parseable
 
 declare_id!("BFy2ehVxpBrtwMCWwufpfbbsoWtZVYVaZBzDE2eAG7az");
 
@@ -303,6 +305,7 @@ pub mod riverrun_program {
             &nullifier,
             round,
             &action_hash,
+            &ctx.accounts.recipient.key(),
         )?;
 
         let record = &mut ctx.accounts.nullifier_record;
@@ -477,6 +480,7 @@ fn verify_stark_buffer(
     nullifier: &[u8; 32],
     round: u64,
     action: &[u8; 32],
+    recipient: &Pubkey,
 ) -> Result<()> {
     require_keys_eq!(*buffer.owner, *verifier_id, PoolError::WrongVerifierOwner);
     let data = buffer.try_borrow_data()?;
@@ -496,6 +500,12 @@ fn verify_stark_buffer(
     );
     require!(
         &data[B_ACTION..B_ACTION + 32] == action,
+        PoolError::ProofPublicInputMismatch
+    );
+    // The payout recipient is a verified public input too, so the settling
+    // relayer cannot swap in an account of their own and redirect the funds.
+    require!(
+        &data[B_RECIPIENT..B_RECIPIENT + 32] == recipient.as_ref(),
         PoolError::ProofPublicInputMismatch
     );
     Ok(())
@@ -632,8 +642,9 @@ pub struct ExecuteVerified<'info> {
     pub relayer: Signer<'info>,
     #[account(mut, seeds = [b"vault", pool.key().as_ref()], bump)]
     pub vault: SystemAccount<'info>,
-    /// CHECK: identity is enforced by the STARK's `action` public input in the
-    /// verifier buffer, not by type.
+    /// CHECK: bound in `verify_stark_buffer` — its key must equal the recipient
+    /// public input the verifier finalized into the buffer, so the settling relayer
+    /// cannot redirect the payout. Not enforced by type.
     #[account(mut)]
     pub recipient: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
