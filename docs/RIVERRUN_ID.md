@@ -1,10 +1,12 @@
 # riverrun ID — a post-quantum anonymous-but-accountable identity layer for Solana
 
-**Status: design / north-star.** The core primitive it stands on (the rotatable
-piece) is built and tested in `crates/riverrun-core/src/rotatable.rs`, and its
+**Status: primitive built and tested; the on-chain layer is design / north-star.**
+The full seven-power primitive it stands on (the rotatable piece + RLN) is built and
+tested in `crates/riverrun-core/src/rotatable.rs` and `rln.rs` (44 tests), and the
 rotation is proven in zero knowledge in `crates/riverrun-stark/tests/rotation.rs`.
-What is *not* yet built is called out plainly in [§7](#7-honest-status). This is
-the product north-star, not a shipped claim.
+What is *not* yet built — the in-circuit membership, the Solana verifier, a mainnet
+deploy, an audit — is called out plainly in [§7](#7-honest-status). This is the
+product north-star, not a shipped claim.
 
 ## 1. One line
 
@@ -17,28 +19,36 @@ twice where they should act once.
 This is not a privacy *pool* (one use case). It is the identity *layer* many use
 cases build on.
 
-## 2. The primitive (this part exists)
+## 2. The seven powers (built and tested)
 
-A user holds one `Secret`. A **context** — call it an **angle** `θ` — is any public
-label: a dApp, a DAO, an airdrop, a voting round, a verifier. The rotatable piece
-(`Secret::piece`) derives, per angle:
+A user holds one `Secret`. A **context** — an **angle** `θ` — is any public label (a
+dApp, DAO, airdrop, voting round, verifier). From that one secret, `Secret::piece()`
+gives seven capabilities, each a tested relation in
+`crates/riverrun-core/src/rotatable.rs` (and `rln.rs`), each provable in zero
+knowledge over the same STARK:
 
-- **shape** `H(secret ‖ θ)` — the user's identity *in that context* (a commitment
-  leaf they publish).
-- **fit** `H(secret ‖ θ)` — the spend-once nullifier for acting in that context.
-- **turn** `H(secret ‖ θ ‖ θ+1)` — the migration witness, derivable only with the
-  secret, that proves two contexts are the same piece.
+| # | power | what the user can do | backed by (test) |
+|---|---|---|---|
+| 1 | **shape** `H(s‖θ)` | be a different, unlinkable identity in every context | `unlinkable_across_angles` |
+| 2 | **fit** `H(s‖θ)` | act once per context — sybil-resistant | `binding_within_an_angle` + on-chain nullifier registry |
+| 3 | **turn** `H(s‖θ‖θ+1)` | prove "I'm the same entity across cycles" in zero knowledge, revealing *which* to no one | `check_turn` + `tests/rotation.rs` (proven in ZK) |
+| 4 | **link** | selectively reveal that two of your identities are one — to whom you choose, only for the contexts you pick | `check_link` |
+| 5 | **grant** `H(s‖θ‖delegate)` | delegate one context to an agent — bound to that agent, scoped to that angle, never your master secret | `check_delegation` |
+| 6 | **rln** (Shamir) | rate-limit yourself: N actions per context stay anonymous, the N+1-th lets anyone recover your secret and unmask you | `rln::*` |
+| 7 | **credential** `H(s‖attr)` | carry an issuer's attribute (verified, over-18) and show it per context, without doxxing | `check_attribute` |
 
-All three are one collision-resistant hash (BLAKE3 in the spec crate, a
-Poseidon-family hash in-circuit). No curves, no pairings, no trusted setup.
+All are one collision-resistant hash (BLAKE3 in the spec crate; a Poseidon-family
+hash in-circuit) plus, for RLN, Shamir sharing over a prime field. No elliptic
+curves, no pairings, no trusted setup — post-quantum throughout. **44 tests green** in
+`riverrun-core`.
 
-## 3. The three guarantees, and where each already lives
+## 3. The shape of it
 
-| Guarantee | What it means to a user | Backed by |
-|---|---|---|
-| **Unlinkable identities** | Your persona in DAO A and pool B cannot be tied together; cross-protocol clustering fails | `rotatable::unlinkable_across_angles` (test) |
-| **Sybil-resistant, per context** | The fit is spent once per angle, so one secret = one action per context (one vote, one airdrop claim) | per-angle `fit` + on-chain nullifier registry (`programs/mirror-pool`) |
-| **Provable continuity, hidden** | You can prove "I'm the same entity as in context A" without revealing which — reputation that doesn't dox | `rotatable::check_turn` (relation) + `tests/rotation.rs` (proven in ZK) |
+You are **invisible by default** (1), **accountable where it matters** (2, 6),
+**continuous when you choose** (3), **linkable only on your terms** (4), able to
+**lend a single context to an agent** (5), and able to **prove facts about yourself
+without a trail** (7). One secret, total control of your own exposure. Few systems
+anywhere hold all seven at once; none does it post-quantum on Solana.
 
 ## 4. What it unlocks (the category, not one app)
 
@@ -118,16 +128,28 @@ exactly what a disruptive *tool* on a new chain is made of.
 // one secret, minted once from the OS CSPRNG
 let me = Secret::random();
 
-// act, unlinkably, in any context
-let dao_id     = me.piece().shape(dao_round);      // my identity in this DAO round
-let vote_null  = me.piece().fit(dao_round);        // spend once — one vote
+// 1 + 2 — a different, unlinkable identity in each context; act once each
+let dao_id  = me.piece().shape(dao_round);        // my identity in this DAO round
+let vote    = me.piece().fit(dao_round);          // spend once — one vote
+let drop_id = me.piece().shape(airdrop_epoch);    // unlinkable to dao_id
+let claim   = me.piece().fit(airdrop_epoch);      // one claim per person
 
-let airdrop_id = me.piece().shape(airdrop_epoch);  // unlinkable to dao_id
-let claim_null = me.piece().fit(airdrop_epoch);    // one claim per person
+// 3 — prove I'm the same entity across cycles, revealing which to no one (ZK)
+check_turn(&TurnStatement { prev_root, angle, turn_tag: me.piece().turn(angle) }, &wit);
 
-// prove I am the same entity across contexts, without revealing which
-let proof = prove_turn(prev_root, me, angle);      // ZK; reveals only {root, turn_tag, angle}
+// 4 — selectively link two of my identities, to a chosen verifier only
+check_link(&LinkStatement { shape_a, angle_a, shape_b, angle_b }, &LinkWitness { secret: me });
+
+// 5 — let an agent act as me in ONE context, bound to the agent, scoped to θ
+let g = me.piece().grant(dao_round, &agent_pubkey);
+check_delegation(&DelegationStatement { set_root, angle: dao_round, delegate: agent_pubkey, grant_tag: g }, &wit);
+
+// 6 — rate-limit myself: N acts stay hidden, the N+1-th reveals my secret
+let point = riverrun_core::rln::share(&me, dao_round, /*limit=*/ 3, x);
+
+// 7 — carry & show an issuer's attribute, per context, without doxxing
+check_attribute(&AttributeStatement { attr_root, attr, angle: dao_round, shape: dao_id }, &wit);
 ```
 
-One secret, every context, no trail between them, one action each, quantum-safe.
-That is riverrun ID.
+One secret, every context, no trail between them, one action each, delegable,
+rate-limited, credential-bearing, quantum-safe. That is riverrun ID.
