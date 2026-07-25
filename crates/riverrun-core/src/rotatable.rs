@@ -38,6 +38,7 @@ pub type Angle = u64;
 const SHAPE: &[u8] = b"riverrun/piece-shape/v1";
 const FIT: &[u8] = b"riverrun/piece-fit/v1";
 const TURN: &[u8] = b"riverrun/piece-turn/v1";
+const GRANT: &[u8] = b"riverrun/piece-grant/v1";
 
 /// A rotatable piece: a single [`Secret`] viewed from any angle. Borrow one with
 /// [`Secret::piece`].
@@ -79,6 +80,16 @@ impl Piece<'_> {
                 &theta.wrapping_add(1).to_le_bytes(),
             ],
         )
+    }
+
+    /// A **scoped delegation grant**: `H(grant ‖ secret ‖ θ ‖ delegate)`. Authorizes
+    /// `delegate` to act as this piece in context `θ` — and **only** there. Derivable
+    /// only by the holder (it needs the secret), bound to the specific `delegate`
+    /// (someone else's key cannot use it) and to the single angle `θ` (it grants
+    /// nothing anywhere else). Let an agent act as an anonymous member of one DAO
+    /// round, one pool, one vote — never your whole identity.
+    pub fn grant(&self, theta: Angle, delegate: &[u8; 32]) -> Hash {
+        tagged_hash(GRANT, &[self.0.as_bytes(), &theta.to_le_bytes(), delegate])
     }
 }
 
@@ -175,6 +186,56 @@ pub fn check_link(statement: &LinkStatement, witness: &LinkWitness) -> bool {
     let piece = witness.secret.piece();
     piece.shape(statement.angle_a) == statement.shape_a
         && piece.shape(statement.angle_b) == statement.shape_b
+}
+
+// ---------------------------------------------------------------------------
+// Scoped delegation — let an agent act as you in one context, and only there.
+// ---------------------------------------------------------------------------
+
+/// The public statement of a scoped delegation: "a genuine member of the set at
+/// `angle` authorizes `delegate` to act there, and the proof of that authorization
+/// is `grant_tag`."
+///
+/// The holder proves it once (in zero knowledge); the verifier learns only
+/// `{set_root, angle, delegate, grant_tag}` — never which member granted it. The
+/// grant is bound to this `delegate` (not stealable by another key) and to this
+/// single `angle` (it authorizes nothing elsewhere), and it is spent once. An agent
+/// (a bot, a co-signer, a service) can then act as an anonymous member of exactly
+/// that context, on the holder's authority, without ever touching the master secret.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct DelegationStatement {
+    /// The set root the granting member must belong to at `angle`.
+    pub set_root: Hash,
+    /// The single context the grant is scoped to.
+    pub angle: Angle,
+    /// The public identifier of the authorized delegate (e.g. their public key).
+    pub delegate: [u8; 32],
+    /// The grant, revealed and spent once.
+    pub grant_tag: Hash,
+}
+
+/// The private witness — the granting piece, never revealed.
+#[derive(Clone, Debug)]
+pub struct DelegationWitness {
+    pub secret: Secret,
+    /// A path showing the granting piece's shape at `angle` sits under `set_root`.
+    pub inclusion: InclusionProof,
+}
+
+/// Evaluate the scoped-delegation relation in the clear — what a zero-knowledge
+/// proof of a delegation enforces. Two constraints:
+/// 1. **Authorized by a real member:** the granting secret's shape at `angle` is a
+///    member under `set_root` (only a legitimate member of that context can grant).
+/// 2. **Grant binding:** `grant_tag == secret.piece().grant(angle, delegate)` — the
+///    grant is this member's, for this delegate, for this angle. A different member,
+///    a different delegate, or a different angle all fail.
+pub fn check_delegation(statement: &DelegationStatement, witness: &DelegationWitness) -> bool {
+    let piece = witness.secret.piece();
+    if piece.grant(statement.angle, &statement.delegate) != statement.grant_tag {
+        return false;
+    }
+    let shape = Commitment(piece.shape(statement.angle));
+    merkle_verify(&statement.set_root, &shape, &witness.inclusion)
 }
 
 #[cfg(test)]
@@ -415,5 +476,75 @@ mod tests {
         assert_ne!(third, stmt.shape_b);
         // ...and is indistinguishable from a stranger's shape at the same angle.
         assert_ne!(third, secret(2).piece().shape(secret_vote));
+    }
+
+    // --- scoped delegation ---
+
+    #[test]
+    fn a_member_can_delegate_one_context_to_an_agent() {
+        let theta: Angle = 7;
+        let me = secret(1);
+        let agent = [0xA6u8; 32]; // the agent's public id
+        let members = [secret(9), me, secret(3), secret(5)];
+        let set = shape_set(&members, theta);
+        let stmt = DelegationStatement {
+            set_root: set.root(),
+            angle: theta,
+            delegate: agent,
+            grant_tag: me.piece().grant(theta, &agent),
+        };
+        let wit = DelegationWitness { secret: me, inclusion: set.prove(1).unwrap() };
+        assert!(check_delegation(&stmt, &wit), "a member can delegate their own context");
+    }
+
+    #[test]
+    fn a_grant_is_bound_to_the_named_delegate() {
+        // a grant issued for agent A must not authorize agent B
+        let theta: Angle = 7;
+        let me = secret(1);
+        let members = [secret(9), me, secret(3), secret(5)];
+        let set = shape_set(&members, theta);
+        let stmt = DelegationStatement {
+            set_root: set.root(),
+            angle: theta,
+            delegate: [0xBBu8; 32], // a DIFFERENT agent than the grant was for
+            grant_tag: me.piece().grant(theta, &[0xA6u8; 32]),
+        };
+        let wit = DelegationWitness { secret: me, inclusion: set.prove(1).unwrap() };
+        assert!(!check_delegation(&stmt, &wit), "a grant for one agent must not work for another");
+    }
+
+    #[test]
+    fn a_grant_is_scoped_to_one_context() {
+        // a grant for angle 7 must not authorize acting at angle 8
+        let (theta, other): (Angle, Angle) = (7, 8);
+        let me = secret(1);
+        let agent = [0xA6u8; 32];
+        let set = shape_set(&[secret(9), me, secret(3), secret(5)], other); // set at the OTHER angle
+        let stmt = DelegationStatement {
+            set_root: set.root(),
+            angle: other,
+            delegate: agent,
+            grant_tag: me.piece().grant(theta, &agent), // grant was for theta, not other
+        };
+        let wit = DelegationWitness { secret: me, inclusion: set.prove(1).unwrap() };
+        assert!(!check_delegation(&stmt, &wit), "a grant for one angle must not work at another");
+    }
+
+    #[test]
+    fn a_non_member_cannot_delegate() {
+        let theta: Angle = 7;
+        let outsider = secret(42);
+        let agent = [0xA6u8; 32];
+        let set = shape_set(&[secret(9), secret(1), secret(3), secret(5)], theta);
+        let stmt = DelegationStatement {
+            set_root: set.root(),
+            angle: theta,
+            delegate: agent,
+            grant_tag: outsider.piece().grant(theta, &agent),
+        };
+        // outsider borrows a real member's path but isn't in the set
+        let wit = DelegationWitness { secret: outsider, inclusion: set.prove(1).unwrap() };
+        assert!(!check_delegation(&stmt, &wit), "only a member of the context can delegate it");
     }
 }
