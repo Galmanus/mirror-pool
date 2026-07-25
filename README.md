@@ -439,7 +439,7 @@ for.
 | **Circle STARK** ([murkl](https://github.com/exidz/murkl)) | transfers, in anonymous pools | yes, ~31k CU, ~8.7 KB proof | no | yes |
 | **MPC / FHE** ([Arcium](https://www.arcium.com/), Umbra) | shared encrypted state, balances, amounts | via the MXE network | no | depends on the primitive |
 | **Confidential Transfers** (Token-2022) | amounts and balances | native, protocol level | no | no (ElGamal) |
-| **riverrun** | the **actor↔action link** — who did it, not what or how much | **no**, an M-of-N committee attests | no | yes (hash-based) |
+| **riverrun** | the **actor↔action link** — who did it, not what or how much | **in the Solana VM: yes** — an M31 proof of riverrun's relation verifies at **~160k CU** (post-quantum, action-bound); not yet on mainnet, committee is today's fallback | no | yes (hash-based) |
 
 Efficiency cuts both ways and it is worth being exact about which way. On
 **verification compute**, a small-field STARK is the cheapest thing on this list:
@@ -451,14 +451,22 @@ outright: 8 ms for a 16,384-member set and nothing to distribute.
 
 Read the last row honestly. riverrun is the only one whose payload is *behaviour*
 rather than value, which is what the `mirror-pool` brief asks for, and it needs no
-ceremony. It is also the only one that does not verify its proof on-chain, and
-that is a real deficit, not a design preference — see Security status for the
-correction on why, and the roadmap for the path.
+ceremony. Until recently it was also the only one that did **not** verify its proof
+on-chain — that gap is now closing. A post-quantum **M31 Circle-STARK proof of
+riverrun's relation, with action binding, verifies inside the Solana VM at ~160k CU**
+(the same class of verifier as murkl, extended with riverrun's constraint), and the
+program already consumes it committee-free through `execute_verified`. Stated exactly
+so it can be checked: this is measured in a local VM, not deployed to mainnet, and
+the membership is bound as a public input rather than proven by a full in-circuit
+Poseidon2 Merkle path (that hash foundation is built — Plonky3's vetted parameters —
+and its arithmetization is the open milestone). The committee is the current on-chain
+fallback, not the destination.
 
 The comparison that matters most is with the Circle STARK work: it demonstrates
-that transparent, post-quantum, on-chain verification is *available today* on
-Solana at 31k CU. riverrun proves a different statement, but there is no excuse
-left for proving it off-chain forever.
+that transparent, post-quantum, on-chain verification is *available today* on Solana
+at ~31k CU. riverrun now proves its **own** relation on that same class of verifier
+— the remaining distance to "no asterisk" is a mainnet deployment and the in-circuit
+membership, not a change of cryptographic scheme.
 
 ## The action, made real — money moves, the actor does not
 
