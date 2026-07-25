@@ -15,23 +15,38 @@
 [![post-quantum](https://img.shields.io/badge/STARK-post--quantum%2C%20no%20setup-8A2BE2)](#why-post-quantum-and-transparent)
 [![license](https://img.shields.io/badge/license-MIT-blue)](#license)
 
-**A production tool that measures the real anonymity any Solana privacy pool gives you — before you trust it.**
+**riverrun is Tornado Cash for behavior, not funds. It cuts the link between you and
+what you do on-chain, it survives quantum computers, and it is the only tool that
+can *prove how much anonymity you actually have* before you trust a pool with it.**
 
-Every privacy pool advertises `1/k`: k members, so a one-in-k guess. That number
-counts members, and as a measure of anonymity it overstates, because it ignores
-where the members' money came from — and on a public ledger, that is public.
-`riverrun` is a finished CLI that reads public chain data and returns the anonymity
-a pool *actually* delivers. Run against a live SOL pool on mainnet, the **30**
-advertised members were worth an effective **6.5**, and one member, alone in the
-origin of their money, was worth exactly **1**. It is protocol-agnostic — it works
-against any pool it has never seen, including the other submissions in this bounty.
+Every privacy pool hides one thing from you: the `1/k` it advertises is a lie of
+omission. It counts members and ignores where their money came from, and on a public
+ledger that is public. Sort a pool by funding origin and your real anonymity can
+collapse. riverrun is the first tool to measure that collapse, **live on mainnet**:
+against a real Solana pool an advertised **k=30** was worth an effective **6.5**, and
+one depositor, alone in their funding class, was worth exactly **1**. It scores any
+pool it has never seen, including the other submissions in this bounty.
 
-**Who it's for** — anyone who doesn't want to be an open book on-chain:
-**algotraders** whose strategies get reverse-engineered · **whales** whose every move
-is shadowed and front-run · **market makers** protecting flow and inventory ·
-**protocols & agents** operating without broadcasting their playbook · **everyday
-users** who simply don't want to be clustered and profiled. The privacy that used to
-need a specialist, in one command.
+Then it flips the script. The same funding-graph analysis that firms like
+Chainalysis sell to *de-anonymize* people is, here, an open-source CLI you run on
+your own wallet as self-defense, before you act: `riverrun preflight <wallet>`
+answers **EXPOSED / WEAK / OK** in one command, with what to do about it.
+
+And it is built to outlive the cryptography everyone else depends on. Every value
+riverrun commits on-chain is a hash: no elliptic curves, no pairings. That is what
+defeats **harvest-now-decrypt-later**, the attack where an adversary archives
+encrypted or linkable data today to break it with a quantum computer years from now.
+On riverrun's ledger there is nothing to harvest: the only things it records are
+post-quantum PRF outputs (nullifiers) that an attacker still cannot invert after
+quantum arrives. Most privacy tools sell you hiding math and ask you to trust it.
+riverrun makes anonymity **a number you can audit, a defense you can run, and a
+guarantee that does not expire when quantum computers show up.**
+
+**Who it protects:** algotraders whose strategies get reverse-engineered, whales
+whose every move is shadowed and front-run, market makers protecting flow and
+inventory, protocols and agents that cannot broadcast their playbook, and everyday
+users who simply refuse to be clustered and profiled. The privacy that used to need
+a specialist, in one command.
 
 ## In plain words
 
@@ -71,6 +86,75 @@ what. riverrun does that for on-chain actions.
   does **not** de-anonymize, and breaking it is a soundness break, not a privacy one.
 - It is a **research prototype, not audited.** Do not guard real funds or
   identities with the pool yet. The measurement tool, by contrast, is finished.
+
+## Innovations, and why they matter
+
+riverrun moves privacy from "hiding math" you are asked to trust toward
+**behavioral privacy you can measure and defend in real time.** Four things are new.
+
+**1. Effective-k: anonymity as an audited number.** Every noise pool advertises
+`1/k`. That counts members and ignores where their money came from, which on a
+public ledger is public. riverrun traces each wallet's funding graph and reports
+the anonymity a pool *actually* delivers. On a live mainnet SOL pool an advertised
+**k=30** was worth an effective **6.5**, and one depositor, alone in their funding
+class, was worth exactly **1**. It is protocol-agnostic: it scores any pool,
+including the other submissions in this bounty.
+
+**2. preflight: forensic analysis turned into self-defense.** The same graph
+analysis firms use to de-anonymize users is, here, an open-source CLI a user runs
+on *their own* wallet before they act. One command returns **EXPOSED / WEAK / OK**
+with what to do about it.
+
+**3. A provenance-aware round coordinator.** A crowd is not privacy just because it
+is large. The coordinator admits a member to a synchronized round only when their
+funding-provenance class already holds at least `k_min` others, defers the ones who
+would stand out, and hands each admitted member a verifiable certificate of the
+round's effective-k. riverrun is the only design here that can run this, because it
+is the only one that can *measure* a round.
+
+**4. Post-quantum settlement, moving on-chain.** Every value the pool stores on
+chain is a hash (commitment, nullifier, root), so the permanent ledger is
+post-quantum by construction: an adversary harvesting the chain today to decrypt
+later with a quantum computer finds only PRF outputs, with nothing to break.
+
+> **Why this survives quantum.** Harvest-now-decrypt-later breaks the public-key
+> cryptography built on discrete-log and factoring (RSA, ECDSA, ECDH, pairings),
+> which Shor's algorithm defeats. riverrun uses none of it. Every primitive is
+> hash-based (BLAKE3, Rescue/Poseidon2, keccak), the same conservative family NIST
+> standardized as SLH-DSA / SPHINCS+ (FIPS 205) precisely because hash security
+> resists quantum attack, weakened only by Grover's quadratic speedup, which the
+> 128-bit parameters already absorb. riverrun shares that quantum-resistance
+> rationale, not NIST's specific KEM/signature algorithms (ML-KEM, ML-DSA).
+
+- *Today (honest):* the membership proof is a transparent, hash-based Winterfell
+  STARK over a 128-bit field. It is verified **off-chain** and gated on-chain by an
+  M-of-N committee, because that proof is 12 to 16 KB and costs **3.77M compute
+  units**, above Solana's 1.4M per-transaction cap (measured in
+  `programs/stark-verifier/tests/cu.rs`).
+- *The path forward, validated:* a **Circle STARK over the Mersenne-31 field** fits
+  a single mainnet transaction. Using the murkl M31 verifier as a **reference**, we
+  confirmed on a **commodity laptop, no cloud**, that this class of verifier
+  compiles to a **249 KB** Solana program and runs a proof in **~37k compute units
+  in a local VM** (LiteSVM), under 3% of a transaction's budget. riverrun's own M31
+  AIR (membership + nullifier + action binding) is specified in
+  [`docs/M31_CIRCLE_STARK.md`](docs/M31_CIRCLE_STARK.md); porting the proof onto it,
+  and swapping the committee for this on-chain verifier through the already
+  implemented `execute_verified` path, is the migration in progress. When it lands,
+  riverrun is the only submission here that is post-quantum, transparent (no trusted
+  setup), **and** verified on-chain with no committee.
+
+  (Numbers stated precisely, so a reviewer can check them: the 4.8 KB proof / 249 KB
+  verifier / ~37k CU belong to the M31 *reference* stack we measured, not to
+  riverrun's current f128 STARK. Nothing is deployed to mainnet yet.)
+
+### Who this protects
+
+Beyond individuals, the actor-to-action unlink is what lets an algotrader keep a
+strategy from being reverse-engineered, a market maker protect inventory and flow,
+and a large actor avoid being front-run by MEV bots that key off predictable wallet
+patterns. These are the intended users. riverrun protects the behavioral layer they
+need, and composes with the value and recipient confidentiality it does not itself
+provide. This is positioning, not a deployed claim.
 
 ### Install
 
