@@ -77,6 +77,21 @@ const ED25519_MESSAGE_OFFSET: usize = ED25519_SIGNATURE_OFFSET + 64;
 /// (Mamalujo), who judge as a quorum and never as one; generalized to M-of-N.
 const MAX_VERIFIERS: usize = 8;
 
+// --- STARK-verified settlement (the committee-free path) ---
+//
+// `execute_verified` replaces the Ed25519 committee with a real post-quantum proof
+// verified on-chain. It does not run the STARK itself; it reads a *verifier buffer*
+// account that a Circle-STARK (M31) verifier program wrote after verifying the
+// membership proof, and checks the verified public inputs match the settled tuple.
+// Layout and rationale: `docs/M31_CIRCLE_STARK.md` §2. Only the verifier program can
+// own the buffer and set the FINALIZED byte, so the pool cannot forge a settlement.
+const B_FINALIZED: usize = 40; // 1 == the proof for these public inputs verified
+const B_ROOT: usize = 41; //     [41, 73)   membership root proven against
+const B_NULLIFIER: usize = 73; // [73, 105)  revealed, spent-once nullifier
+const B_ROUND: usize = 105; //   [105, 121)  round as u128 LE (low 8 bytes used)
+const B_ACTION: usize = 121; //  [121, 153)  action hash the leaf commits to
+const B_MIN_LEN: usize = 153; // buffer must be at least this long to be parseable
+
 declare_id!("BFy2ehVxpBrtwMCWwufpfbbsoWtZVYVaZBzDE2eAG7az");
 
 #[program]
@@ -101,6 +116,7 @@ pub mod riverrun_program {
         pool.k_min = k_min;
         pool.accumulator = [0u8; 32];
         pool.membership_root = [0u8; 32];
+        pool.stark_verifier = Pubkey::default();
         pool.member_count = 0;
         pool.round = 0;
         pool.bump = ctx.bumps.pool;
@@ -125,6 +141,15 @@ pub mod riverrun_program {
     /// Reprice a seat in the anonymity set. Authority-gated.
     pub fn set_entry_fee(ctx: Context<AdvanceRound>, entry_fee: u64) -> Result<()> {
         ctx.accounts.pool.entry_fee = entry_fee;
+        Ok(())
+    }
+
+    /// Name the on-chain Circle-STARK verifier whose finalized buffer
+    /// `execute_verified` will trust. Authority-gated. Setting this is what turns on
+    /// the committee-free, on-chain-verified settlement path; until it is set (or if
+    /// set back to `Pubkey::default()`), `execute_verified` refuses to settle.
+    pub fn set_stark_verifier(ctx: Context<AdvanceRound>, verifier: Pubkey) -> Result<()> {
+        ctx.accounts.pool.stark_verifier = verifier;
         Ok(())
     }
 
@@ -221,6 +246,69 @@ pub mod riverrun_program {
         // amount is identical for every execution, so the value leaving the pool
         // does not reveal which member acted. The recipient is bound into the
         // attestation above, so a relayer cannot redirect it.
+        let pool_key = ctx.accounts.pool.key();
+        let vault_seeds: &[&[u8]] = &[b"vault", pool_key.as_ref(), &[ctx.bumps.vault]];
+        let transfer_ix = anchor_lang::solana_program::system_instruction::transfer(
+            &ctx.accounts.vault.key(),
+            &ctx.accounts.recipient.key(),
+            PAYOUT_LAMPORTS,
+        );
+        anchor_lang::solana_program::program::invoke_signed(
+            &transfer_ix,
+            &[
+                ctx.accounts.vault.to_account_info(),
+                ctx.accounts.recipient.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
+            &[vault_seeds],
+        )?;
+
+        emit!(Executed {
+            pool: pool_key,
+            action_hash,
+            nullifier,
+            round,
+        });
+        Ok(())
+    }
+
+    /// Execute an action settled by an **on-chain STARK proof instead of a
+    /// committee**. Identical to `execute` in every check except the membership
+    /// gate: rather than requiring M-of-N Ed25519 attestations, it requires a
+    /// `verifier_buffer` account, owned by the pool's named `stark_verifier`, whose
+    /// FINALIZED byte is set and whose verified public inputs `{root, nullifier,
+    /// round, action}` equal this settlement. That buffer is written by a Circle-
+    /// STARK (M31) verifier that ran the real proof on-chain — so settlement now
+    /// rests on a post-quantum proof, no trusted signers. See
+    /// `docs/M31_CIRCLE_STARK.md`.
+    pub fn execute_verified(
+        ctx: Context<ExecuteVerified>,
+        action_hash: [u8; 32],
+        nullifier: [u8; 32],
+        round: u64,
+        root: [u8; 32],
+    ) -> Result<()> {
+        let pool = &ctx.accounts.pool;
+        require!(round == pool.round, PoolError::RoundMismatch);
+        require!(pool.member_count >= pool.k_min, PoolError::AnonymitySetTooSmall);
+        require!(pool.membership_root != [0u8; 32], PoolError::RootNotPublished);
+        require!(root == pool.membership_root, PoolError::RootMismatch);
+        require!(pool.stark_verifier != Pubkey::default(), PoolError::StarkVerifierNotSet);
+
+        // The committee's replacement: a real proof, verified on-chain.
+        verify_stark_buffer(
+            &ctx.accounts.verifier_buffer,
+            &pool.stark_verifier,
+            &root,
+            &nullifier,
+            round,
+            &action_hash,
+        )?;
+
+        let record = &mut ctx.accounts.nullifier_record;
+        record.round = round;
+        record.bump = ctx.bumps.nullifier_record;
+
         let pool_key = ctx.accounts.pool.key();
         let vault_seeds: &[&[u8]] = &[b"vault", pool_key.as_ref(), &[ctx.bumps.vault]];
         let transfer_ix = anchor_lang::solana_program::system_instruction::transfer(
@@ -372,6 +460,47 @@ fn verify_quorum(
     Ok(())
 }
 
+/// Validate a Circle-STARK verifier buffer against the settled tuple.
+///
+/// The buffer is written by the pool's named `stark_verifier` after it ran the
+/// real membership proof on-chain. This function does **not** verify the proof — it
+/// trusts that the verifier program did, which is safe precisely because the buffer
+/// must be *owned* by that verifier: no other program (including this one) can set
+/// its FINALIZED byte. What it checks is that the buffer is finalized and that the
+/// verified public inputs are byte-for-byte the tuple being settled, so a proof for
+/// some other `{root, nullifier, round, action}` cannot be replayed here.
+/// Layout: `docs/M31_CIRCLE_STARK.md` §2.
+fn verify_stark_buffer(
+    buffer: &UncheckedAccount,
+    verifier_id: &Pubkey,
+    root: &[u8; 32],
+    nullifier: &[u8; 32],
+    round: u64,
+    action: &[u8; 32],
+) -> Result<()> {
+    require_keys_eq!(*buffer.owner, *verifier_id, PoolError::WrongVerifierOwner);
+    let data = buffer.try_borrow_data()?;
+    require!(data.len() >= B_MIN_LEN, PoolError::ProofPublicInputMismatch);
+    require!(data[B_FINALIZED] == 1, PoolError::ProofNotFinalized);
+    require!(&data[B_ROOT..B_ROOT + 32] == root, PoolError::ProofPublicInputMismatch);
+    require!(
+        &data[B_NULLIFIER..B_NULLIFIER + 32] == nullifier,
+        PoolError::ProofPublicInputMismatch
+    );
+    // round is carried as u128 LE; the low 8 bytes are the round, the high 8 zero.
+    let mut round_bytes = [0u8; 16];
+    round_bytes[..8].copy_from_slice(&round.to_le_bytes());
+    require!(
+        data[B_ROUND..B_ROUND + 16] == round_bytes,
+        PoolError::ProofPublicInputMismatch
+    );
+    require!(
+        &data[B_ACTION..B_ACTION + 32] == action,
+        PoolError::ProofPublicInputMismatch
+    );
+    Ok(())
+}
+
 #[account]
 pub struct Pool {
     pub authority: Pubkey,
@@ -395,10 +524,18 @@ pub struct Pool {
     pub member_count: u32,
     pub round: u64,
     pub bump: u8,
+    /// The on-chain Circle-STARK verifier program whose finalized buffer
+    /// `execute_verified` trusts. `Pubkey::default()` (all zeros) means "not set" —
+    /// the committee-free path is disabled until the authority names a verifier.
+    /// This is the committee's replacement: one program that verified a real proof,
+    /// not M signers who attested they checked one off-chain. Placed last so the
+    /// byte offsets of the older fields are unchanged.
+    pub stark_verifier: Pubkey,
 }
 
 impl Pool {
-    pub const SPACE: usize = 8 + 32 + (4 + MAX_VERIFIERS * 32) + 1 + 32 + 32 + 4 + 8 + 1 + 8 + 4;
+    pub const SPACE: usize =
+        8 + 32 + (4 + MAX_VERIFIERS * 32) + 1 + 32 + 32 + 32 + 4 + 8 + 1 + 8 + 4;
 }
 
 /// Marker account whose mere existence means "this nullifier is spent."
@@ -476,6 +613,38 @@ pub struct Execute<'info> {
 }
 
 #[derive(Accounts)]
+#[instruction(action_hash: [u8; 32], nullifier: [u8; 32], round: u64, root: [u8; 32])]
+pub struct ExecuteVerified<'info> {
+    #[account(seeds = [b"pool", pool.authority.as_ref()], bump = pool.bump)]
+    pub pool: Account<'info, Pool>,
+    /// The nullifier's PDA. `init` here is the anti-replay: a repeat nullifier
+    /// makes this account already exist, and the instruction fails.
+    #[account(
+        init,
+        payer = relayer,
+        space = NullifierRecord::SPACE,
+        seeds = [b"nullifier", pool.key().as_ref(), nullifier.as_ref()],
+        bump
+    )]
+    pub nullifier_record: Account<'info, NullifierRecord>,
+    /// A gasless relayer submits on the member's behalf, so no member key signs.
+    #[account(mut)]
+    pub relayer: Signer<'info>,
+    #[account(mut, seeds = [b"vault", pool.key().as_ref()], bump)]
+    pub vault: SystemAccount<'info>,
+    /// CHECK: identity is enforced by the STARK's `action` public input in the
+    /// verifier buffer, not by type.
+    #[account(mut)]
+    pub recipient: UncheckedAccount<'info>,
+    pub system_program: Program<'info, System>,
+    /// The Circle-STARK verifier's finalized buffer. Owner is checked against
+    /// `pool.stark_verifier` and the verified public inputs are matched to the
+    /// settled tuple in `verify_stark_buffer`.
+    /// CHECK: owner + contents validated in `verify_stark_buffer`.
+    pub verifier_buffer: UncheckedAccount<'info>,
+}
+
+#[derive(Accounts)]
 pub struct AdvanceRound<'info> {
     #[account(
         mut,
@@ -531,4 +700,12 @@ pub enum PoolError {
     PoolFull,
     #[msg("round counter overflow")]
     RoundOverflow,
+    #[msg("the pool has not named a STARK verifier; the on-chain-verified path is disabled")]
+    StarkVerifierNotSet,
+    #[msg("the verifier buffer is not owned by the pool's named STARK verifier")]
+    WrongVerifierOwner,
+    #[msg("the verifier buffer's FINALIZED byte is not set: no proof verified for it")]
+    ProofNotFinalized,
+    #[msg("the verified public inputs do not match this pool, root, nullifier, round or action")]
+    ProofPublicInputMismatch,
 }

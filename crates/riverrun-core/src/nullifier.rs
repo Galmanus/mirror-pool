@@ -19,8 +19,11 @@
 //!
 //! Crucially the nullifier is derived from the `secret` alone (not from the
 //! commitment or any published value), so revealing `n` does not reveal *which*
-//! commitment it corresponds to. That unlinkability is what the membership
-//! proof must preserve in zero knowledge.
+//! commitment it corresponds to. Preserving that unlinkability against a party
+//! that also sees the proof requires a formally zero-knowledge backend; the
+//! shipped Winterfell STARK is succinct and post-quantum but not one (see
+//! `riverrun-stark`). On-chain this is moot — only the nullifier is persisted,
+//! and it is a PRF output — so the permanent record stays unlinkable regardless.
 
 use crate::{commitment::Secret, domain, tagged_hash, Hash};
 

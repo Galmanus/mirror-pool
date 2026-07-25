@@ -47,6 +47,29 @@ pub type Secret = [BaseElement; 2];
 /// elements (a 32-byte action hash).
 pub type Action = [BaseElement; 2];
 
+/// Mint a fresh member secret from the operating system's CSPRNG.
+///
+/// The secret is two independent `f128` field elements — ~256 bits of entropy.
+/// Every hiding property of the pool (the leaf `Rescue(secret, action)` and the
+/// per-round `nullifier(secret, round)`) rests on this secret being unguessable:
+/// a 256-bit secret costs a quantum adversary ~2^128 work under Grover, the
+/// standard post-quantum level. Leaving secret generation to the caller is a
+/// footgun (a weak secret is breakable regardless of the hash), so the pool
+/// ships the generator.
+pub fn random_secret() -> Secret {
+    [random_field_element(), random_field_element()]
+}
+
+/// Draw one near-uniform `f128` element from 128 bits of OS entropy. The modular
+/// reduction bias is negligible: the f128 modulus is within a tiny factor of
+/// 2^128, so a uniform `u128` maps to a statistically uniform field element.
+fn random_field_element() -> BaseElement {
+    let mut bytes = [0u8; 16];
+    getrandom::getrandom(&mut bytes)
+        .expect("OS CSPRNG must be available to mint a member secret");
+    BaseElement::new(u128::from_le_bytes(bytes))
+}
+
 /// Everything an execution publishes. Note the absence of any witness field —
 /// only the public root, round, revealed nullifier, and the opaque proof.
 #[derive(Clone)]
@@ -291,5 +314,26 @@ mod tests {
             *b ^= 0xFF;
         }
         assert_eq!(pool.settle(&exec).unwrap_err(), ZkPoolError::BadProof);
+    }
+
+    #[test]
+    fn random_secret_is_unique_and_usable() {
+        // Two minted secrets must differ (a constant generator would collide),
+        // and a random secret must drive a full commit -> execute -> settle,
+        // proving the OS-generated witness is a valid pool secret, not just bytes.
+        let a = random_secret();
+        let b = random_secret();
+        assert_ne!(a, b, "two OS-random secrets collided");
+
+        // Same size as the passing round-trip test (5 members), with the random
+        // member placed among constant-secret padding.
+        let mut pool = ZkPool::new();
+        pool.commit(secret(1, 2), action(0));
+        pool.commit(secret(3, 4), action(0));
+        let idx = pool.commit(a, action(7));
+        pool.commit(secret(5, 6), action(0));
+        pool.commit(secret(7, 8), action(0));
+        let exec = pool.prove_execution(a, idx, 0, action(7));
+        assert!(pool.settle(&exec).is_ok(), "random secret failed to settle");
     }
 }

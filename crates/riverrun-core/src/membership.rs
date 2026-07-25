@@ -1,4 +1,7 @@
-//! The membership relation — the statement a participant proves in zero knowledge.
+//! The membership relation — the statement a participant must prove without
+//! revealing the witness. (Whether the backend proof hides the witness *formally*
+//! is a property of that backend; `riverrun-stark` is succinct and post-quantum
+//! but not formally zero-knowledge.)
 //!
 //! To act in a round, a participant proves:
 //!
@@ -45,8 +48,9 @@ pub struct MembershipStatement {
     pub nullifier: Nullifier,
 }
 
-/// The private witness — known only to the participant, never revealed by a
-/// zero-knowledge proof.
+/// The private witness — known only to the participant, never transmitted by the
+/// membership proof (succinct and post-quantum; not formally zero-knowledge —
+/// see `riverrun-stark`).
 #[derive(Clone, Debug)]
 pub struct MembershipWitness {
     pub secret: Secret,

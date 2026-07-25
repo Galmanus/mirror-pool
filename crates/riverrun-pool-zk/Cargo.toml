@@ -11,3 +11,5 @@ description = "ZK-backed behavioral pool for riverrun: execution carries an opaq
 
 [dependencies]
 riverrun-stark = { path = "../riverrun-stark" }
+# OS CSPRNG for minting member secrets (two f128 field elements, ~256 bits).
+getrandom = "0.2"

@@ -12,9 +12,12 @@
 //!   identifies the set and inclusion proofs witness membership.
 //! - [`nullifier`] — `n = H(secret ‖ round)` lets a member act at most once per
 //!   round while staying unlinkable across rounds.
-//! - [`membership`] — the zero-knowledge statement a participant proves: *"I
-//!   know a `secret` whose commitment is in the set with root `R`, and my
-//!   nullifier for this round is `n`"* — without revealing which leaf.
+//! - [`membership`] — the statement a participant must prove without revealing
+//!   the witness: *"I know a `secret` whose commitment is in the set with root
+//!   `R`, and my nullifier for this round is `n`"* — without revealing which
+//!   leaf. (The relation only; whether the *backend* proof hides the witness
+//!   formally is a property of that backend — see `riverrun-stark`, which is
+//!   succinct and post-quantum but not formally zero-knowledge.)
 //!
 //! This crate is the **specification**, not the protocol: it defines the
 //! primitives and the relation, and nothing here produces a proof. The pool that

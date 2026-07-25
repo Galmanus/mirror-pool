@@ -9,5 +9,8 @@ description = "Hash-based, post-quantum anonymity-set primitives for mirror-pool
 [dependencies]
 blake3.workspace = true
 thiserror.workspace = true
+# Direct OS CSPRNG for minting member secrets. A privacy tool that leaves secret
+# generation to the caller ships a footgun; `random()` closes that.
+getrandom = "0.2"
 
 [dev-dependencies]

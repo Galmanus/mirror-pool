@@ -32,6 +32,24 @@ impl Secret {
     pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
+
+    /// Mint a fresh secret from the operating system's CSPRNG (256 bits of
+    /// entropy). This is the only correct way to create a member secret: the
+    /// commitment and every per-round nullifier are `H(secret ‖ …)`, so all of
+    /// the scheme's post-quantum hiding rests on this secret being unguessable.
+    /// A 256-bit secret costs a quantum adversary ~2^128 work under Grover — the
+    /// standard post-quantum security level. A low-entropy secret is breakable
+    /// regardless of the hash, which is why generation must not be left to the
+    /// caller.
+    ///
+    /// Panics only if the OS entropy source is unavailable, which on a supported
+    /// platform means the process cannot safely produce secrets at all.
+    pub fn random() -> Self {
+        let mut bytes = [0u8; 32];
+        getrandom::getrandom(&mut bytes)
+            .expect("OS CSPRNG must be available to mint a member secret");
+        Self(bytes)
+    }
 }
 
 // Deliberately no Debug: a secret must never end up in a log line or panic
@@ -97,5 +115,21 @@ mod tests {
         let s = secret(7);
         let c = commit(&s, &[0u8; 32]);
         assert_ne!(c.as_bytes(), s.as_bytes());
+    }
+
+    #[test]
+    fn random_secret_is_high_entropy_and_unique() {
+        // Two freshly minted secrets must differ (a fixed/constant generator
+        // would collide), and a random secret must not be a degenerate
+        // all-equal-byte value like the test vectors — a weak smoke test that
+        // real OS entropy actually flowed into the 32 bytes.
+        let a = Secret::random();
+        let b = Secret::random();
+        assert_ne!(a.as_bytes(), b.as_bytes(), "two OS-random secrets collided");
+        let first = a.as_bytes()[0];
+        assert!(
+            a.as_bytes().iter().any(|&byte| byte != first),
+            "random secret is a constant-byte value; entropy did not flow"
+        );
     }
 }

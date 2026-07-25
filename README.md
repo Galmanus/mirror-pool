@@ -33,6 +33,45 @@ is shadowed and front-run · **market makers** protecting flow and inventory ·
 users** who simply don't want to be clustered and profiled. The privacy that used to
 need a specialist, in one command.
 
+## In plain words
+
+**riverrun is *Tornado Cash for behavior, not funds*.** You prove you are a
+legitimate member of a group and then act — without revealing *which* member you
+are. The link between **you** and **what you did** is cut. It is **post-quantum**
+(built on hashes, no elliptic curves), so a quantum computer cannot undo it. Think
+of a ballot box: everyone sees that a valid voter voted; nobody sees who voted for
+what. riverrun does that for on-chain actions.
+
+**What's ready today (tested):**
+
+- The **measurement tool** (`riverrun preflight / audit / trace`) — runs against
+  mainnet now and scores a pool's *real* anonymity (the "k=30 that's actually 6.5").
+  This is the finished, production-grade deliverable.
+- The **crypto primitives** — BLAKE3/Rescue commitments, per-round nullifiers,
+  membership relation — implemented and tested.
+- **Secure secret generation** — 256 bits from the OS CSPRNG (`Secret::random`).
+  This was previously missing; a privacy tool that doesn't mint the user's secret
+  is a footgun. Now closed and tested end-to-end.
+- **128-bit security parameters** for the STARK (was an ~84-bit demo set).
+- The **membership proof** runs, and the **on-chain Solana program** works
+  (per-round nullifier anti-replay, published root, M-of-N committee attestation).
+- **What is stored on-chain forever is only the nullifier** — an opaque,
+  post-quantum (PRF) value. So a **user's on-chain movement is genuinely
+  quantum-safe today**: an adversary who archives the chain now to decrypt later
+  has no secret and no proof to attack.
+
+**What's not ready yet (honest):**
+
+- **Formal zero-knowledge** of the off-chain proof. No ready-made library provides
+  it — *not* Winterfell, *not* Stwo/Circle STARK (both are STARKs for integrity,
+  not privacy). It is a research item, and it affects only whoever sees the
+  off-chain proof — **not** the permanent on-chain record.
+- **On-chain proof verification** is still too costly to fit one Solana
+  transaction, so a committee (Ed25519) stands in. It *authorizes* settlement; it
+  does **not** de-anonymize, and breaking it is a soundness break, not a privacy one.
+- It is a **research prototype, not audited.** Do not guard real funds or
+  identities with the pool yet. The measurement tool, by contrast, is finished.
+
 ### Install
 
 ```bash
@@ -687,21 +726,45 @@ below is a trust assumption rather than a proof.
 >    [docs/RELATED_WORK.md](docs/RELATED_WORK.md).
 >
 > Closing #2 properly (verify a proof on-chain, whether chunked STARK or a
-> pairing-based verifier via `alt_bn128`), plus decentralized round progression,
-> 128-bit STARK parameters, and a multisig/renounced upgrade authority, is what
-> production would require. Do not deploy this to guard real funds or identities until then.
+> pairing-based verifier via `alt_bn128`), plus decentralized round progression
+> and a multisig/renounced upgrade authority, is what production would require.
+> **Two items previously on this list are now closed.** (a) The shipped STARK
+> parameters are 128-bit: **43 FRI queries at blow-up 8 with 16 bits of grinding
+> (~145-bit conjectured)**, replacing the ~84-bit demo set — the query/FRI
+> soundness margin is no longer the weak link (the in-circuit Rescue round count
+> is still the demo set and is the remaining hash-side hardening). (b) Member
+> secrets are now minted from the OS CSPRNG — `Secret::random()` in
+> `riverrun-core` and `random_secret()` in `riverrun-pool-zk`, 256 bits — instead
+> of being left to the caller, closing the low-entropy footgun that would have
+> made the hiding breakable regardless of the primitive. Do not deploy this to
+> guard real funds or identities until then.
 
 A threat model is only useful if its assumptions are on the table, so here are
 ours.
 
 - **The proof keeps the witness off the wire, but it is not formally
-  zero-knowledge.** Winterfell 0.13 has no witness randomization, so the honest
-  claim is "the secret does not appear in the transmitted proof" — checked over 20
-  proofs, not proven. That check earns its keep: the first version of the binding
+  zero-knowledge.** Winterfell has **no** witness randomization in *any* release —
+  verified against its `main` branch, whose `ProofOptions` still carries no zk/salt
+  toggle. Winterfell is a transparent STARK for post-quantum *soundness*, not a
+  zk-STARK; a deterministic proof is a function of the witness and provably carries
+  information about it. So the honest claim is only "the secret does not appear
+  verbatim in the transmitted proof" — checked over 20 proofs, not proven. Formal
+  witness-hiding is not a Winterfell flag we failed to set; it needs a different,
+  genuinely zero-knowledge post-quantum backend (e.g. a Circle STARK over M31 with
+  ZK), which would also cut the on-chain verification cost in #2 — the same
+  migration closes both. That check earns its keep: the first version of the binding
   AIR held the secret in a column that was constant across the trace, and since a
   constant column has a constant low-degree extension, the secret landed in every
   FRI opening — 20 leaks out of 20. Confining it to the rows where it is
-  load-bearing fixed that (0 out of 20).
+  load-bearing fixed that (0 out of 20). Scope of the residual, stated precisely:
+  the STARK proof is verified **off-chain** and is **never written to the chain** —
+  the permanent on-chain record of an execution is only the nullifier (a `Rescue`
+  PRF output, unlinkable across rounds), the published root, action, and round. So
+  a *harvest-now-decrypt-later* adversary who archives the chain today gets no
+  proof bytes to mine later; the non-formal-ZK gap bounds only whoever sees the
+  proof off-chain (the verifier committee), not the forever-record. That is why
+  the harvest-now-decrypt-later exposure of the *ledger* is already post-quantum,
+  while the formal-ZK gap remains open for the off-chain proof path.
 - **Negative tests can be decorative.** The public-input rejection tests here pass
   even with the binding constraint deleted, because the boundary assertions alone
   reject them. The test that actually guards the binding builds the trace an

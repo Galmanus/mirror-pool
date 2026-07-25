@@ -5,10 +5,21 @@
 //! Merkle root — *without revealing which leaf*. Hash-based (Rescue-Prime over the
 //! 128-bit field) and FRI-based, so post-quantum; no trusted setup, no ceremony.
 //!
-//! This is the succinct zero-knowledge upgrade of riverrun's membership seam. The
+//! This is the succinct post-quantum membership seam of riverrun. The
 //! Rescue-Prime Merkle-path AIR (`air.rs`, `prover.rs`, `utils/`) is adapted from
 //! the Winterfell v0.13 `merkle` example (MIT, Facebook/Meta); the public API and
 //! tests here wrap it as a clean membership prover/verifier.
+//!
+//! **Not formally zero-knowledge.** Winterfell is a transparent STARK for
+//! post-quantum *soundness/succinctness*, not a zk-STARK — it has no witness
+//! randomization in any release (verified against `main`), so a deterministic
+//! proof is a function of the witness and provably carries information about it.
+//! What this seam *does* guarantee is weaker and stated honestly: the secret is
+//! never transmitted verbatim, the leaf index is not a public input, and the
+//! proof is verified off-chain so it never enters the permanent on-chain record
+//! (only the nullifier does). Formal witness-hiding requires a different proof
+//! system (a genuinely zero-knowledge, post-quantum one — e.g. a Circle STARK
+//! over M31 with ZK). See the README's "Security status" section.
 //!
 //! Two provers live here. `prove_membership` proves set membership alone. The
 //! **bound** prover (`bound_air.rs`, `bound_prover.rs`) proves the whole riverrun
@@ -68,16 +79,20 @@ pub use rescue::{Hash, Rescue128};
 /// hash-based and post-quantum.
 type StarkHash = Blake3_256<BaseElement>;
 
-/// Proof options: 28 queries at blow-up factor 8, no grinding, no field extension
-/// → only **~84 bits** of conjectured security (28 × log2(8)), NOT production
-/// strength. A production deployment must raise this (more queries, grinding, or
-/// a field extension) to ~128 bits, and use the full-round Rescue parameters.
-/// These example-grade parameters are for demonstrating the proof end-to-end.
+/// Proof options tuned for post-quantum strength: **43 queries** at blow-up
+/// factor 8 with **16 bits of grinding** → ~**145 bits** of conjectured security
+/// (43 × log2(8) + 16 = 129 + 16), comfortably above the 128-bit post-quantum
+/// target. FRI/query soundness is no longer the weak link.
+///
+/// Remaining hardening (tracked, NOT closed here): the in-circuit Rescue-Prime
+/// uses the demo round count; a full-round parameter set is required before this
+/// is audited-production. Raising FRI queries does not substitute for that — it
+/// closes the proof-system soundness margin, not the hash's round security.
 fn proof_options() -> ProofOptions {
     ProofOptions::new(
-        28,
+        43,
         8,
-        0,
+        16,
         FieldExtension::None,
         8,
         31,
@@ -125,9 +140,12 @@ pub fn build_tree(leaves: Vec<Hash>) -> MerkleTree<Rescue128> {
     MerkleTree::new(leaves).expect("power-of-two leaf count")
 }
 
-/// Prove, in zero knowledge, that `value` is the preimage of the leaf at `index`
-/// of `tree` — i.e. that a member with this leaf is in the set with `tree`'s root.
-/// The proof reveals only the root; `value` and `index` stay private.
+/// Prove that `value` is the preimage of the leaf at `index` of `tree` — i.e.
+/// that a member with this leaf is in the set with `tree`'s root. The proof's
+/// public inputs are the root alone; `value` and `index` are not public inputs
+/// and the secret is not transmitted verbatim. This is **not** a formal
+/// zero-knowledge guarantee (Winterfell has no witness randomization); see the
+/// crate-level note.
 pub fn prove_membership(
     tree: &MerkleTree<Rescue128>,
     value: [BaseElement; 2],

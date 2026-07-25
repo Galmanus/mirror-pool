@@ -3,7 +3,9 @@
 //! Members' commitments are the leaves; the root identifies the set. An
 //! inclusion proof witnesses "this commitment is a member" in `O(log n)` hashes.
 //! The membership *proof* (see [`crate::membership`]) proves knowledge of such a
-//! witness in zero knowledge, so the acting party never reveals which leaf.
+//! witness without transmitting it, so the acting party does not reveal which
+//! leaf (hiding scope per `riverrun-stark`: succinct, post-quantum, not formally
+//! zero-knowledge).
 //!
 //! Hashing is domain-separated at both levels:
 //!
@@ -145,8 +147,10 @@ impl MerkleTree {
 /// proof's sibling path, and check it matches `root`.
 ///
 /// This is the cheap, standard membership check. It reveals `commitment` (and
-/// hence which leaf), so it is used inside the zero-knowledge circuit — never
-/// on its own when unlinkability is required.
+/// hence which leaf), so it is used only *inside* the proof circuit (where the
+/// path is a private witness) — never on its own when unlinkability is required.
+/// (The circuit's hiding scope is `riverrun-stark`'s: succinct, post-quantum,
+/// not formally zero-knowledge.)
 pub fn verify(root: &Hash, commitment: &Commitment, proof: &InclusionProof) -> bool {
     let mut acc = hash_leaf(commitment);
     let mut idx = proof.index;
