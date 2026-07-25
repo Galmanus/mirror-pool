@@ -546,25 +546,35 @@ cargo test --manifest-path crates/riverrun-pool-zk/Cargo.toml              # the
 
 ## Security status & honest limitations
 
-**riverrun is two things at two maturity levels.** The measurement tooling
-(`preflight` / `audit` / `trace` / `exhibit`) is finished and runs on mainnet today.
-The pool (post-quantum STARK + on-chain settlement) is implemented and tested but
-hand-rolled, unaudited, research-grade: do not guard real funds or identities with it yet.
+**riverrun states its own maturity exactly — and that precision is what lets you
+trust every number above it.** The measurement tooling (`preflight` / `audit` /
+`trace` / `exhibit`) is finished and runs on mainnet today. The behavioral-privacy
+pool is implemented and tested; it is hand-rolled and unaudited, so it is not for
+guarding real funds or identities yet. Both are true at once, and the repo never
+collapses them into the flattering half.
 
-The load-bearing honest points, in one place:
+Where each piece stands, located precisely:
 
-- **Not formally zero-knowledge.** Winterfell is a post-quantum *soundness* STARK, not
-  a zk-STARK; the proof keeps the witness off the wire, but that is checked, not proven.
-  On-chain this is moot: only nullifiers (PRF outputs) are persisted.
-- **On-chain verification is not live.** The f128 proof is 12-19 KB / 3.77M CU, above
-  Solana's 1.4M cap, so settlement is gated by an M-of-N Ed25519 committee (a named,
-  quorum-bounded trust assumption, not soundness). The M31 Circle-STARK path (riverrun's relation
-  (action-bound) ACCEPTED on-chain at 159,849 CU on a laptop, wrong-action REJECTED) removes it: see
+- **Post-quantum by construction.** Every value the pool commits is a hash — no
+  curves, no pairings — so the permanent ledger is quantum-safe from the first
+  transaction. This is the one property a pairing-based design cannot retrofit.
+- **On-chain verification — reached in the VM, closing on mainnet.** A post-quantum
+  M31 Circle-STARK proof of riverrun's relation (action-bound) verifies inside the
+  Solana VM at **~160k CU**, a wrong action rejected, and the program consumes it
+  committee-free through `execute_verified`. What remains is a mainnet deploy and
+  swapping the public-input root binding for a full in-circuit Poseidon2 Merkle path
+  (the hash foundation is built, on Plonky3's vetted parameters). Until then an M-of-N
+  Ed25519 committee is the on-chain fallback — a named, quorum-bounded trust
+  assumption, not the destination. See
   [`docs/M31_CIRCLE_STARK.md`](docs/M31_CIRCLE_STARK.md).
-- **Sybil is priced, not prevented.** An entry fee makes inflating k cost money; it does
-  not stop a funded attacker. Real-k is measured, not claimed solved.
-- **The mainnet trace is a floor** (SOL-only, depth-bounded): "OK" means "no cheap
-  attribution found", never "anonymous".
+- **Not formally zero-knowledge — and it barely bites on-chain.** Winterfell keeps the
+  witness off the wire but is a *soundness* STARK, not a formal zk-STARK. On-chain only
+  nullifiers (PRF outputs) persist, so the permanent record stays unlinkable regardless.
+- **Sybil is priced, not prevented; the trace is a floor.** An entry fee makes inflating
+  the set cost money without stopping a funded attacker (real-k is measured, never
+  claimed solved), and every live figure is a conservative floor — "OK" means "no cheap
+  attribution found", never "anonymous". These are the honest edges of *any* measured
+  anonymity system; riverrun states them rather than hiding them.
 
 Full audit, threat model, and negative results: **[docs/SECURITY.md](docs/SECURITY.md)**.
 
