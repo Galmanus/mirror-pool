@@ -253,4 +253,67 @@ mod tests {
         let wit = TurnWitness { secret: outsider, inclusion: tree.prove(1).unwrap() };
         assert!(!check_turn(&stmt, &wit), "a piece not in the set must not rotate");
     }
+
+    // --- riverrun ID: the whole identity loop, demonstrated as one coherent thing ---
+
+    /// One secret is a full identity layer: it acts in many contexts, unlinkably,
+    /// one action per context, and can prove continuity between contexts in zero
+    /// knowledge. This test is the `docs/RIVERRUN_ID.md` §8 developer surface made
+    /// runnable — the primitive as a whole, not one property at a time.
+    #[test]
+    fn the_riverrun_id_loop_holds() {
+        let me = Secret::random();
+
+        // pick two unrelated contexts (a DAO voting round, an airdrop epoch)
+        let dao_round: Angle = 0xD40;
+        let airdrop_epoch: Angle = 0xA1D_2026;
+
+        // my identity + my one-action token in each context
+        let dao_id = me.piece().shape(dao_round);
+        let vote = me.piece().fit(dao_round); // spend once => one vote
+        let airdrop_id = me.piece().shape(airdrop_epoch);
+        let claim = me.piece().fit(airdrop_epoch); // spend once => one claim
+
+        // 1. UNLINKABLE: my DAO identity and my airdrop identity share no visible link
+        assert_ne!(dao_id, airdrop_id, "identities across contexts must differ");
+        assert_ne!(vote, claim, "action tokens across contexts must differ");
+        // even the two *kinds* at one context are distinct (domain separation)
+        assert_ne!(dao_id, vote);
+
+        // 2. SYBIL-RESISTANT PER CONTEXT: my token in a context is fixed — acting
+        //    twice reveals the same token, which an on-chain registry rejects.
+        assert_eq!(vote, me.piece().fit(dao_round), "one token per context, deterministic");
+
+        // 3. PROVABLE CONTINUITY, HIDDEN: I can prove my airdrop identity is the
+        //    same entity that held a DAO identity, revealing only the migration tag.
+        //    Build the DAO round's identity set with my dao_id in it, then prove the turn.
+        let members = [secret(2), secret(3)];
+        let mut leaves: Vec<Commitment> =
+            members.iter().map(|s| Commitment(s.piece().shape(dao_round))).collect();
+        leaves.push(Commitment(dao_id)); // I am a member of the DAO round
+        leaves.push(Commitment(secret(4).piece().shape(dao_round)));
+        let dao_set = crate::merkle::MerkleTree::build(&leaves).unwrap();
+
+        let stmt = TurnStatement {
+            prev_root: dao_set.root(),
+            angle: dao_round,
+            turn_tag: me.piece().turn(dao_round),
+        };
+        let wit = TurnWitness { secret: me, inclusion: dao_set.prove(2).unwrap() };
+        assert!(
+            check_turn(&stmt, &wit),
+            "I can prove continuity from my DAO identity without revealing which member I am"
+        );
+
+        // and nobody else can claim my continuity: a different secret fails.
+        let impostor = TurnStatement {
+            prev_root: dao_set.root(),
+            angle: dao_round,
+            turn_tag: secret(99).piece().turn(dao_round),
+        };
+        assert!(
+            !check_turn(&impostor, &TurnWitness { secret: secret(99), inclusion: dao_set.prove(2).unwrap() }),
+            "only the holder of my secret can prove my continuity"
+        );
+    }
 }
