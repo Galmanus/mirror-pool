@@ -19,48 +19,23 @@
 [![post-quantum](https://img.shields.io/badge/STARK-post--quantum%2C%20no%20setup-8A2BE2)](#innovations-and-why-they-matter)
 [![license](https://img.shields.io/badge/license-MIT-blue)](#license)
 
-**riverrun hides *who you are* on-chain — not your balance, but *who acted*. It tells
-you how exposed you really are first, and it is post-quantum: a future quantum
-computer cannot undo it.**
+**riverrun gives you real privacy on a blockchain — and, unlike anything else, it
+tells you exactly how private you actually are.**
 
-Every privacy pool sells you `1/k` — "hidden among k people." It's a half-truth: it
-ignores where everyone's money came from, which is public. Sort by that and your
-crowd collapses. On a live Solana pool, an advertised **30** was really **6.5**, and
-one person was **1**. **riverrun measures that collapse, live on mainnet, for any pool.**
+## In plain words
 
-Then it flips the script: the same forensic analysis firms sell to *unmask* people
-becomes `riverrun preflight <wallet>` — a one-command **EXPOSED / WEAK / OK** you run
-on yourself, before you act.
+A blockchain is a **wall of glass**. Everything you do with money on it stays there,
+on display, forever — and outside the glass there are people with their faces pressed
+against it, writing down your every move, to learn who you are and guess what you'll
+do next.
 
-And measuring is only half of it. From a single secret, **riverrun ID** gives you a
-different, unlinkable identity in every context — seven powers, built and tested: be
-anyone unlinkably, act once per place (sybil-resistant), prove you're the same across
-cycles in zero knowledge, link two identities *only when you choose*, lend one context
-to an agent, rate-limit yourself so abuse unmasks you, and carry credentials without
-doxxing. Solana has no Semaphore; this is a post-quantum one, and it survives quantum
-computers. ([`docs/RIVERRUN_ID.md`](docs/RIVERRUN_ID.md))
+riverrun closes the curtain. It does **two things**.
 
-And it's built on hashes, not elliptic curves — so it beats **harvest-now-decrypt-later**:
-an adversary who copies the chain today to crack it with a quantum computer in ten
-years finds nothing to crack. **Anonymity you can audit, a defense you can run, and a
-guarantee that doesn't expire when quantum arrives.**
-
-**For** traders whose strategies get copied, whales who get front-run, market makers,
-DAOs, and anyone who refuses to be an open book on-chain.
-
-## In plain words — for someone who has never heard of riverrun
-
-**A blockchain is a glass house.** Everything you do on it — every swap, transfer,
-vote — is recorded forever and visible to everyone. Your name is not attached, but
-your *behavior* is: when you act, how much, with whom. AI-driven analytics read that
-pattern and re-identify you. A trader's strategy gets copied, a whale's moves get
-front-run, an ordinary user gets profiled. In the glass house, you are an open book.
-
-**"But crypto already has privacy tools?"** It does, and they overstate. A pool tells
-you *"you're hidden among 30 people, so a 1-in-30 guess."* That counts heads and
-ignores one thing that is public: **where each person's money came from.** If the
-other 29 were funded from the same place and you weren't, you stand out — your crowd
-of 30 collapses to a crowd of 1. You thought you were hidden; you weren't.
+**1. It counts the crowd for real.** Every privacy tool promises *"here you disappear
+into a crowd."* riverrun is the one that checks whether that's true — and sometimes
+finds the "crowd" is just you, alone. A pool tells you *"hidden among 30."* But that
+counts heads and ignores one public fact: **where each person's money came from.** Sort
+by that, and your crowd of 30 can collapse to a crowd of **1**.
 
 ```mermaid
 flowchart LR
@@ -71,20 +46,15 @@ flowchart LR
     G3 --> R["Your REAL crowd = <b>1</b><br/>advertised 30, effective ~6.5"]
 ```
 
-**riverrun does two things about that:**
+*On a live Solana pool, an advertised crowd of **30** was really **6.5** — and one
+depositor was completely **alone**. It doesn't promise privacy; it measures it. This
+part runs on mainnet today.*
 
-1. **It measures the truth.** It reads a pool and tells you your *real* anonymity,
-   not the advertised one — a lie-detector for privacy pools. On a live mainnet pool,
-   an advertised **30** was worth an effective **6.5**, and one depositor was worth
-   exactly **1**. *This part runs on mainnet today.*
-2. **It hides you for real.** It cuts the link between **you** and **what you did**.
-   Like a ballot box: everyone sees a valid vote went in; nobody sees who cast it.
-
-**The powerful part — one secret, many disguises.** Think of a puzzle piece only you
-can turn; each angle is a different, unlinkable disguise of you. One secret becomes a
-different persona in every app, DAO, and vote — impossible to cluster together — while
-still enforcing *one action per place* (one vote, one airdrop claim). Anonymity **and**
-fairness at once. (That is riverrun ID — see [`docs/RIVERRUN_ID.md`](docs/RIVERRUN_ID.md).)
+**2. It gives you a different face at every door.** With **one key**, you become a
+different person on every site — and no one can piece them back together into you —
+while each site can still enforce *"one person, one vote."* You stay invisible without
+becoming a ghost who acts a thousand times. Think of a puzzle piece only you can turn:
+each angle is a different, unlinkable disguise of you.
 
 ```mermaid
 flowchart TD
@@ -99,30 +69,28 @@ flowchart TD
     D3 --> A3["one action"]
 ```
 
-*One secret, a fresh unlinkable identity in every context, one action each. Turn the
-piece to a new angle and it's a different shape — but only you can turn it, and only
-you can prove it was the same piece all along, without revealing which.*
+*This is **riverrun ID** — one secret, seven unlinkable powers ([`docs/RIVERRUN_ID.md`](docs/RIVERRUN_ID.md)).*
 
-**And it survives quantum computers.** A future quantum machine will break the locks
-today's crypto uses — and a blockchain keeps everything forever, so an adversary can
-copy your data now and decrypt it in ten years (*harvest-now-decrypt-later*).
-riverrun's locks are built from hashes, which that machine cannot open, so what you
-hide today stays hidden after quantum arrives.
+And it's built to **last**: even years from now, when a computer powerful enough to
+break today's cryptography exists, what's yours stays yours — riverrun's locks are
+hashes, which that machine cannot open. (A blockchain keeps everything forever, so an
+attacker can copy your data today to crack it later; here there is nothing to crack.)
 
-```mermaid
-flowchart LR
-    T0["<b>Today</b><br/>attacker copies<br/>the whole chain"] --> T1["<b>+10 years</b><br/>a quantum computer<br/>arrives"]
-    T1 --> Q{"tries to break<br/>the saved data"}
-    Q --> X["most privacy tools:<br/>elliptic-curve locks<br/><b>cracked ✗</b>"]
-    Q --> H["riverrun: only hashes<br/>on the chain<br/><b>nothing to crack ✓</b>"]
-```
+> **In one line: privacy you don't have to trust — you can measure it.**
 
-**Where it honestly stands.** The measurement tool is **finished and runs on mainnet**.
-The privacy/identity layer is **built and tested** (the primitive runs, its proof is
-verified in a local Solana VM), but it is **not yet deployed to mainnet and not
-audited** — do not guard real funds or identities with it yet. riverrun assembles
-math the field already gave us into something Solana does not have; the honest edges
-are stated plainly throughout, which is what makes the strong claims trustworthy.
+**Where it honestly stands.** The **measurement tool** is finished and **runs on
+mainnet today**. The **identity/privacy layer** is **built and tested** (its proof
+verifies in a local Solana VM), but **not yet on mainnet and not audited** — don't
+guard real funds or identities with it yet. Every strong claim below is paired with
+its honest edge; that pairing is what makes the strong ones trustworthy.
+
+**For** traders whose strategies get copied, whales who get front-run, market makers,
+DAOs, and anyone who refuses to be an open book on-chain.
+
+---
+
+*Everything from here down is the **technical story** — for developers and bounty
+judges: the numbers, the proofs, the on-chain measurements, and the honest limits.*
 
 ## Innovations, and why they matter
 
