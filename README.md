@@ -14,7 +14,7 @@
 
 [![Rust](https://img.shields.io/badge/Rust-end%20to%20end-000000?logo=rust)](https://www.rust-lang.org)
 [![Solana](https://img.shields.io/badge/Solana-SBF%20program-14F195?logo=solana&logoColor=black)](https://solana.com/privacy)
-[![tests](https://img.shields.io/badge/tests-107%20green-4c1)](#workspace)
+[![tests](https://img.shields.io/badge/tests-130%2B%20green-4c1)](#workspace)
 [![CLI](https://img.shields.io/badge/CLI-preflight%20%C2%B7%20audit%20%C2%B7%20--json-14F195)](#run-it)
 [![post-quantum](https://img.shields.io/badge/STARK-post--quantum%2C%20no%20setup-8A2BE2)](#innovations-and-why-they-matter)
 [![license](https://img.shields.io/badge/license-MIT-blue)](#license)
@@ -31,6 +31,14 @@ one person was **1**. **riverrun measures that collapse, live on mainnet, for an
 Then it flips the script: the same forensic analysis firms sell to *unmask* people
 becomes `riverrun preflight <wallet>` — a one-command **EXPOSED / WEAK / OK** you run
 on yourself, before you act.
+
+And measuring is only half of it. From a single secret, **riverrun ID** gives you a
+different, unlinkable identity in every context — seven powers, built and tested: be
+anyone unlinkably, act once per place (sybil-resistant), prove you're the same across
+cycles in zero knowledge, link two identities *only when you choose*, lend one context
+to an agent, rate-limit yourself so abuse unmasks you, and carry credentials without
+doxxing. Solana has no Semaphore; this is a post-quantum one, and it survives quantum
+computers. ([`docs/RIVERRUN_ID.md`](docs/RIVERRUN_ID.md))
 
 And it's built on hashes, not elliptic curves — so it beats **harvest-now-decrypt-later**:
 an adversary who copies the chain today to crack it with a quantum computer in ten
@@ -378,36 +386,42 @@ Same action, distinct nullifiers, one root. The nullifier is `Rescue(secret‖ro
 — unlinkable to any commitment. Grow the set to `k` and the actor↔action link is
 `1/k`, by construction. (`crates/riverrun-pool-zk/src/lib.rs`)
 
-## The rotatable piece — the ricorso, made real
+## riverrun ID — one secret, seven powers (the puzzle piece)
 
-Picture a puzzle piece. It has a shape; turn it to a new angle and it presents a
-*different* shape, each with its own matching fit. That is one secret across
-contexts. A single `Secret` is the piece, and any public **angle** `θ` (an epoch, a
-round, a verifier) derives its own **shape** `H(s‖θ)` and its own **fit** `H(s‖θ)`.
-Three properties hold, each a test in `crates/riverrun-core/src/rotatable.rs`:
+Picture a puzzle piece only you can turn; each angle is a different, unlinkable
+disguise of you. A single `Secret` is the piece, and any public **context** `θ` (a
+dApp, a DAO, an airdrop, a vote) derives a full identity there. From that one secret,
+`Secret::piece()` gives **seven powers** — each a tested relation in `crates/riverrun-core`
+(`rotatable.rs`, `rln.rs`), each provable in zero knowledge over the same STARK:
 
-- **Binding within an angle** — at a fixed angle the secret fixes one shape and one
-  fit; you cannot present a different one without a hash collision.
-- **Unlinkable across angles** — `shape(θ)` and `shape(θ')` are independent PRF
-  outputs; an observer cannot tell they are the same piece, so acting across contexts
-  builds no linkable trail.
-- **Only the holder turns it** — advancing to the next angle needs the secret. Others
-  see disconnected shapes.
+| power | what you can do | test |
+|---|---|---|
+| **shape** | be a different, unlinkable identity in every context | `unlinkable_across_angles` |
+| **fit** | act once per context — sybil-resistant | `binding_within_an_angle` |
+| **turn** | prove you're the same across cycles in ZK, revealing *which* to no one | `check_turn` + `tests/rotation.rs` |
+| **link** | reveal that two of your identities are one — to whom *you* choose | `check_link` |
+| **grant** | delegate one context to an agent, scoped and bound to that agent | `check_delegation` |
+| **rln** | rate-limit yourself; the `N+1`-th action unmasks you (Shamir) | `rln::*` |
+| **credential** | show an issuer's attribute per context, without doxxing | `check_attribute` |
 
-And the turn is **provable in zero knowledge**. The holder proves *"I rotated the same
-piece that was a member of the previous angle's set"* revealing only
-`{prev_root, turn_tag, angle}` — which piece, and its shape, stay hidden — while
-spending the turn tag once so one piece cannot fork into several seats. It reuses the
-bound-membership STARK verbatim, because a rotation *is* membership + nullifier
-binding: proven and its negatives rejected in `crates/riverrun-stark/tests/rotation.rs`
-(a forged turn tag, and a tag from another angle, both fail). This is the **ricorso**
-Joyce's Vico gave us: the set reborn each cycle, a member unlinkable across epochs,
-their continuity provable only to themselves.
+**44 tests green.** You are invisible by default, accountable where it matters,
+linkable only on your terms, delegable, rate-limited, credential-bearing — one secret,
+total control of your own exposure. Solana has no Semaphore; this is a post-quantum
+one. Full spec: [`docs/RIVERRUN_ID.md`](docs/RIVERRUN_ID.md).
 
-*Honest, same caveats as every proof here:* it runs on the f128 Rescue STARK (the
-mainnet-cheap M31 port is the same migration in [Innovations](#innovations-and-why-they-matter)),
-and "zero knowledge" means the witness never touches the wire — Winterfell is not
-*formally* ZK. Nothing overstated.
+The **turn** is the heart of it — the *ricorso* Joyce's Vico gave us, the set reborn
+each cycle. The holder proves *"I rotated the same piece that was a member of the
+previous set"* revealing only `{prev_root, turn_tag, angle}`, spending the tag once so
+one piece cannot fork into many seats. It is **proven in zero knowledge**, its
+negatives rejected, in `crates/riverrun-stark/tests/rotation.rs` (a forged tag, and a
+tag from another angle, both fail).
+
+*Honest, same caveats as every proof here:* the seven are hash- and field-based
+relations — the Semaphore / RLN / anonymous-credential family, **synthesis, not new
+crypto**. Each is ZK-provable over the STARK, which today is the f128 Rescue one (the
+mainnet-cheap M31 port is the [same migration](#innovations-and-why-they-matter)), and
+"zero knowledge" means the witness stays off the wire — Winterfell is not *formally*
+ZK. The rare, real edge is the **combination, post-quantum, tested**. Nothing overstated.
 
 ## The privacy is proven by adversaries in this repo
 
@@ -531,7 +545,7 @@ programs/mirror-pool/Cargo.toml --example devnet_demo`.
 
 | crate | what it is | status |
 |---|---|---|
-| `riverrun-core` | the post-quantum primitives and the membership *relation* (commitment, Merkle set, nullifier). Specification only — nothing here proves anything | 19 tests |
+| `riverrun-core` | the post-quantum primitives, the membership *relation*, and the **rotatable-piece identity suite** (shape/fit/turn/link/grant/rln/credential — the 7 powers of riverrun ID) | 44 tests |
 | `riverrun-eval` | adversarial harness for the behavioral channel — clustering attacker → chance | 4 tests + exhibit |
 | `riverrun-trace` | the `provenance-tracer`: backward funding-graph adversary + circularity defense + live-mainnet adapter | 7 tests + 2 exhibits |
 | `programs/mirror-pool` | the on-chain Solana program: commitment accumulator, per-round nullifier registry (PDA-per-nullifier anti-replay), published root, verifier-attested settlement, entry fee + anonymity-set floor | builds to `.so`; 21 e2e tests green (10 committee-of-one + 5 M-of-N quorum + 2 vault payout + 4 STARK-verified path); **the current committee code is deployed and exercised live on devnet** (full commit + relayer-execute lifecycle, [signatures](#the-action-made-real--money-moves-the-actor-does-not)) |
@@ -571,7 +585,7 @@ cargo test --manifest-path crates/riverrun-stark/Cargo.toml                # STA
 cargo test --manifest-path crates/riverrun-pool-zk/Cargo.toml              # the pool driven by the STARK
 ```
 
-**107 tests green**: 51 host + 27 STARK + 8 pool-zk + 21 on-chain (17 e2e + 4 STARK-verified path).
+**130+ tests green** across the workspace (riverrun-core alone: 44, incl. the 7-power identity suite; STARK incl. the rotation-in-ZK proof).
 
 ## Security status & honest limitations
 
