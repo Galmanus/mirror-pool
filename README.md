@@ -10,7 +10,7 @@
 
 [![Rust](https://img.shields.io/badge/Rust-end%20to%20end-000000?logo=rust)](https://www.rust-lang.org)
 [![Solana](https://img.shields.io/badge/Solana-SBF%20program-14F195?logo=solana&logoColor=black)](https://solana.com/privacy)
-[![tests](https://img.shields.io/badge/tests-101%20green-4c1)](#workspace)
+[![tests](https://img.shields.io/badge/tests-107%20green-4c1)](#workspace)
 [![CLI](https://img.shields.io/badge/CLI-preflight%20%C2%B7%20audit%20%C2%B7%20--json-14F195)](#run-it)
 [![post-quantum](https://img.shields.io/badge/STARK-post--quantum%2C%20no%20setup-8A2BE2)](#innovations-and-why-they-matter)
 [![license](https://img.shields.io/badge/license-MIT-blue)](#license)
@@ -131,21 +131,28 @@ later with a quantum computer finds only PRF outputs, with nothing to break.
   M-of-N committee, because that proof is 12 to 16 KB and costs **3.77M compute
   units**, above Solana's 1.4M per-transaction cap (measured in
   `programs/stark-verifier/tests/cu.rs`).
-- *The path forward, validated:* a **Circle STARK over the Mersenne-31 field** fits
-  a single mainnet transaction. Using the murkl M31 verifier as a **reference**, we
-  confirmed on a **commodity laptop, no cloud**, that this class of verifier
-  compiles to a **249 KB** Solana program and runs a proof in **~37k compute units
-  in a local VM** (LiteSVM), under 3% of a transaction's budget. riverrun's own M31
-  AIR (membership + nullifier + action binding) is specified in
-  [`docs/M31_CIRCLE_STARK.md`](docs/M31_CIRCLE_STARK.md); porting the proof onto it,
-  and swapping the committee for this on-chain verifier through the already
-  implemented `execute_verified` path, is the migration in progress. When it lands,
-  riverrun is the only submission here that is post-quantum, transparent (no trusted
-  setup), **and** verified on-chain with no committee.
+- *The path forward, validated end to end on a laptop:* a **Circle STARK over the
+  Mersenne-31 field** fits a single mainnet transaction, and we proved the whole
+  pipeline on a **commodity laptop, no cloud, no Stwo**. Using the murkl M31 stack as
+  a **reference**, a real proof was generated locally (**8,696 bytes**), fed to the
+  verifier program running inside the Solana VM (LiteSVM), and **verified end to end,
+  ACCEPTED** (full FRI + out-of-domain sampling + constraint check), at **157,758
+  compute units, about 11% of a transaction's 1.4M budget**. The verifier compiles to
+  a **249 KB** Solana program. This is the property the two other submissions have
+  and riverrun did not: **a post-quantum proof verified on-chain with no committee.**
+  riverrun's own M31 AIR (Poseidon2 membership + nullifier + action binding) is
+  specified in [`docs/M31_CIRCLE_STARK.md`](docs/M31_CIRCLE_STARK.md); swapping the
+  reference constraint for it, and settling through the already implemented
+  `execute_verified` path, is the migration in progress. When it lands riverrun is
+  the only submission that is post-quantum, transparent (no trusted setup), **and**
+  verified on-chain with no committee.
 
-  (Numbers stated precisely, so a reviewer can check them: the 4.8 KB proof / 249 KB
-  verifier / ~37k CU belong to the M31 *reference* stack we measured, not to
-  riverrun's current f128 STARK. Nothing is deployed to mainnet yet.)
+  (Stated precisely so a reviewer can check it: the 8.7 KB proof / 249 KB verifier /
+  **157,758 CU accepted** belong to the M31 *reference* AIR (commitment + nullifier)
+  we measured, not yet to riverrun's own relation, and the measurement is in a local
+  VM, not deployed to mainnet. riverrun's *current* proof is still the f128 Winterfell
+  STARK at 3.77M CU. What is proven today is that the on-chain, committee-free path is
+  real and runs on a laptop; porting riverrun's constraint onto it is the open step.)
 
 ### Who this protects
 
@@ -494,8 +501,8 @@ The load-bearing honest points, in one place:
   On-chain this is moot: only nullifiers (PRF outputs) are persisted.
 - **On-chain verification is not live.** The f128 proof is 12-19 KB / 3.77M CU, above
   Solana's 1.4M cap, so settlement is gated by an M-of-N Ed25519 committee (a named,
-  quorum-bounded trust assumption, not soundness). The M31 Circle-STARK migration
-  (~37k CU, validated on a laptop) removes it: see
+  quorum-bounded trust assumption, not soundness). The M31 Circle-STARK path (a real proof
+  ACCEPTED on-chain at 157,758 CU on a laptop, reference AIR) removes it: see
   [`docs/M31_CIRCLE_STARK.md`](docs/M31_CIRCLE_STARK.md).
 - **Sybil is priced, not prevented.** An entry fee makes inflating k cost money; it does
   not stop a funded attacker. Real-k is measured, not claimed solved.
