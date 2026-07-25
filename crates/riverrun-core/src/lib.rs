@@ -36,6 +36,7 @@ pub mod commitment;
 pub mod membership;
 pub mod merkle;
 pub mod nullifier;
+pub mod rln;
 pub mod rotatable;
 
 /// A 32-byte digest — the output of every hash in this crate.
