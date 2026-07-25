@@ -148,13 +148,21 @@ later with a quantum computer finds only PRF outputs, with nothing to break.
 - *Honest scope of what's on-chain vs. still ahead:* the relation verified on-chain
   binds `{commitment, nullifier, root, action}` as public inputs through the OODS
   constraint (the actor↔action link riverrun adds). What is **not** yet in-circuit is
-  a full Poseidon2 **Merkle-path** membership proof (the root is bound as a public
-  input, at the same fidelity murkl's reference AIR uses); that deeper arithmetization
-  is specified in [`docs/M31_CIRCLE_STARK.md`](docs/M31_CIRCLE_STARK.md) and is the
-  remaining step. Settlement lands through the already implemented `execute_verified`
-  path. When the in-circuit membership lands, riverrun is the only submission that is
-  post-quantum, transparent (no trusted setup), **and** verified on-chain with no
-  committee.
+  a full Poseidon2 **Merkle-path** membership proof (today the root is bound as a
+  public input, at the same fidelity murkl's reference AIR uses). That deeper
+  arithmetization is specified in [`docs/M31_CIRCLE_STARK.md`](docs/M31_CIRCLE_STARK.md)
+  and is being built milestone by milestone.
+- *In-circuit membership, milestone 1 of 4 — done and honest:* the hash foundation is
+  real, not hand-rolled. A **vetted Poseidon2 over Mersenne-31** (Plonky3's
+  `p3-mersenne-31`, canonical parameters `RF=8, RP=14, α=5`, no invented constants)
+  runs on the laptop; a real Poseidon2 **Merkle tree** is built and a membership
+  **path reconstructs the root** (verified). Still ahead: arithmetize that permutation
+  as an **AIR** (each round → columns + degree-5 constraints), prove it with a real
+  STARK, and evaluate those constraints in the on-chain verifier. When the in-circuit
+  membership lands, riverrun is the only submission that is post-quantum, transparent
+  (no trusted setup), **and** verified on-chain with no committee. Nothing here is
+  faked: secure Poseidon2 parameters are not invented, and a placeholder would be
+  called out rather than shipped.
 
   (Stated precisely so a reviewer can check it: the 8.7 KB proof / 249 KB verifier /
   **159,849 CU accepted** are riverrun's relation with action binding (commitment +
