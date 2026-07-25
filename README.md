@@ -122,6 +122,30 @@ chain is a hash (commitment, nullifier, root), so the permanent ledger is
 post-quantum by construction: an adversary harvesting the chain today to decrypt
 later with a quantum computer finds only PRF outputs, with nothing to break.
 
+```mermaid
+flowchart TD
+    D["<b>The design choice</b><br/>every on-chain value is a hash<br/>commitment H(s‖a) · nullifier H(s‖r) · root<br/><i>no elliptic curves, no pairings, no trusted setup</i>"]
+
+    D --> H["attacker harvests the whole<br/>public chain <b>today</b>, waits for<br/>a quantum computer"]
+
+    H --> SHOR{"<b>Shor's algorithm</b><br/>breaks discrete-log and factoring"}
+    H --> GROV{"<b>Grover's algorithm</b><br/>speeds up brute force"}
+
+    SHOR --> S1["curve-based privacy<br/>(Groth16/BN254, ElGamal)<br/>keys recovered — <b>cracked ✗</b>"]
+    SHOR --> S2["riverrun: no curve anywhere<br/>on chain — <b>nothing for Shor<br/>to attack ✓</b>"]
+
+    GROV --> G1["halves a hash's security:<br/>256-bit → 128-bit effective<br/><b>parameters already absorb it ✓</b>"]
+
+    S2 --> OK(["<b>post-quantum by construction</b><br/>what you hide today stays hidden<br/>after quantum arrives"])
+    G1 --> OK
+
+    style S1 fill:#fde0e0,stroke:#c0392b,color:#611
+    style S2 fill:#e0f5e9,stroke:#1e7a46,color:#052
+    style G1 fill:#e0f5e9,stroke:#1e7a46,color:#052
+    style OK fill:#e6ecff,stroke:#3a5bd9,color:#123
+    style D fill:#f3f0ff,stroke:#8A2BE2,color:#213
+```
+
 > **Why this survives quantum.** Harvest-now-decrypt-later breaks the public-key
 > cryptography built on discrete-log and factoring (RSA, ECDSA, ECDH, pairings),
 > which Shor's algorithm defeats. riverrun uses none of it. Every primitive is
