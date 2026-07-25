@@ -82,6 +82,62 @@ impl Piece<'_> {
     }
 }
 
+// ---------------------------------------------------------------------------
+// The turn relation — what a zero-knowledge proof of a rotation establishes.
+// ---------------------------------------------------------------------------
+
+use crate::commitment::Commitment;
+use crate::merkle::{verify as merkle_verify, InclusionProof};
+
+/// The **public** statement a rotation proof reveals: rotate a piece that was a
+/// member of the previous angle's set, revealing only the migration tag.
+///
+/// It says: *"the holder of some piece that appeared as a leaf under `prev_root`
+/// rotated it from `angle`, and the migration tag they reveal is `turn_tag`"* —
+/// without revealing the piece, its shape, or its position. Revealing `turn_tag`
+/// exactly once (an on-chain registry rejects repeats) is what stops one piece
+/// from rotating into several seats.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct TurnStatement {
+    /// The set root the piece must have been a member of at `angle`.
+    pub prev_root: Hash,
+    /// The angle being rotated *from* (to `angle + 1`).
+    pub angle: Angle,
+    /// The migration tag revealed by the rotation (spent once).
+    pub turn_tag: Hash,
+}
+
+/// The **private** witness — never revealed by the proof.
+#[derive(Clone, Debug)]
+pub struct TurnWitness {
+    /// The piece itself.
+    pub secret: Secret,
+    /// A path showing the piece's shape at `angle` sits under `prev_root`.
+    pub inclusion: InclusionProof,
+}
+
+/// Evaluate the turn relation in the clear. Returns `true` iff the witness proves
+/// the statement. This is the single source of truth for what a zero-knowledge
+/// STARK of a rotation must enforce (the same discipline as
+/// [`crate::membership::check_relation`]); it takes the witness as input, so it is
+/// **not** itself a proof.
+///
+/// Two constraints, and they are exactly the rotatable-piece properties:
+/// 1. **Turn binding:** `turn_tag == secret.piece().turn(angle)` — the revealed
+///    migration tag came from the same piece being rotated. A forger without the
+///    secret cannot produce it (only-the-holder-can-turn), and it cannot be lifted
+///    onto a different piece.
+/// 2. **Prior membership:** `secret.piece().shape(angle)` verifies under
+///    `prev_root` — the piece really was in the set at the angle it rotates from.
+pub fn check_turn(statement: &TurnStatement, witness: &TurnWitness) -> bool {
+    let piece = witness.secret.piece();
+    if piece.turn(statement.angle) != statement.turn_tag {
+        return false;
+    }
+    let shape = Commitment(piece.shape(statement.angle));
+    merkle_verify(&statement.prev_root, &shape, &witness.inclusion)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -141,5 +197,60 @@ mod tests {
                 assert_ne!(shapes[i], shapes[j], "each angle is its own shape");
             }
         }
+    }
+
+    // --- the turn relation (what a ZK proof of a rotation enforces) ---
+
+    fn shape_set(members: &[Secret], theta: Angle) -> crate::merkle::MerkleTree {
+        let leaves: Vec<Commitment> =
+            members.iter().map(|s| Commitment(s.piece().shape(theta))).collect();
+        crate::merkle::MerkleTree::build(&leaves).unwrap()
+    }
+
+    #[test]
+    fn a_valid_rotation_proves() {
+        let theta = 4u64;
+        let me = secret(1);
+        let members = [secret(9), me, secret(7), secret(5)];
+        let tree = shape_set(&members, theta);
+        let stmt = TurnStatement {
+            prev_root: tree.root(),
+            angle: theta,
+            turn_tag: me.piece().turn(theta),
+        };
+        let wit = TurnWitness { secret: me, inclusion: tree.prove(1).unwrap() };
+        assert!(check_turn(&stmt, &wit), "a genuine rotation of a member piece must verify");
+    }
+
+    #[test]
+    fn a_forged_turn_tag_fails() {
+        // the migration tag comes from a DIFFERENT piece than the one being proven
+        let theta = 4u64;
+        let me = secret(1);
+        let members = [secret(9), me, secret(7), secret(5)];
+        let tree = shape_set(&members, theta);
+        let stmt = TurnStatement {
+            prev_root: tree.root(),
+            angle: theta,
+            turn_tag: secret(2).piece().turn(theta), // not my piece
+        };
+        let wit = TurnWitness { secret: me, inclusion: tree.prove(1).unwrap() };
+        assert!(!check_turn(&stmt, &wit), "a turn tag not from this piece must fail");
+    }
+
+    #[test]
+    fn a_piece_not_in_the_previous_set_fails() {
+        // an outsider borrows a real member's inclusion path but has their own secret
+        let theta = 4u64;
+        let outsider = secret(42);
+        let members = [secret(9), secret(1), secret(7), secret(5)];
+        let tree = shape_set(&members, theta);
+        let stmt = TurnStatement {
+            prev_root: tree.root(),
+            angle: theta,
+            turn_tag: outsider.piece().turn(theta),
+        };
+        let wit = TurnWitness { secret: outsider, inclusion: tree.prove(1).unwrap() };
+        assert!(!check_turn(&stmt, &wit), "a piece not in the set must not rotate");
     }
 }
