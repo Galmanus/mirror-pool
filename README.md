@@ -349,6 +349,37 @@ Same action, distinct nullifiers, one root. The nullifier is `Rescue(secret‖ro
 — unlinkable to any commitment. Grow the set to `k` and the actor↔action link is
 `1/k`, by construction. (`crates/riverrun-pool-zk/src/lib.rs`)
 
+## The rotatable piece — the ricorso, made real
+
+Picture a puzzle piece. It has a shape; turn it to a new angle and it presents a
+*different* shape, each with its own matching fit. That is one secret across
+contexts. A single `Secret` is the piece, and any public **angle** `θ` (an epoch, a
+round, a verifier) derives its own **shape** `H(s‖θ)` and its own **fit** `H(s‖θ)`.
+Three properties hold, each a test in `crates/riverrun-core/src/rotatable.rs`:
+
+- **Binding within an angle** — at a fixed angle the secret fixes one shape and one
+  fit; you cannot present a different one without a hash collision.
+- **Unlinkable across angles** — `shape(θ)` and `shape(θ')` are independent PRF
+  outputs; an observer cannot tell they are the same piece, so acting across contexts
+  builds no linkable trail.
+- **Only the holder turns it** — advancing to the next angle needs the secret. Others
+  see disconnected shapes.
+
+And the turn is **provable in zero knowledge**. The holder proves *"I rotated the same
+piece that was a member of the previous angle's set"* revealing only
+`{prev_root, turn_tag, angle}` — which piece, and its shape, stay hidden — while
+spending the turn tag once so one piece cannot fork into several seats. It reuses the
+bound-membership STARK verbatim, because a rotation *is* membership + nullifier
+binding: proven and its negatives rejected in `crates/riverrun-stark/tests/rotation.rs`
+(a forged turn tag, and a tag from another angle, both fail). This is the **ricorso**
+Joyce's Vico gave us: the set reborn each cycle, a member unlinkable across epochs,
+their continuity provable only to themselves.
+
+*Honest, same caveats as every proof here:* it runs on the f128 Rescue STARK (the
+mainnet-cheap M31 port is the same migration in [Innovations](#innovations-and-why-they-matter)),
+and "zero knowledge" means the witness never touches the wire — Winterfell is not
+*formally* ZK. Nothing overstated.
+
 ## The privacy is proven by adversaries in this repo
 
 The discipline: **build the attacker; the defense is its dual.** You cannot
