@@ -277,6 +277,26 @@ $ riverrun audit 9fhQBbumKEFuXtMBDw8AaQyAjCorLGJQiS3skWZdQyQD 6 --json \
 result **partial** rather than silently reporting a smaller number as fact. Point
 `$SOLANA_RPC` at a paid endpoint for a clean, complete run.
 
+The lighter single-wallet trace *does* fit inside the public endpoint's budget, and
+when it does the result comes back clean — a real run just now, verbatim:
+
+```console
+$ riverrun trace 9fhQBbumKEFuXtMBDw8AaQyAjCorLGJQiS3skWZdQyQD --json \
+    | jq '{endpoint, attributable_origin, trace_depth, reliable, rpc_calls, rpc_failures}'
+{
+  "endpoint": "https://api.mainnet-beta.solana.com",
+  "attributable_origin": false,
+  "trace_depth": 3,
+  "reliable": true,
+  "rpc_calls": 1,
+  "rpc_failures": 0
+}
+```
+
+`reliable: true`, `rpc_failures: 0` — a clean, live read against mainnet-beta. Same
+tool, same honesty flag: it tells you when the number is trustworthy and when it is
+not. The ruler runs on mainnet today.
+
 | command | what it answers |
 |---|---|
 | `preflight <wallet> [pool]` | the anonymity **you** would get in a pool, before you deposit |
