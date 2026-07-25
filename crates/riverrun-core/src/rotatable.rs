@@ -39,6 +39,7 @@ const SHAPE: &[u8] = b"riverrun/piece-shape/v1";
 const FIT: &[u8] = b"riverrun/piece-fit/v1";
 const TURN: &[u8] = b"riverrun/piece-turn/v1";
 const GRANT: &[u8] = b"riverrun/piece-grant/v1";
+const CRED: &[u8] = b"riverrun/piece-credential/v1";
 
 /// A rotatable piece: a single [`Secret`] viewed from any angle. Borrow one with
 /// [`Secret::piece`].
@@ -90,6 +91,15 @@ impl Piece<'_> {
     /// round, one pool, one vote — never your whole identity.
     pub fn grant(&self, theta: Angle, delegate: &[u8; 32]) -> Hash {
         tagged_hash(GRANT, &[self.0.as_bytes(), &theta.to_le_bytes(), delegate])
+    }
+
+    /// The piece's **credential leaf** for an attribute: `H(cred ‖ secret ‖ attr)`.
+    /// An issuer who has verified that this holder has attribute `attr` (over 18, a
+    /// verified member, KYC-cleared) publishes this leaf into their attribute set.
+    /// The holder can later prove, per context, that they carry the attribute —
+    /// without revealing the secret, the issuer's whole list, or any other context.
+    pub fn credential(&self, attr: &[u8; 32]) -> Hash {
+        tagged_hash(CRED, &[self.0.as_bytes(), attr])
     }
 }
 
@@ -236,6 +246,55 @@ pub fn check_delegation(statement: &DelegationStatement, witness: &DelegationWit
     }
     let shape = Commitment(piece.shape(statement.angle));
     merkle_verify(&statement.set_root, &shape, &witness.inclusion)
+}
+
+// ---------------------------------------------------------------------------
+// Attribute credentials — carry a hidden attribute, show it per context.
+// ---------------------------------------------------------------------------
+
+/// The public statement of an attribute show: "the identity `shape` in context
+/// `angle` carries attribute `attr`, issued into the set `attr_root`."
+///
+/// An issuer verifies some fact about a holder (over 18, a member, KYC-cleared) and
+/// publishes the holder's [`Piece::credential`] leaf into an attribute set with root
+/// `attr_root`. The holder then proves, in zero knowledge, that their context
+/// identity `shape` belongs to the same secret that is credentialed under
+/// `attr_root` — revealing only `{attr_root, attr, angle, shape}`: not the secret,
+/// not the issuer's list, not any other context. The same person shows "verified"
+/// in one app and stays unlinkable in the next.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct AttributeStatement {
+    /// The issuer's attribute set (the root of everyone credentialed for `attr`).
+    pub attr_root: Hash,
+    /// The attribute being shown (a public label, e.g. a hash of "age>=18@issuer").
+    pub attr: [u8; 32],
+    /// The context the holder is showing it in.
+    pub angle: Angle,
+    /// The holder's identity in that context.
+    pub shape: Hash,
+}
+
+/// The private witness — the piece, never revealed.
+#[derive(Clone, Debug)]
+pub struct AttributeWitness {
+    pub secret: Secret,
+    /// A path showing the piece's credential leaf sits under `attr_root`.
+    pub credential_inclusion: InclusionProof,
+}
+
+/// Evaluate the attribute-show relation in the clear — what a zero-knowledge proof
+/// of an attribute enforces. Two constraints:
+/// 1. **Credentialed:** `secret.piece().credential(attr)` is a member under
+///    `attr_root` (the issuer credentialed this secret for this attribute).
+/// 2. **Bound to the shown identity:** `secret.piece().shape(angle) == shape` — the
+///    attribute attaches to *this* context identity, and to no other.
+pub fn check_attribute(statement: &AttributeStatement, witness: &AttributeWitness) -> bool {
+    let piece = witness.secret.piece();
+    let cred = Commitment(piece.credential(&statement.attr));
+    if !merkle_verify(&statement.attr_root, &cred, &witness.credential_inclusion) {
+        return false;
+    }
+    piece.shape(statement.angle) == statement.shape
 }
 
 #[cfg(test)]
@@ -546,5 +605,83 @@ mod tests {
         // outsider borrows a real member's path but isn't in the set
         let wit = DelegationWitness { secret: outsider, inclusion: set.prove(1).unwrap() };
         assert!(!check_delegation(&stmt, &wit), "only a member of the context can delegate it");
+    }
+
+    // --- attribute credentials ---
+
+    fn attr_set(holders: &[Secret], attr: &[u8; 32]) -> crate::merkle::MerkleTree {
+        let leaves: Vec<Commitment> =
+            holders.iter().map(|s| Commitment(s.piece().credential(attr))).collect();
+        crate::merkle::MerkleTree::build(&leaves).unwrap()
+    }
+
+    #[test]
+    fn a_credentialed_holder_shows_the_attribute_in_a_context() {
+        let over18 = [0x18u8; 32];
+        let me = secret(1);
+        let issued = [secret(9), me, secret(3), secret(5)];
+        let root = attr_set(&issued, &over18);
+        let theta: Angle = 500;
+        let stmt = AttributeStatement {
+            attr_root: root.root(),
+            attr: over18,
+            angle: theta,
+            shape: me.piece().shape(theta),
+        };
+        let wit = AttributeWitness { secret: me, credential_inclusion: root.prove(1).unwrap() };
+        assert!(check_attribute(&stmt, &wit), "a credentialed holder can show the attribute");
+    }
+
+    #[test]
+    fn an_uncredentialed_holder_cannot_show_the_attribute() {
+        let over18 = [0x18u8; 32];
+        let outsider = secret(42); // never issued a credential
+        let issued = [secret(9), secret(1), secret(3), secret(5)];
+        let root = attr_set(&issued, &over18);
+        let theta: Angle = 500;
+        let stmt = AttributeStatement {
+            attr_root: root.root(),
+            attr: over18,
+            angle: theta,
+            shape: outsider.piece().shape(theta),
+        };
+        // outsider borrows a real member's path but isn't in the issuer's set
+        let wit = AttributeWitness { secret: outsider, credential_inclusion: root.prove(1).unwrap() };
+        assert!(!check_attribute(&stmt, &wit), "only a credentialed holder can show it");
+    }
+
+    #[test]
+    fn a_credential_for_one_attribute_does_not_show_another() {
+        // credentialed for "over 18", tries to claim "accredited investor"
+        let over18 = [0x18u8; 32];
+        let investor = [0x99u8; 32]; // a different attribute label
+        let me = secret(1);
+        let root = attr_set(&[secret(9), me, secret(3), secret(5)], &over18);
+        let theta: Angle = 500;
+        let stmt = AttributeStatement {
+            attr_root: root.root(),
+            attr: investor, // claiming a different attribute than the set certifies
+            angle: theta,
+            shape: me.piece().shape(theta),
+        };
+        let wit = AttributeWitness { secret: me, credential_inclusion: root.prove(1).unwrap() };
+        assert!(!check_attribute(&stmt, &wit), "a credential is specific to its attribute");
+    }
+
+    #[test]
+    fn the_attribute_binds_to_the_shown_identity_only() {
+        // the attribute attaches to my shape at this angle, not to a claimed other shape
+        let over18 = [0x18u8; 32];
+        let me = secret(1);
+        let root = attr_set(&[secret(9), me, secret(3), secret(5)], &over18);
+        let theta: Angle = 500;
+        let stmt = AttributeStatement {
+            attr_root: root.root(),
+            attr: over18,
+            angle: theta,
+            shape: secret(2).piece().shape(theta), // NOT my shape
+        };
+        let wit = AttributeWitness { secret: me, credential_inclusion: root.prove(1).unwrap() };
+        assert!(!check_attribute(&stmt, &wit), "the attribute must bind to the holder's own identity");
     }
 }
