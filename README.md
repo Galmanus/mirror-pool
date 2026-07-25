@@ -43,7 +43,7 @@ _________     _( ______(         )       _(         (       )
           ~~ ~~~                              '~~'
 ```
 
-<sub>*a mermaid on the river that runs in a circle — riverrun. in Finnegans Wake the river is a woman, Anna Livia Plurabelle. ascii by jf.*</sub>
+<sub>*a river-woman on the water that runs in a circle — riverrun. not a sea-mermaid: a freshwater one — Iara, the Brazilian river-siren, or Anna Livia Plurabelle, the river-woman of Finnegans Wake. ascii by jf.*</sub>
 
 > Built for the **`mirror-pool`** bounty — *Privacy-Through-Noise tooling for
 > Solana*. *riverrun* is the first word of Joyce's *Finnegans Wake*, the river that
