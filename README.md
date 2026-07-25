@@ -15,38 +15,26 @@
 [![post-quantum](https://img.shields.io/badge/STARK-post--quantum%2C%20no%20setup-8A2BE2)](#innovations-and-why-they-matter)
 [![license](https://img.shields.io/badge/license-MIT-blue)](#license)
 
-**riverrun is Tornado Cash for behavior, not funds. It cuts the link between you and
-what you do on-chain, it survives quantum computers, and it is the only tool that
-can *prove how much anonymity you actually have* before you trust a pool with it.**
+**riverrun hides *who you are* on-chain — not your balance, but *who acted*. It tells
+you how exposed you really are first, and it is post-quantum: a future quantum
+computer cannot undo it.**
 
-Every privacy pool hides one thing from you: the `1/k` it advertises is a lie of
-omission. It counts members and ignores where their money came from, and on a public
-ledger that is public. Sort a pool by funding origin and your real anonymity can
-collapse. riverrun is the first tool to measure that collapse, **live on mainnet**:
-against a real Solana pool an advertised **k=30** was worth an effective **6.5**, and
-one depositor, alone in their funding class, was worth exactly **1**. It scores any
-pool it has never seen, including the other submissions in this bounty.
+Every privacy pool sells you `1/k` — "hidden among k people." It's a half-truth: it
+ignores where everyone's money came from, which is public. Sort by that and your
+crowd collapses. On a live Solana pool, an advertised **30** was really **6.5**, and
+one person was **1**. **riverrun measures that collapse, live on mainnet, for any pool.**
 
-Then it flips the script. The same funding-graph analysis that firms like
-Chainalysis sell to *de-anonymize* people is, here, an open-source CLI you run on
-your own wallet as self-defense, before you act: `riverrun preflight <wallet>`
-answers **EXPOSED / WEAK / OK** in one command, with what to do about it.
+Then it flips the script: the same forensic analysis firms sell to *unmask* people
+becomes `riverrun preflight <wallet>` — a one-command **EXPOSED / WEAK / OK** you run
+on yourself, before you act.
 
-And it is built to outlive the cryptography everyone else depends on. Every value
-riverrun commits on-chain is a hash: no elliptic curves, no pairings. That is what
-defeats **harvest-now-decrypt-later**, the attack where an adversary archives
-encrypted or linkable data today to break it with a quantum computer years from now.
-On riverrun's ledger there is nothing to harvest: the only things it records are
-post-quantum PRF outputs (nullifiers) that an attacker still cannot invert after
-quantum arrives. Most privacy tools sell you hiding math and ask you to trust it.
-riverrun makes anonymity **a number you can audit, a defense you can run, and a
-guarantee that does not expire when quantum computers show up.**
+And it's built on hashes, not elliptic curves — so it beats **harvest-now-decrypt-later**:
+an adversary who copies the chain today to crack it with a quantum computer in ten
+years finds nothing to crack. **Anonymity you can audit, a defense you can run, and a
+guarantee that doesn't expire when quantum arrives.**
 
-**Who it protects:** algotraders whose strategies get reverse-engineered, whales
-whose every move is shadowed and front-run, market makers protecting flow and
-inventory, protocols and agents that cannot broadcast their playbook, and everyday
-users who simply refuse to be clustered and profiled. The privacy that used to need
-a specialist, in one command.
+**For** traders whose strategies get copied, whales who get front-run, market makers,
+DAOs, and anyone who refuses to be an open book on-chain.
 
 ## In plain words — for someone who has never heard of riverrun
 
