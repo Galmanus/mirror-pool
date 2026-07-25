@@ -10,51 +10,6 @@
   ▀▀       ▀▀▀▀▀▀▀▀     ▀▀       ▀▀▀▀▀    ▀▀        ▀▀        ▀▀▀▀ ▀▀  ▀▀    ▀▀
 ```
 
-```
-                        \             /
-                               |
-                          \         /
-                           \   |   /      __
-                  ___             /   __(  (  )_
-                _(   )___    \ | /  _(  (       ) __
-              _(         )__      _(           _(    )
-     ______  (              )    (            (        )_
-            (            (    )__          __(       (    )
-_________     _( ______(         )       _(         (       )
-                   (___  _ ___)         (                      )
-                          /    | (_______             ( _ _     )
-                               |      \     (_____ __ _(_  _ _ )
-       _   _            /              \
-      / \O/ \                           \
-         "            /        |                    _   _
-                                          \        / \O/ \
-                               |                      "
-
-                       __/
-                      ( /",o
-                      ((@  y
-                       _\`(_              sSSs,
-                      [ ['\"]            (.`SSSSs,
-                      |__\ \L___      ___(,_SSSsSs_
-   \-------------------+--`----@)----(____   `'  __)---/
- ~~jf~~ ~~~~~~~~~~~~ ~~~~~~~~~~~~~~~~~~~~(`   ; /SS~~~~~~~~~~~~~~~~~~~
-                     ~~~               ~~ `\  ^ (SSs   ~~  ~~~~~ ~
-                 ~~~~~    ~~~~  ~          /` `' \Ss`
-      ~~~~~         ~~~                ~~~~uuuuuuuSs`~~ ~    ~~~~~~ ~ ~
-                              ~~~      ~ ~'UUUUUUUU ~ ~~~
-             ~~~~~   ~~~                   \UUUUUU/   ~~~   ~
-                                            \UUUU/  ~ ~~~~ ~ ~~~~~
-  ~~~~~ ~~     ~~           ~~~~             \UUU    /\
-                                              \UU\  / `}  ~~~ ~ ~~~ ~
-       ~~ (\  ~~~~~~~~ ~~~~~~      ~~  ~~~~~   \UU\/ ``}
-       >jf:-)                                   jf" ,_.}
- ~~ ~~~~ ~(/~   ~~~       ~     ~~~          ~~~/ `` \
-                          ~~                   / `,~'"
-          ~~ ~~~                              '~~'
-```
-
-<sub>*a river-woman on the water that runs in a circle — riverrun. not a sea-mermaid: a freshwater one — Iara, the Brazilian river-siren, or Anna Livia Plurabelle, the river-woman of Finnegans Wake. ascii by jf.*</sub>
-
 > Built for the **`mirror-pool`** bounty — *Privacy-Through-Noise tooling for
 > Solana*. *riverrun* is the first word of Joyce's *Finnegans Wake*, the river that
 > flows in a circle back to its own beginning: a funding trail with no origin to trace.
