@@ -1,8 +1,16 @@
 # riverrun
 
-<p align="center">
-  <img src="assets/banner.jpg" alt="riverrun — a glitched desert valley, the ledger's terrain scrambled" width="480">
-</p>
+```
+                   |
+                   \       /            _\/_
+                     .-'-.              //o\  _\/_
+  _  ___  __  _ --_ /     \ _--_ __  __ _ | __/o\\ _
+=-=-_=-=-_=-=_=-_= -=======- = =-=_=-=_,-'|"'""-|-,_
+ =- _=-=-_=- _=-= _--=====- _=-=_-_,-"          |
+jgs=- =- =-= =- = -  -===- -= - ."
+```
+
+<sub>*a boat on the river that runs in a circle — riverrun. ascii by jgs (Joan Stark).*</sub>
 
 > Built for the **`mirror-pool`** bounty — *Privacy-Through-Noise tooling for
 > Solana*. *riverrun* is the first word of Joyce's *Finnegans Wake*, the river that
