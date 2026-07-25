@@ -9,7 +9,7 @@
 {\color{river}\rule{\textwidth}{1.2pt}}\\[1.5em]
 {\Huge\bfseries riverrun}\\[0.6em]
 {\LARGE\bfseries Behavioral Privacy on Solana, Measured}\\[0.8em]
-{\large Hiding \emph{who} acted --- and a ruler for what that hiding is\\[0.2em] actually worth}\\[1.3em]
+{\large Hide \emph{who} acted --- carry one secret into every context ---\\[0.2em] and measure what that hiding is actually worth}\\[1.3em]
 {\color{river}\rule{\textwidth}{0.6pt}}\\[1.0em]
 \end{center}
 
@@ -26,28 +26,23 @@ brings us by a commodius vicus of recirculation.\\[0.2em]
 \begin{center}
 \begin{minipage}{0.88\textwidth}
 \small
-\textbf{\itshape Abstract.} \itshape On a public ledger, hiding \emph{who} performed an
-action is a different problem from hiding \emph{how much} money moved, and a harder
-one to reason about honestly. This paper describes \river, a system for behavioral
-privacy on Solana. A member commits an intent and later executes exactly that
-intent, while no observer can say which member did it. The proof is a transparent,
-post-quantum STARK that welds membership, a per-round nullifier, and the public
-action into one object, with no trusted setup; a synchronized round of $k$ members
-collapses into a single proof and a single verification. The paper's second half is
-a warning aimed at \river\ and at every system like it. Every anonymity pool
-advertises a number, $1/k$, that counts members --- and that number is a fiction,
-because it ignores where the members' money came from, and the funding graph is
-public. We give a ruler, the effective anonymity-set size of Serjantov and Danezis
-conditioned on funding provenance, and run it against a live pool on Solana
-mainnet: a set advertising $k=30$ delivers an effective $6.5$, and one member has an
-anonymity of exactly one. Because \river\ can \emph{measure} a crowd's anonymity, an
-agent can \emph{form} a good one on purpose --- and hand each member a
-proof-carrying certificate they verify without trusting the agent. Every claim of
-the form ``$X$ is bound'' has a test verified to fail without the constraint it
-tests; three such tests turned out to be decorative, and we say which. Where the
-system does not yet hold --- an unaudited circuit, off-chain verification,
-example-grade parameters --- we say so plainly. Every number here is reproducible
-from one command.
+\textbf{\itshape Abstract.} \itshape On a public blockchain, hiding \emph{who}
+did something is a different problem from hiding \emph{how much} money moved --- and
+a harder one to reason about honestly. This paper describes \river, a set of tools
+for the first problem on Solana. It has three parts. A \textbf{ruler} measures how
+much anonymity a privacy pool really gives its users, by tracing where their money
+came from; run against a live pool on Solana mainnet, a set that advertises $30$
+members delivers an effective $6.5$, and one member is alone. An \textbf{identity
+layer}, \emph{riverrun ID}, turns one secret into a different, unlinkable identity in
+every app, while still stopping one person from acting twice where they should act
+once. And a \textbf{pool} lets a member commit an intent and later carry it out, with
+no observer able to say which member did it, proven by a transparent, post-quantum
+STARK with no trusted setup. Everything is built from one hash, so a quantum computer
+does not break it. Every ``$X$ is bound'' claim has a test that we deleted the
+constraint to watch fail; three such tests turned out to prove nothing, and we say
+which. Where the system is not finished --- an unaudited circuit, on-chain
+verification proven in a local VM but not yet on mainnet --- we say so plainly. Every
+number here comes from one command.
 \end{minipage}
 \end{center}
 \vspace{1.0em}
@@ -57,6 +52,25 @@ from one command.
 Manuel Guilherme Galmanus \quad\textbullet\quad Independent Researcher \quad\textbullet\quad Preprint, July 2026
 \end{center}
 
+\vspace{1.0em}
+\begin{center}
+{\color{river}\rule{0.7\textwidth}{0.4pt}}\\[0.8em]
+\begin{minipage}{0.86\textwidth}
+\small\itshape\color{ink}
+Privacy is not secrecy. Secrecy is hiding what you did from everyone; privacy is the
+power to choose who sees it. On a public ledger you have neither by default: every
+action you take is pinned to a board that never forgets, and firms you never hired
+read it for a living. No exchange, no analytics company, no protocol will hand you
+behavioral privacy out of kindness. If we want it, we build it --- and we build it to
+outlast the machine coming to break it, hash-only, no trusted setup, no one to ask
+permission from. The cypherpunks wrote code to defend privacy. We write code, and then
+we do the one thing the old manifestos left to faith: we do not ask you to trust that
+the privacy is real. We hand you a ruler, and you measure it yourself.
+\end{minipage}\\[0.8em]
+{\color{river}\rule{0.7\textwidth}{0.4pt}}
+\end{center}
+\vspace{0.8em}
+
 \vspace{0.5em}
 {\color{rule}\hrule}
 \vspace{0.3em}
@@ -65,216 +79,285 @@ Manuel Guilherme Galmanus \quad\textbullet\quad Independent Researcher \quad\tex
 {\color{rule}\hrule}
 \clearpage
 
-% ===================== 1. INTRODUCTION =====================
-\section{The problem, in one picture}
+% ===================== 1. PROBLEM =====================
+\section{The problem, in plain words}
 
-Imagine a town where every letter anyone ever mailed is pinned to a public board,
-forever. Not the contents --- those are sealed --- but the envelopes: who sent what
-to whom, when, and how heavy the package was. You would learn a great deal about
+Picture a town where every letter anyone ever mailed is pinned to a board in the
+square, forever. Not the contents --- those are sealed --- but the envelopes: who
+sent what to whom, when, and how heavy it was. You would learn a great deal about
 that town without opening a single letter. Who pays whom. Who is suddenly buying.
 Who moves money at three in the morning. Who copies whose move an hour later.
 
-A public blockchain is that board. People imagine that a wallet address, being a
-random string and not a name, keeps them private. The opposite is closer to the
-truth. The address is a stable handle, and everything done under it accumulates
-into a pattern --- a \emph{behavioral fingerprint}. When you act, how much, which
-protocols you touch, in what order: that is enough for modern chain-analysis to
-cluster your wallets, attach an identity, and increasingly to predict and front-run
-what you will do next. The tools that do this improve every month, because the data
+A public blockchain is that board. People think that a wallet address, being a random
+string and not a name, keeps them private. The opposite is closer to the truth. The
+address is a fixed handle, and everything done under it piles up into a pattern.
+How much you move, which apps you touch, in what order: modern chain-analysis uses
+that pattern to link your wallets, attach a name, and increasingly to predict and
+front-run what you will do next. These tools get better every month, because the data
 is permanent and public and the models feeding on it are hungry.
 
-The dominant view of on-chain privacy assumes the problem is the money: hide the
-amounts, hide the balances. \emph{This view is incomplete.} There are two kinds of
-privacy here and they are not the same. One hides \emph{how much}. The other hides
-\emph{who} --- which person, out of a crowd, performed a public action. Most work
-has gone into the first: confidential transfers, shielded balances, mixers that
-break the link between a deposit and a withdrawal of value. This paper is about the
-second. Amounts are not hidden here and are not the point. What we sever is the link
-between an \emph{actor} and an \emph{action}.
+Most privacy work assumes the problem is the money: hide the amounts, hide the
+balances. That view is incomplete. There are two kinds of privacy here, and they are
+not the same. One hides \emph{how much}. The other hides \emph{who} --- which person,
+out of a crowd, did a public thing. Almost all the work so far is on the first:
+confidential transfers, shielded balances, mixers that break the link between a
+deposit and a withdrawal of value. This paper is about the second. Amounts are not
+hidden here and are not the point. What we cut is the link between an \emph{actor} and
+an \emph{action}.
 
 \begin{intuition}
-Richard Feynman said that if you cannot explain a thing simply, you do not
-understand it. So here is the whole idea in one sentence, and the rest of the paper
-is only this sentence made precise and made real: \textbf{you disappear into a crowd
-of people who all look like they could have done the thing you did.}
+Here is the whole idea in one sentence, and the rest of the paper is only this
+sentence made precise and made real: \textbf{you disappear into a crowd of people who
+all look like they could have done the thing you did.}
 \end{intuition}
 
 \begin{intuition}
-\textbf{On the name.} \emph{Finnegans Wake} (James Joyce, 1939) is a novel with no
-beginning. Its last sentence breaks off mid-phrase --- ``a way a lone a last a
-loved a long the'' --- and runs straight into its first word, ``riverrun.'' The
-book is a circle. It is written in a dream-language where every word carries many
-meanings at once, and it runs on Giambattista Vico's theory that history moves in
-cycles that return to their start; the pun ``a commodius vicus of recirculation''
-hides Vico's name. Its river, Anna Livia, flows to the sea and comes back as rain.
-We did not choose the name for the poetry. Several of the book's ideas turn out to
-be load-bearing, and each is cashed out as a number or a construction later:
-\begin{itemize}[leftmargin=1.2em,itemsep=0.1em,topsep=0.2em]
-\item \textbf{A circle has no beginning.} The book's core structural fact --- no
-origin, no source --- is exactly the defense against the funding-graph attack of
-Section~\ref{sec:ruler}: a funding trail that loops has no origin to trace.
-\item \textbf{The \emph{ricorso}}, Vico's return that begins the cycle again, is
-how the anonymity set is reborn each cycle so history stops accumulating
-(Section~\ref{sec:ricorso}).
-\item \textbf{Irreducible polysemy.} Every word in the book has many valid
-meanings at once, none privileged; ``which is the real one'' is a category error,
-not a puzzle. This is the ambiguous-origin construction of
-Section~\ref{sec:ruler}, where the funding trail reaches many origins with none
-privileged, so which is real is \emph{undefined} rather than hidden --- measured
-at $2.90$ bits of doubt.
-\item \textbf{``Here Comes Everybody.''} The protagonist HCE is at once one man
-and everyone --- an identity dissolved into the crowd, which is what an anonymity
-set is. \emph{Disanalogy:} HCE is a single dream-figure who is everyone, whereas
-here there are many real members and the cryptography makes which one acted
-genuinely undefined, not merely hard to guess.
-\item \textbf{The Four.} The recurring quartet Mamalujo --- judges, observers,
-inquisitors --- is never authoritative in any single one of them; truth is what
-enough of them agree on. Read across the whole book, this prescribes the on-chain
-fix of Section~\ref{sec:fw}: replace the single settlement verifier with an
-$M$-of-$N$ committee, so a false attestation needs $M$ colluding signers, not one.
-\end{itemize}
+\textbf{On the name.} \emph{Finnegans Wake} (James Joyce, 1939) is a novel written as
+a circle: its last sentence breaks off mid-phrase and runs straight into its first
+word, ``riverrun.'' We did not pick the name for the poetry. One idea from the book
+is load-bearing and shows up later as a number: a circle has no beginning, and a
+funding trail that loops back on itself has no origin to trace
+(\S\ref{sec:ruler}). That is the strongest defense the ruler finds.
 \end{intuition}
 
-\subsection{Contributions}
+% ===================== 2. WHAT RIVERRUN IS =====================
+\section{What riverrun is}
+\label{sec:what}
 
-\begin{enumerate}[leftmargin=1.5em]
-\item \textbf{A behavioral-privacy pool} whose proof welds membership, a per-round
-      nullifier, and the public action into one transparent, post-quantum STARK,
-      with no trusted setup (Sections~\ref{sec:idea}--\ref{sec:round}).
-\item \textbf{The ricorso}: a rebirth of the anonymity set each cycle that closes a
-      cross-epoch linkage leak the basic construction has (Section~\ref{sec:ricorso}).
-\item \textbf{A ruler} --- the effective anonymity-set size conditioned on funding
-      provenance --- run against a live mainnet pool, and turned into a user-facing
-      pre-flight defense (Section~\ref{sec:ruler}).
-\item \textbf{A coordinator}: an agent that uses the ruler \emph{generatively} to
-      form rounds that maximize measured anonymity, and hands each member a
-      proof-carrying certificate they verify without trusting it
-      (Sections~\ref{sec:coord}--\ref{sec:axl}).
-\item \textbf{Measured on-chain cost} for the whole thing, down to the compute unit,
-      with an honest account of what fits and what does not
-      (Section~\ref{sec:cost}).
+\river\ is not one program. It is three things that fit together, and it helps to
+name them before the details.
+
+\begin{enumerate}[leftmargin=1.5em,itemsep=0.3em]
+\item \textbf{A ruler} (\S\ref{sec:ruler}). It measures how much anonymity a privacy
+      pool \emph{really} gives, instead of the number the pool advertises. It reads
+      only public chain data, works on pools it has never seen, and \textbf{runs on
+      Solana mainnet today}. This is the finished, useful-now part.
+\item \textbf{An identity layer}, \emph{riverrun ID} (\S\ref{sec:id}). One secret
+      becomes a different, unlinkable identity in every app, while still letting each
+      app enforce ``one action per person.'' This is Solana's missing Semaphore, and
+      it is post-quantum. The primitive is built and tested; the on-chain layer is the
+      road ahead.
+\item \textbf{A pool} (\S\ref{sec:pool}--\S\ref{sec:ricorso}). A member commits an
+      intent and later carries it out unlinkably, proven by a post-quantum STARK. It
+      is one application of the identity layer, and the research core of the system.
 \end{enumerate}
 
-% ===================== 2. THE IDEA =====================
-\section{The idea: commit an intent, execute it unlinkably}
-\label{sec:idea}
+The through-line is one design choice made everywhere: \textbf{build from a single
+hash function, and nothing else.} No elliptic curves, no pairings, no trusted setup
+ceremony. That is what makes the whole thing \emph{post-quantum} --- a large quantum
+computer breaks the curve-based cryptography under most of today's privacy tools, but
+it does not break a hash. Section~\ref{sec:pq} says exactly why that matters now and
+not in ten years.
 
-Tornado Cash, the Ethereum mixer, breaks the link between putting money \emph{in}
-and taking money \emph{out}. You deposit one coin; later, from a fresh address, you
-withdraw one coin, proving in zero knowledge that you are owed a withdrawal without
-revealing which deposit was yours. The pool is a crowd, and you hide in it.
+\subsection{Why post-quantum, and why now}
+\label{sec:pq}
 
-\river\ keeps the shape and changes the payload. Instead of a coin, the hidden thing
-is a \emph{behavior}. Three steps.
+The usual objection is that quantum computers big enough to break today's cryptography
+do not exist yet. True. The reason to care anyway has a name: \textbf{harvest now,
+decrypt later}. The blockchain is public and permanent. An adversary can copy all of
+it today, sit on it, and break it the day the hardware arrives. Anything you want kept
+private for longer than the hardware timeline has to be protected with cryptography
+the hardware cannot break --- \emph{now}, at the moment you act, not later.
+
+Curve-based privacy tools fail this test: Shor's algorithm breaks the curve, and the
+recorded data is already in the adversary's hands. Hash-based tools pass it: the best
+known quantum attack on a hash is Grover's, which only halves the security level, and
+a $256$-bit hash absorbs that with room to spare. \river\ is hash-only by design, so a
+user who hides a behavior today is still hidden after quantum hardware exists. The
+standards bodies agree on the direction: NIST's post-quantum signature standard, FIPS
+$205$ (SLH-DSA), is itself hash-based.
+
+% ===================== 3. RIVERRUN ID =====================
+\section{riverrun ID: one secret, seven powers}
+\label{sec:id}
+
+Start with the picture that started it. Take a jigsaw piece. It has a shape. Turn it
+over and the back has a different shape. Turn it to a new angle and it fits a
+different neighbor. \emph{One piece, many shapes, each shape its own matching fit.}
+riverrun ID is that piece, in cryptography.
+
+A user holds one \textbf{secret} $s$. A \textbf{context} --- call it an angle $\theta$
+--- is any public label: an app, a DAO, an airdrop, a voting round. From the one
+secret and a context, the user derives an identity for \emph{that} context and nothing
+else. Same secret, different angle, a different and unlinkable identity, each with its
+own matching fit. Seven powers come out of this, and every one is a hash plus, in one
+case, a little polynomial arithmetic --- so all seven are post-quantum.
+
+\begin{center}\small
+\begin{tabular}{@{}clp{7.4cm}@{}}
+\toprule
+\# & power & what the user can do \\
+\midrule
+1 & \textbf{shape} & be a different, unlinkable identity in every context \\
+2 & \textbf{fit} & act \emph{once} per context --- sybil-resistant \\
+3 & \textbf{turn} & prove ``I am the same person across two rounds'' in zero
+    knowledge, revealing to no one \emph{which} person \\
+4 & \textbf{link} & choose to reveal that two of your identities are one --- to whom
+    you pick, for the contexts you pick \\
+5 & \textbf{grant} & lend one context to an agent, bound to that agent, scoped to that
+    context, never handing over your master secret \\
+6 & \textbf{rln} & rate-limit yourself: $N$ actions stay anonymous, the $N{+}1$-th lets
+    anyone unmask you \\
+7 & \textbf{credential} & carry an issuer's attribute (``verified'', ``over 18'') and
+    show it per context, without a trail \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Put together, the user is \textbf{invisible by default} (1), \textbf{accountable where
+it matters} (2, 6), \textbf{continuous when they choose} (3), \textbf{linkable only on
+their own terms} (4), able to \textbf{lend a single context to an agent} (5), and able
+to \textbf{prove a fact about themselves with no trail} (7). One secret, full control
+of your own exposure, quantum-safe throughout.
+
+\begin{intuition}
+Two powers carry the weight. \textbf{shape} makes you unlinkable: your identity in a
+DAO and your identity in an airdrop are two different hashes of the same secret, and no
+one can tell they belong to one person. \textbf{fit} makes you accountable: it is a
+token you can spend only once in a context, so ``one vote per member'' or ``one claim
+per person'' holds \emph{without} anyone learning who you are. Invisible and
+one-per-person at the same time --- that pair is the whole trick, and everything else
+is a refinement of it.
+\end{intuition}
+
+\subsection{What it unlocks}
+
+Each of these is just a different context --- a different angle on the same secret:
+
+\begin{itemize}[leftmargin=1.4em,itemsep=0.15em]
+\item \textbf{Anonymous DAO voting} --- one vote per member, nobody learns who voted
+      how.
+\item \textbf{Sybil-resistant airdrops} --- one claim per person, unlinkable to their
+      main wallet.
+\item \textbf{Portable, unlinkable reputation} --- prove ``verified member'' across
+      apps with no trail joining them.
+\item \textbf{Rate-limited anonymous posting} --- act under a per-context cap, spam
+      priced in your own de-anonymization.
+\item \textbf{Delegation to agents} --- let a bot act as you in \emph{one} app,
+      without giving it the keys to the rest of your life.
+\end{itemize}
+
+\subsection{Honest positioning}
+
+This is not a new idea in concept. On Ethereum it is essentially
+\textbf{Semaphore}: a secret identity plus scoped nullifiers gives unlinkable
+per-context identities with one-action-per-person, and Worldcoin and RLN build on it.
+riverrun ID does not claim to invent that. What is genuinely uncommon is the
+\emph{combination}: a \textbf{post-quantum} (hash-only, no curves) identity layer, on
+\textbf{Solana}, which has no Semaphore-equivalent today, paired with a \textbf{ruler}
+that tells you how real each context's anonymity actually is. The honest one-liner:
+
+\begin{quote}
+\emph{Solana has no Semaphore. riverrun ID is a post-quantum, transparent one, with a
+ruler that reports your real anonymity per context.}
+\end{quote}
+
+\begin{honest}
+The seven-power primitive is built and tested in the core crate ($44$ tests), and the
+``turn'' power is proven in zero knowledge over the same STARK the pool uses. What is
+\emph{not} yet built is the in-circuit membership proof over a small field, its Solana
+verifier, and an audit. Those are integration work on vetted parts (Plonky3's
+Poseidon2, the M31 verifier class of \S\ref{sec:onchain}), not new mathematics --- but
+they are not done, and this section is the product's north star, not a shipped claim.
+\end{honest}
+
+% ===================== 4. THE POOL =====================
+\section{The pool: commit an intent, act unlinkably}
+\label{sec:pool}
+
+Tornado Cash, the Ethereum mixer, breaks the link between putting money \emph{in} and
+taking money \emph{out}. You deposit one coin; later, from a fresh address, you
+withdraw one coin, proving you are owed a withdrawal without revealing which deposit
+was yours. The pool is a crowd, and you hide in it.
+
+\river\ keeps the shape and changes what is hidden. Instead of a coin, the hidden
+thing is a \emph{behavior}. Three steps.
 
 \textbf{Commit.} A member publishes $\ell = \rescue(s, a)$ into a public set, where
 $s$ is a secret only they know and $a$ is the action they intend --- ``swap $1$ SOL
 for USDC on venue V'', encoded as a hash. Publishing $\ell$ announces that
-\emph{somebody in this set intends action $a$}, revealing nothing about who. The set
-is a Merkle tree; its root $R$ is the public fingerprint of the crowd.
+\emph{somebody in this set intends action $a$}, and nothing about who. The set is a
+Merkle tree; its root $R$ is the public fingerprint of the whole crowd.
 
-\textbf{Execute.} Later --- ideally in a synchronized round where many members do the
-same thing at once --- the member performs $a$ from a fresh identity with a
-zero-knowledge proof of one sentence: \emph{``I know a secret $s$ whose commitment
-$\rescue(s,a)$ is a leaf under the public root $R$, and my nullifier this round is
-$n = \rescue(s, r)$.''} The action is public. The author is not.
+\textbf{Execute.} Later --- ideally in a round where many members act at once --- the
+member does $a$ from a fresh identity, attaching a zero-knowledge proof of one
+sentence: \emph{``I know a secret $s$ whose commitment $\rescue(s,a)$ sits under the
+public root $R$, and my nullifier this round is $n = \rescue(s, r)$.''} The action is
+public. The author is not.
 
-\textbf{Settle.} The pool verifies the proof, checks the nullifier $n$ is fresh this
-round, spends it, and releases the action. The public transcript is $\{R, a, n\}$,
-with no link to any commitment.
+\textbf{Settle.} The pool checks the proof, checks the nullifier $n$ is fresh this
+round, spends it, and releases the action. The public record is $\{R, a, n\}$, with no
+link back to any commitment.
 
-Two questions decide whether this is privacy or theater, and both concern the
-nullifier. Why have one? Because without it a member could act a thousand times from
-a thousand fresh identities, and the ``crowd'' would be one person in a thousand
-masks. The nullifier is a token derived from the secret and the round, spendable
-once per round. It reveals nothing about $s$, and the nullifiers one member produces
-in different rounds cannot be tied together. So it enforces ``one action per member
-per round'' while never naming the member. This is a studied primitive; PLUME
-\cite{plume} formalizes exactly this and proves its uniqueness and secrecy.
+Two questions decide whether this is real privacy or theater, and both are about the
+nullifier. Why have one? Because without it a member could act a thousand times from a
+thousand fresh identities, and the ``crowd'' would be one person in a thousand masks.
+The nullifier is a token derived from the secret and the round, spendable once per
+round. It reveals nothing about $s$, and one member's nullifiers in different rounds
+cannot be tied together. So it enforces ``one action per member per round'' while
+never naming the member. This is a studied primitive; PLUME \cite{plume} formalizes
+exactly it.
 
-The subtle question: how does anyone know the revealed $n$ came from the \emph{same}
+The harder question: how does anyone know the revealed $n$ came from the \emph{same}
 secret that proved membership? If those two facts are proven separately, a member
 could prove membership honestly and then present a stranger's nullifier --- spending
-someone else's turn, or hiding that they spent their own. The two halves must be
+someone else's turn, or hiding that they spent their own. The two halves have to be
 welded inside one proof. Getting that weld right, and \emph{knowing} it is right, is
-the heart of the next section.
+the next section.
 
-% ===================== 3. THE PROOF =====================
+% ===================== 5. THE PROOF =====================
 \section{The proof: one object, three bindings}
 \label{sec:proof}
 
-A zero-knowledge proof convinces you a statement is true while revealing nothing
-beyond its truth. Two families are used on blockchains, and the choice is a real
-fork with real costs on each side.
+A zero-knowledge proof convinces you a statement is true while telling you nothing
+beyond its truth. Two families are used on blockchains, and the choice is a real fork.
 
-Pairing-based SNARKs (Groth16) give tiny proofs --- a couple of hundred bytes --- that
-verify cheaply. Their price is a \emph{trusted setup}: a one-time ceremony must
-generate a structured proving key, and if that ceremony's secret randomness is ever
-recovered, the system can be forged. For a Merkle circuit the key is tens of
-megabytes that must be produced, trusted, and shipped to every prover. And the
-security rests on elliptic curves, which a large quantum computer breaks.
+Pairing-based SNARKs (Groth16) give tiny proofs --- a few hundred bytes --- that verify
+cheaply. Their price is a \emph{trusted setup}: a one-time ceremony makes a secret
+proving key, and if that secret ever leaks, the whole system can be forged. The key is
+tens of megabytes that must be produced, trusted, and shipped to every prover. And the
+security rests on elliptic curves, which a quantum computer breaks.
 
 STARKs are built from a hash function alone. No pairings, no ceremony, no per-circuit
-setup; security rests on hash collision-resistance, believed to survive a quantum
-adversary. The price is proof size: kilobytes, not bytes. \river\ takes this side,
-deliberately, and Section~\ref{sec:cost} measures exactly what it costs and buys.
+setup; security rests on the hash, believed to survive a quantum adversary. The price
+is proof size: kilobytes, not bytes. \river\ takes this side on purpose, and
+\S\ref{sec:onchain} measures exactly what it costs.
 
 \begin{intuition}
 \textbf{What a STARK is, in one paragraph.} Write your computation as a big table:
-rows are time-steps, columns are registers, arranged so ``it was computed
-correctly'' becomes ``every adjacent pair of rows obeys a fixed rule.'' Turn each
-column into a polynomial through its values. The rules become equations those
-polynomials must satisfy. The prover commits to the polynomials and the verifier
-challenges them at random points; a cheat would need a \emph{wrong} low-degree
-polynomial to agree with a right one almost everywhere, which is impossible unless
-they are equal. FRI is the machinery that lets the verifier confirm ``this really is
-low-degree'' by folding it in half over and over and spot-checking. The disanalogy
-with a normal exam: the verifier never sees the answers, only a few random cells and
-a proof that all the cells are consistent --- which is why the witness stays hidden.
+rows are time-steps, columns are registers, arranged so ``it ran correctly'' becomes
+``every pair of neighboring rows obeys a fixed rule.'' Turn each column into a
+polynomial. The rules become equations those polynomials must satisfy. The prover
+commits to the polynomials; the verifier challenges them at random points. A cheat
+would need a \emph{wrong} low-degree polynomial that agrees with a right one almost
+everywhere, which is impossible unless they are equal. The verifier never sees the
+answers, only a few random cells and a proof that all the cells are consistent ---
+which is why the witness stays hidden.
 \end{intuition}
 
 \subsection{What the circuit proves}
 
-\river\ uses a STARK over a Rescue-Prime \cite{rescueprime} Merkle tree --- an
-arithmetization-oriented hash chosen because it is cheap to express as polynomial
-constraints. The proof's public inputs are the four-tuple $\{R,\,n,\,r,\,a\}$: root,
-nullifier, round, action. Its private inputs --- the witness --- are the secret $s$,
-the leaf's position, and the Merkle path. One secret must satisfy all three at once:
+\river\ uses a STARK over a Rescue-Prime \cite{rescueprime} Merkle tree --- a hash
+chosen because it is cheap to write as polynomial constraints. The proof's public
+inputs are the four values $\{R,\,n,\,r,\,a\}$: root, nullifier, round, action. Its
+private inputs --- the witness --- are the secret $s$, the leaf's position, and the
+Merkle path. One secret must satisfy all three of these at once:
 
 \begin{enumerate}[leftmargin=1.5em,itemsep=0.1em]
 \item \textbf{Membership.} $\rescue(s, a)$ is a leaf under $R$, via the private path.
-\item \textbf{Nullifier binding.} $n = \rescue(s, r)$: the revealed nullifier is
-      this member's, this round.
-\item \textbf{Action binding.} The leaf that resolves to $R$ commits to the public
-      action $a$: the member executes the intent they registered, not another.
+\item \textbf{Nullifier binding.} $n = \rescue(s, r)$: the revealed nullifier is this
+      member's, this round.
+\item \textbf{Action binding.} The leaf under $R$ commits to the public action $a$:
+      the member does the intent they registered, not another.
 \end{enumerate}
 
 Because all three read the same private $s$, no member can mix and match. That is the
 weld.
 
-\begin{figure}[h]
-\centering\small
-\begin{tabular}{@{}c|cccccc|c|cc@{}}
-\toprule
-col & \multicolumn{6}{c|}{Rescue state $0\dots5$} & bit $6$ & \multicolumn{2}{c}{carry $7,8$}\\
-\midrule
-cycle 0 & \multicolumn{6}{c|}{hash $(s_0,s_1,r)\to$ nullifier $n$} & --- & $s_0$ & $s_1$\\
-row 7 (load) & \multicolumn{2}{c}{$s_0,s_1$} & \multicolumn{2}{c}{$a_0,a_1$} & \multicolumn{2}{c|}{$0$} & --- & \multicolumn{2}{c}{cleared}\\
-cycles $1..d{+}1$ & \multicolumn{6}{c|}{Merkle path up to root $R$} & path bit & \multicolumn{2}{c}{---}\\
-\bottomrule
-\end{tabular}
-\caption{The width-9 trace. Cycle 0 computes the nullifier; row 7 loads the leaf
-preimage --- the same secret plus the public action --- so the leaf commits to both;
-the rest walks the path to $R$. A single constraint at row 0, the ``start-tie'',
-forces the nullifier's input to equal the carried secret. The carry is confined to
-cycle 0 on purpose (Section~\ref{sub:leak}).}
-\label{fig:trace}
-\end{figure}
-
 \subsection{Knowing the weld holds}
 
-A privacy proof that is subtly wrong is worse than no proof: it advertises a
-guarantee it does not deliver. So the interesting question is not ``did we write the
+A privacy proof that is subtly wrong is worse than no proof: it advertises a guarantee
+it does not deliver. So the interesting question is not ``did we write the
 constraints'' but ``do they bite.'' The method used throughout \river\ is
 \emph{mutation testing}: for every claim ``$X$ is bound'' there is a test, and we
 delete the constraint meant to enforce $X$ and confirm the test then fails. If
@@ -282,28 +365,20 @@ deleting it changes nothing, the test was passing for some other reason and is
 worthless.
 
 This is not a formality. Three tests written during development were exactly that
-worthless, and mutation testing is how they were caught.
-
-\begin{itemize}[leftmargin=1.4em,itemsep=0.15em]
-\item The action-binding tests checked that announcing a different public action was
-      rejected. They passed even with the binding deleted --- the action feeds the
-      Fiat--Shamir transcript, so a mismatched public input is rejected anyway, for a
-      reason unrelated to the constraint. The real attack, which the useful test
-      performs, hashes the committed action into the leaf (so the path still
-      resolves) while \emph{announcing} a different one. Delete the constraint and
-      that forged proof verifies.
-\item The nullifier tests that only varied public inputs passed on boundary
-      assertions alone, with no start-tie. The test that guards the weld builds the
-      attacker's trace: hash secret $A$, carry member $B$ into the path.
-\item In the ricorso a whole check --- that the migration nullifier comes from the
-      migrating secret --- had \emph{no} test until a mutation left everything green.
-\end{itemize}
+worthless, and mutation testing is how they were caught. The action-binding tests, for
+one, passed even with the binding deleted, because the action also feeds the proof's
+transcript, so a mismatched public input was rejected for an unrelated reason. The
+real attack hashes the committed action into the leaf (so the path still resolves)
+while \emph{announcing} a different one; delete the constraint and that forged proof
+verifies. The useful test performs that attack. Two other tests --- a nullifier check
+and, in the ricorso, a whole migration check --- had the same disease and the same
+cure.
 
 \begin{honest}
 None of this makes the circuit audited. It is hand-rolled, and a passing negative
-test is necessary, not sufficient, for soundness. An independent review is named on
-the roadmap, not glossed over. What mutation testing removes is a specific, common,
-embarrassing failure: tests that look like they prove something and prove nothing.
+test is necessary, not sufficient, for soundness. An independent review is on the
+roadmap. What mutation testing removes is one specific, common, embarrassing failure:
+tests that look like they prove something and prove nothing.
 \end{honest}
 
 \subsection{A leak we found by measuring}
@@ -311,31 +386,30 @@ embarrassing failure: tests that look like they prove something and prove nothin
 
 The first version of the circuit carried the secret in two columns held
 \emph{constant} across the whole trace. This looked harmless. It was not. A STARK
-opens the prover's committed data at random points, and a constant column has a
-constant low-degree extension --- so the secret appeared, verbatim, in essentially
-every opening. We knew only because a test checked, over many proofs, whether the
-raw secret bytes appeared in the proof. They did: twenty times out of twenty.
-Confining the carry to the eight rows where it is needed fixed it: zero out of
-twenty. A single-sample test would have missed it. This is why we say ``the witness
-is not on the wire'' and \emph{not} ``zero-knowledge'': the underlying prover does
-not randomize the witness, so formal zero-knowledge is a claim we decline to make.
+opens the prover's data at random points, and a constant column has a constant
+low-degree extension --- so the secret showed up, verbatim, in nearly every opening. We
+knew only because a test checked, over many proofs, whether the raw secret bytes
+appeared in the proof. They did: twenty times out of twenty. Confining the secret to
+the eight rows where it is actually needed fixed it: zero out of twenty. A
+single-sample test would have missed it. This is why we say ``the witness is not on the
+wire'' and \emph{not} ``zero-knowledge'': the prover does not randomize the witness, so
+formal zero-knowledge is a claim we decline to make.
 
-% ===================== 4. THE ROUND =====================
-\section{The synchronized round: one crowd, one proof}
+% ===================== 6. THE ROUND =====================
+\section{One crowd, one proof}
 \label{sec:round}
 
 The privacy argument rests on a crowd. If $k$ members do the same action in the same
-round, an observer's chance of attributing any one execution is at best $1/k$. The
-natural way to run this is a synchronized round: many members acting identically at
-one moment, so there is no timing and no ordering to separate them.
+round, an observer's chance of pinning any one execution is at best $1/k$. The natural
+way to run this is a synchronized round: many members acting identically at one moment,
+so there is no timing and no ordering to tell them apart.
 
-A small observation with a large payoff: that synchronized round is exactly the
-structure that lets many proofs collapse into one. A STARK is a statement about an
-execution trace. The $k$ members' sub-traces are independent, so they lay end to end
-into one longer trace, the per-cycle constraints repeating along it, with a
-\emph{seam} that switches off the linking logic at each boundary so one member's last
-row does not bleed into the next member's first. One proof for the whole round, and
-one verification.
+A small observation with a big payoff: that synchronized round is exactly the shape
+that lets many proofs collapse into one. A STARK is a statement about an execution
+table. The $k$ members' tables are independent, so they lay end to end into one longer
+table, with a \emph{seam} at each boundary that switches off the linking logic so one
+member's last row does not bleed into the next member's first. One proof for the whole
+round, one verification.
 
 \begin{measured}[--- batching a synchronized round]
 \centering
@@ -352,128 +426,119 @@ needs $64$ verifications; the batched round is one proof, one verification.}
 \end{measured}
 
 \begin{honest}
-Two structural limits. The prover of a batched round must know every member's
-secret. For a crowd of distrustful strangers that is a custodian, not privacy, and
-would need distributed proving. But for one operator running $k$ identities --- an
-agent fleet, a market maker --- one prover holds all $k$ secrets already, and the
-$24.6\times$ is real. And batching trades prover time for proof size: the trace is
-$k$ times longer and proving is super-linear, so the round costs more wall-clock than
-the sum of individual proofs. It is the right trade when the scarce resource is
-on-chain verifications.
+Two limits. The prover of a batched round must know every member's secret. For a crowd
+of distrustful strangers that is a custodian, not privacy, and would need distributed
+proving. But for one operator running $k$ identities --- an agent fleet, a market maker
+--- one prover already holds all $k$ secrets, and the $24.6\times$ is real. And batching
+trades prover time for proof size: the table is $k$ times longer and proving is
+super-linear, so a round costs more wall-clock than the sum of separate proofs. It is
+the right trade when the scarce resource is on-chain verifications.
 \end{honest}
 
-% ===================== 5. THE RICORSO =====================
-\section{The ricorso: the crowd is reborn}
+% ===================== 7. THE RICORSO =====================
+\section{The ricorso: the crowd starts over}
 \label{sec:ricorso}
 
-Now the name earns its keep. \emph{Finnegans Wake} runs on Vico's cycle of history:
-ages that repeat, and a fourth age, the \emph{ricorso}, the return that begins it
-again. \river\ borrows the book's circularity twice --- here, and for the funding
-graph in Section~\ref{sec:ruler}.
+The name earns its keep here. \emph{Finnegans Wake} runs on a cycle that returns to
+its start. \river\ borrows that: the anonymity set is reborn each cycle.
 
-The leak the ricorso closes is easy to miss. A member's per-round nullifier changes
-every round, unlinking one execution from another. But their \emph{leaf},
+The leak this closes is easy to miss. A member's per-round nullifier changes every
+round, so one execution is unlinked from another. But their \emph{leaf},
 $\rescue(s,a)$, never changes: published once at commit, it stays forever. Two
-consequences. Anyone who ever learns your leaf --- a bug, a subpoena, a careless
-client --- links you across every round you ever acted in; the nullifiers protect
-executions from each other, but nothing protects a member from their own history.
-And a set that only grows is a public record: join-order is a timeline of who
-arrived when.
+consequences. Anyone who ever learns your leaf --- a bug, a subpoena, a careless client
+--- links you across every round you ever acted in; the nullifiers protect executions
+from each other, but nothing protects a member from their own history. And a set that
+only grows is a public timeline of who joined when.
 
-The ricorso lets the set be reborn each cycle. A member holds a fresh secret per
+The ricorso lets the set start over each cycle. A member holds a fresh secret per
 cycle, $s_c = \rescue(s, c, \textsf{dom}_{\text{cycle}})$, and a fresh leaf $\ell_c =
 \rescue(s_c, a)$, and at each rebirth proves the new leaf descends from \emph{some}
-leaf under the previous root --- without revealing which. A migration nullifier,
-spent once per cycle, stops one seat from becoming several. The two domain tags must
-differ, or publishing a migration nullifier would leak the next cycle's secret; the
-implementation pins that with a test. History stops accumulating.
+leaf under the previous root --- without revealing which. A migration nullifier, spent
+once per cycle, stops one seat from becoming several. The two domain tags must differ,
+or publishing a migration nullifier would leak the next cycle's secret; a test pins
+that. History stops piling up.
 
 \begin{honest}
-The relation is implemented and mutation-tested \emph{in the clear}; the STARK that
-proves it without the witness is specified, not built. The reason is concrete: the
-migration circuit needs five hash cycles before the path, which shifts valid
-set sizes to $\{8, 2048\}$ while the execution circuit needs $\{4, 64, 16384\}$, and
-the two do not intersect. Shipping it means realigning both --- a day on the most
-delicate code, and the honest place to stop, with the execution path green, is at
-the specification. It is exactly where the nullifier binding stopped before it was
-later built and mutation-verified.
+The relation is built and mutation-tested \emph{in the clear}; the STARK that proves
+it without the witness is specified, not built. The reason is concrete: the migration
+circuit needs five hash cycles before the path, which shifts valid set sizes to
+$\{8, 2048\}$ while the execution circuit needs $\{4, 64, 16384\}$, and the two do not
+overlap. Shipping it means realigning both --- a day on the most delicate code, and the
+honest place to stop, with the execution path green, is at the specification. It is
+exactly where the nullifier binding stopped before it was later built and verified.
 \end{honest}
 
-% ===================== 6. THE RULER =====================
+% ===================== 8. THE RULER =====================
 \section{The ruler: your $k$ is not your $k$}
 \label{sec:ruler}
 
-Everything so far builds the pool. This section measures it, and applies not only to
-\river\ but to every anonymity pool of this kind. It is, we think, the most useful
-part of the paper, because it names a number that is quietly wrong across a whole
-category of systems.
+Everything so far builds the pool. This section \emph{measures} it, and it applies not
+just to \river\ but to every anonymity pool of this kind. It is the most useful part of
+the paper, because it names a number that is quietly wrong across a whole category of
+systems.
 
 \subsection{The advertised number counts the wrong thing}
 
 Every pool reports its privacy as $1/k$: $k$ members, so a one-in-$k$ guess. That
 counts \emph{members}, and assumes they are interchangeable. They are not, because of
-where their money came from. Every member funded their wallet somehow, and the
-funding trail is public. Trace it backward and you often reach an attributable
-origin: an exchange's withdrawal address, a known service, a doxxed funder. Sort the
-set by these origins. If the acting identity's origin is observable too --- and a
-fresh withdrawal wallet must be funded from \emph{somewhere} --- then learning it
-does not leave $k$ suspects. It leaves only the members who share that origin. The
-crowd you are hidden in is your \emph{provenance class}, not the whole set.
+where their money came from. Every member funded their wallet somehow, and the funding
+trail is public. Trace it backward and you often reach an attributable origin: an
+exchange's withdrawal address, a known service, a doxxed funder. Sort the crowd by
+these origins. If the acting identity's origin is visible too --- and a fresh withdrawal
+wallet has to be funded from \emph{somewhere} --- then learning it does not leave $k$
+suspects. It leaves only the members who share that origin. The crowd you are hidden in
+is your \emph{provenance class}, not the whole set.
 
 \begin{intuition}
-This is the same shape as the paper's opening claim about privacy in general: there
-is a \emph{defended surface} everyone looks at (the advertised $k$) and a
-\emph{larger real surface} behind it (the effective $k$, set by the funding graph).
-Guarding the first while ignoring the second is the mistake, and here we can measure
-exactly how big the gap is.
+This is the same shape as the paper's opening point. There is a \emph{surface everyone
+watches} (the advertised $k$) and a \emph{larger real surface behind it} (the effective
+$k$, set by the funding graph). Guarding the first while ignoring the second is the
+mistake --- and here we can measure exactly how big the gap is.
 \end{intuition}
 
 The measure itself is not new. Serjantov and Danezis \cite{serjantov2002} showed in
-2002 that the honest quantity is not set size but the \emph{entropy} of the
-distribution linking suspects to the event --- the effective anonymity-set size. And
-measuring advertised-versus-true anonymity is an established programme on Ethereum
-\cite{tutela,beres,crosschain,du}. Two things are new: the channel (funding
-provenance, which those works do not condition on) and the chain (none of it has run
-on Solana).
+$2002$ that the honest quantity is not set size but the \emph{entropy} of the
+distribution linking suspects to the event. Measuring advertised-versus-real anonymity
+is an established programme on Ethereum \cite{tutela,beres,crosschain,du}. Two things
+are new here: the channel (funding provenance, which those works do not condition on)
+and the chain (none of it has run on Solana).
 
 \subsection{The formula, and why its direction matters}
 
-Partition the $k$ members into provenance classes of sizes $n_1, n_2, \dots$. The
-adversary learns the actor's class $c$ with probability $n_c/k$, then guesses
-uniformly among that class's $n_c$ members. The residual uncertainty is the average
-over classes of the log of the class size:
+Split the $k$ members into provenance classes of sizes $n_1, n_2, \dots$. The adversary
+learns the actor's class $c$ with probability $n_c/k$, then guesses uniformly among
+that class's $n_c$ members. The uncertainty left over is the average over classes of the
+log of the class size:
 \begin{equation}
 H = \sum_c \frac{n_c}{k}\log_2 n_c, \qquad \keff = 2^{H}.
 \label{eq:effk}
 \end{equation}
 $\keff$ is the size of the crowd the member is genuinely hidden in. One class holding
-everyone gives $\log_2 k$: nothing was partitioned. All-singleton classes give
-$H = 0$, an effective $k$ of one: every member identified.
+everyone gives $\log_2 k$: nothing was split. All-singleton classes give $H = 0$, an
+effective $k$ of one: every member identified.
 
 \begin{intuition}
 \textbf{Worked by hand.} Ten members: six funded from exchange A, three from B, one
 alone. Advertised anonymity $1/10$. Condition on origin. With probability $6/10$ the
 actor is an ``A'' and the adversary cannot tell which of six: $\log_2 6 \approx 2.58$
-bits. With $3/10$, a ``B'': $\log_2 3 \approx 1.58$. With $1/10$, the lone member:
-$0$ bits, identified. Average: $H = 0.6(2.58)+0.3(1.58)+0.1(0) = 2.02$ bits, so
-$\keff \approx 4.1$. The pool sold ten and delivered four --- and the lone member has
-an anonymity of exactly one, no matter how big the crowd behind them.
+bits. With $3/10$, a ``B'': $\log_2 3 \approx 1.58$. With $1/10$, the lone member: $0$
+bits, identified. Average: $H = 0.6(2.58)+0.3(1.58)+0.1(0) = 2.02$ bits, so $\keff
+\approx 4.1$. The pool sold ten and delivered four --- and the lone member has an
+anonymity of exactly one, no matter how big the crowd behind them.
 \end{intuition}
 
-The \emph{direction} is the whole thing, and the first implementation had it
-backwards. It is tempting to measure how \emph{concentrated} the classes are
-(min-entropy of the distribution), but that reports catastrophe precisely when the
-measurement found nothing to partition on: a single class of seven --- the happy case
---- came out as ``effective $k=1$'', when the honest reading is ``effective $k=7$.''
-Following Serjantov and Danezis, and against the normalized variant that scores a set
-of one as a perfect $1.0$, we use the residual entropy of Eq.~\ref{eq:effk} directly.
-Four tests pin the direction; one caught the arithmetic a second time.
+The \emph{direction} is the whole thing, and the first implementation had it backwards.
+It is tempting to measure how \emph{concentrated} the classes are, but that reports
+catastrophe precisely when the measurement found nothing to split on: a single class of
+seven --- the happy case --- came out as ``effective $k=1$'', when the honest reading is
+``effective $k=7$.'' Following Serjantov and Danezis, we use the residual entropy of
+Eq.~\ref{eq:effk} directly. Four tests pin the direction.
 
-\subsection{The measurement}
+\subsection{The measurement, on live mainnet}
 
-We ran this against a live Tornado-style SOL privacy pool on Solana mainnet,
-sampling $30$ real depositors and tracing each funding graph backward with a
-bounded, public-RPC walk.
+We ran this against a live Tornado-style SOL privacy pool on Solana mainnet, sampling
+$30$ real depositors and tracing each funding graph backward with a bounded, public-RPC
+walk.
 
 \begin{measured}[--- a live mainnet anonymity set]
 \centering
@@ -488,24 +553,35 @@ provenance classes & $12$ \\
 \bottomrule
 \end{tabular}\\[0.3em]
 {\footnotesize A set advertising $30$ delivers an effective $6.5$. One depositor sits
-alone in their class: for them the pool provides no anonymity against an adversary
-who reads the funding graph, while its dashboard reports one-in-thirty.}
+alone in their class: for them the pool provides no anonymity against an adversary who
+reads the funding graph, while its dashboard reports one-in-thirty.}
 \end{measured}
 
 Three honesties. It is not a flaw in that pool: no deposit-pool design controls where
-its users' money came from, which is exactly why the channel goes unmeasured and
-keeps working. It is a \emph{floor}: a public RPC following only SOL to bounded depth
-sees less than a funded analyst with a tag database, so the true leak is at least
-this large. And $37\%$ sits in the same $20$--$35\%$ range that the Ethereum
-literature \cite{crosschain} finds with behavioral heuristics on Tornado --- a sanity
-check on the tool, not the pool.
+its users' money came from, which is exactly why the channel goes unmeasured and keeps
+working. It is a \emph{floor}: a public RPC following only SOL to bounded depth sees
+less than a funded analyst with a tag database, so the real leak is at least this
+large. And $37\%$ sits in the same $20$--$35\%$ range that the Ethereum literature
+\cite{crosschain} finds with behavioral heuristics on Tornado --- a sanity check on the
+tool, not the pool.
+
+\begin{measured}[--- the ruler is live, and reports its own reliability]
+The ruler runs against mainnet today. A single-wallet trace, verbatim from a run over
+the public mainnet-beta endpoint:\\[0.4em]
+{\ttfamily\footnotesize \{"endpoint":"...mainnet-beta...", "attributable\_origin":false,
+"trace\_depth":3, "reliable":true, "rpc\_calls":1, "rpc\_failures":0\}}\\[0.4em]
+A deeper $30$-depositor audit on the same free endpoint comes back
+{\ttfamily reliable:false} with a nonzero {\ttfamily rpc\_failures}, because the public
+RPC rate-limits it. The tool marks such a result \emph{partial} rather than reporting a
+smaller number as fact --- a rate-limited or unreachable RPC can never be mistaken for a
+clean ``private'' answer. A paid endpoint completes the deep audit.
+\end{measured}
 
 \subsection{The same ruler, turned on \river\ --- and on the user}
 
 Measuring others' pools and not your own is marketing. The same function runs over
-\river's own constructions, against $2000$ synthetic members. There are three, and
-they form a spectrum of increasing privacy that maps, exactly, onto three ideas
-from the book (Figure~\ref{fig:cycle}):
+\river's own constructions, against $2000$ synthetic members. There are three, forming
+a ladder of increasing privacy:
 
 \begin{center}\small
 \begin{tabular}{lrrr}
@@ -519,209 +595,113 @@ cyclic, \textbf{rootless} & $0\%$ & --- & $2000$ \\
 \end{tabular}
 \end{center}
 
-The first row is what the field ships: every trail ends at one attributable origin,
-so there is no doubt about where the money came from, and the crowd collapses to
-$500$. The third row is the \emph{circularity} insight --- a funding cycle with no
-beginning, so there is no origin at all to trace, and the set is worth its full
-$2000$.
+The first row is what the field ships: every trail ends at one attributable origin, so
+there is no doubt where the money came from, and the crowd collapses to $500$. The third
+row is the circularity idea --- a funding cycle with no beginning, so there is no origin
+to trace, and the set is worth its full $2000$.
 
-The middle row is the fourth insight, and it is worth dwelling on because it is the
-strongest one in practice. In \emph{Finnegans Wake}, a word does not hide its ``real''
-meaning behind the others; it \emph{has} no single real meaning. Every reading is
-valid, none is privileged, and asking which one Joyce intended is a category error
---- the ambiguity is the meaning. The \textbf{ambiguous-origin} construction is that
-idea made numeric. The funding trail does reach origins --- $100\%$ of the time --- but
-it reaches \emph{many}, arranged so that none is privileged, so ``which is the real
-origin'' is not hidden, it is \emph{undefined}. We measure $2.90$ bits of residual
-doubt about which, and the set stays worth its full $2000$.
-
-Why this is the strongest in practice: rootlessness is an idealization. It holds
-only while a construction's funding sources are \emph{themselves} unattributable,
-and the moment one of them is a known exchange, the ``no origin'' claim fails. But it
-does not fail to nothing --- it degrades exactly to \emph{ambiguity}: now there is a
-reachable origin, but still no way to say it is \emph{the} one. Ambiguity is where
-rootlessness lands when it meets the real world, and it is where the defense actually
-lives.
+The middle row is the strongest one in practice. The funding trail \emph{does} reach
+origins --- $100\%$ of the time --- but it reaches \emph{many}, arranged so none is
+privileged, so ``which is the real origin'' is not hidden, it is \emph{undefined}. We
+measure $2.90$ bits of doubt about which, and the set stays worth its full $2000$. This
+matters because rootlessness is an idealization: it holds only while a construction's
+funding sources are themselves unattributable, and the moment one is a known exchange,
+the ``no origin'' claim fails. But it does not fail to nothing --- it degrades exactly to
+\emph{ambiguity}. Ambiguity is where rootlessness lands when it meets the real world,
+and it is where the defense actually lives.
 
 \begin{honest}
-The disanalogy, and the limit. The book's polysemy is inherent to language; here the
-ambiguity is \emph{constructed} --- a funding graph deliberately built so that
-multiple origins are symmetric, so no attribution can privilege one. And it defends a
-specific thing: attribution to a \emph{particular} origin, not membership in the
-\emph{group} of origins. If an adversary needs only ``this came from one of these
-three exchanges'' rather than which, ambiguity does not stop them. It buys $2.90$ bits
-of ``which'', not membership secrecy.
+Ambiguity defends a specific thing: attribution to a \emph{particular} origin, not
+membership in the \emph{group} of origins. If an adversary needs only ``this came from
+one of these three exchanges'' rather than which, ambiguity does not stop them. It buys
+$2.90$ bits of ``which'', not membership secrecy.
 \end{honest}
 
-\begin{figure}[h]
-\centering
-\begin{tikzpicture}[
-  >={Stealth[round]}, node distance=13mm,
-  w/.style={circle,draw=river,minimum size=5mm,inner sep=0pt,font=\scriptsize},
-  hub/.style={rectangle,draw=gold,fill=gold!12,minimum size=6mm,font=\scriptsize\bfseries},
-  every edge/.style={draw,->,shorten >=1pt}
-]
-\node[hub] (root) at (0,0) {CEX};
-\node[w] (a1) at (1.3,0.6) {}; \node[w] (a2) at (2.6,0.6) {};
-\node[w] (a3) at (1.3,-0.6) {}; \node[w] (a4) at (2.6,-0.6) {};
-\draw (root) edge (a1); \draw (a1) edge (a2);
-\draw (root) edge (a3); \draw (a3) edge (a4);
-\node[font=\scriptsize,align=center,color=steel] at (1.3,-1.55) {\textbf{rooted decoy}\\ every trail ends at one origin\\ $\keff \approx 500$ of $2000$};
-\begin{scope}[xshift=6.6cm]
-\node[w] (c1) at (0:1) {}; \node[w] (c2) at (72:1) {}; \node[w] (c3) at (144:1) {};
-\node[w] (c4) at (216:1) {}; \node[w] (c5) at (288:1) {};
-\draw (c1) edge (c2); \draw (c2) edge (c3); \draw (c3) edge (c4);
-\draw (c4) edge (c5); \draw (c5) edge (c1);
-\node[font=\scriptsize,align=center,color=steel] at (0,-1.9) {\textbf{circular / rootless}\\ the trail returns to itself\\ $\keff = 2000$ of $2000$};
-\end{scope}
-\end{tikzpicture}
-\caption{Two ways to fund a crowd. Left: every wallet traces back to one attributable
-origin, so an adversary collapses the crowd. Right: the funding trail is a cycle with
-no beginning --- Vico's \emph{ricorso} --- so there is no origin to name. The same
-$2000$ members are worth a quarter of their advertised size on the left, and their
-full size on the right.}
-\label{fig:cycle}
-\end{figure}
+The most useful turn is toward the user. The measurement above audits a pool after the
+fact. Flip it: before a user deposits into \emph{any} pool, trace \emph{their} wallet,
+sample the pool's depositors, and tell them the anonymity \emph{they} personally would
+get. The tool is protocol-agnostic --- it reads public chain data, not the pool's
+internals --- so it works against a program it has never seen. Three verdicts, each with
+an action: \textbf{Exposed} (alone in your class; fund from a common origin or wait),
+\textbf{Weak} (a small minority shares your class), \textbf{OK} (a healthy fraction
+does --- ``no cheap attribution found'', never ``anonymous''). Auditing pools reaches
+auditors. Protecting a user at the moment they act reaches every user of every privacy
+protocol on the chain.
 
-The most useful turn is toward the user. The measurement above audits a pool after
-the fact. Flip it: before a user deposits into \emph{any} pool, trace \emph{their}
-wallet, sample the pool's depositors, and tell them the anonymity \emph{they}
-personally would get. The tool is protocol-agnostic --- it reads public chain data,
-not the pool's internals --- so it works against a program it has never seen. Three
-verdicts, each with an action: \textbf{Exposed} (alone in your class; fund from a
-common origin or wait), \textbf{Weak} (a small minority shares your class),
-\textbf{OK} (a healthy fraction does, ``no cheap attribution found'', never
-``anonymous''). Auditing pools reaches auditors. Protecting a user at the moment they
-act reaches every user of every privacy protocol on the chain.
-
-% ===================== 7. THE COORDINATOR =====================
-\section{The coordinator: an agent that forms private crowds}
+% ===================== 9. THE COORDINATOR =====================
+\section{The coordinator: forming a good crowd on purpose}
 \label{sec:coord}
 
-Here is the payoff of being able to measure. Every other privacy tool treats the
-crowd as given. \river\ can \emph{measure} a crowd's anonymity, so an agent can
-\emph{form} a good one on purpose. The mirror-pool problem asks, in as many words,
-for ``the coordination layer, the privacy set, and the incentives that keep people
-in it.'' Nobody had built the coordinator, because nobody could answer the question
-it turns on: which members should be in this round?
+Here is the payoff of being able to measure. Every other privacy tool treats the crowd
+as given. \river\ can \emph{measure} a crowd's anonymity, so an agent can \emph{form} a
+good one on purpose.
 
 \begin{intuition}
-The rule is counter-intuitive until you have the formula, then obvious. A crowd where
-everyone was funded from the \emph{same} origin is \textbf{strong}: an adversary who
-learns ``the actor's funding traces to Coinbase'' has learned nothing --- everyone's
-does. A crowd of \emph{distinct} origins is \textbf{weak}: learning the origin names
-the one member who has it. So the agent groups members who \emph{share} an origin,
-and holds back the singletons who would be exposed. Diversity is the enemy here, not
-the friend.
+The rule is backwards from intuition until you have the formula, then obvious. A crowd
+funded from the \emph{same} origin is \textbf{strong}: an adversary who learns ``the
+actor's money traces to Coinbase'' has learned nothing --- everyone's does. A crowd of
+\emph{distinct} origins is \textbf{weak}: learning the origin names the one member who
+has it. So the agent groups members who \emph{share} an origin, and holds back the
+singletons who would be exposed. Diversity is the enemy here, not the friend.
 \end{intuition}
 
 The policy is a floor. \code{coordinate(pending, k\_min)} admits a member only if at
-least $k_{\min}$ pending members share their provenance class, and defers the rest
-with a concrete remedy (wait for more same-origin members, or re-fund from an origin
-the round already has). This is a guarantee, not a heuristic:
+least $k_{\min}$ pending members share their provenance class, and defers the rest with
+a concrete remedy (wait for more same-origin members, or re-fund from an origin the
+round already has).
 
 \begin{property}
-Every admitted member ends in a class of size $\geq k_{\min}$, so no admitted member
-is exposed; and among all rounds with that property this one is the largest, since it
+Every admitted member ends in a class of size $\geq k_{\min}$, so no admitted member is
+exposed; and among all rounds with that property this one is the largest, since it
 admits every safe member.
 \end{property}
 
-Because it drops exactly the singleton and thin classes that fragment the
-distribution, it also lifts the round's effective-k above the naive ``admit
-everyone'' round --- and that is proven by a test, not asserted.
-
 \begin{measured}[--- a smaller round, chosen well, beats batching everyone]
-Ten pending members: classes $A{=}5$, $B{=}3$, and two singletons $C,D$. Admit
-everyone (round of $10$): $\keff \approx 3.1$. Coordinate with $k_{\min}{=}2$ (round of
-$8$, $C$ and $D$ deferred): $\keff \approx 4.1$. \textbf{Fewer members, more
-anonymity, and nobody exposed.}
+Ten pending members: classes $A{=}5$, $B{=}3$, and two singletons $C,D$. Admit everyone
+(round of $10$): $\keff \approx 3.1$. Coordinate with $k_{\min}{=}2$ (round of $8$, $C$
+and $D$ deferred): $\keff \approx 4.1$. \textbf{Fewer members, more anonymity, and
+nobody exposed.}
 \end{measured}
 
-Run as an agent loop, intents arrive over time and the agent fires a round the moment
-a same-origin crowd is ready, holding the rest until they are safe --- or forever, if
+Run as an agent loop, intents arrive over time and the agent fires a round the moment a
+same-origin crowd is ready, holding the rest until they are safe --- or forever, if
 their origin stays rare. Refusing to act, when acting would expose you, is the
-privacy-preserving choice, and an autonomous agent that acts on-chain should make it.
+privacy-preserving choice, and an autonomous agent acting on-chain should make it.
 
-% ===================== 8. AXL CERTIFICATES =====================
-\section{Proof-carrying privacy certificates}
-\label{sec:axl}
+% ===================== 10. CERTIFICATES =====================
+\section{Certificates you can check without trusting the agent}
+\label{sec:cert}
 
 The coordinator's claim --- ``this round is private'' --- should not require trust. A
 member about to join has to know the agent computed honestly and was not buggy or
-adversarial. So each fired round carries a \emph{proof-carrying certificate}, applying
-the AXL pattern (Galmanus, \emph{AXL: Proof-Carrying Certificates for Bounded
-Autonomy}) to a privacy bound instead of a spending bound.
+adversarial. So each fired round carries a \emph{proof-carrying certificate}.
 
 \begin{intuition}
-The insight AXL is built on: a proof is not a moat, because a competent engineer can
-replicate it. What is a moat is making the proof \textbf{inescapable} (you cannot
-claim a bound the evidence does not support), \textbf{portable} (a small artifact a
-stranger checks alone), and \textbf{bound to the deployment} (tied to the exact thing
-it certifies). A certificate turns ``trust me'' into ``check my work.''
+The insight: a proof is not a moat, because a competent engineer can replicate it. What
+is a moat is making the proof \textbf{inescapable} (you cannot claim a bound the
+evidence does not support), \textbf{portable} (a small artifact a stranger checks
+alone), and \textbf{bound to the deployment} (tied to the exact thing it certifies). A
+certificate turns ``trust me'' into ``check my work.''
 \end{intuition}
 
 When the agent fires a round it emits a certificate carrying the admitted set's
 provenance-class histogram, the floor $k_{\min}$, and the round's $\keff$. Anyone
-verifies it, following the three properties. \textbf{Inescapable:} verification
-recomputes $\keff$ from the histogram and checks the integer floor $\min_c n_c \geq
-k_{\min}$, so a coordinator cannot certify a bound the histogram does not support ---
-a tampered $\keff$ or histogram fails (tested). \textbf{Portable:} the certificate is
-a small object a member, an auditor, or a settling program checks without trusting the
-coordinator and without re-tracing the graph. \textbf{Bound to the round:} a blake3
-commitment ties it to the exact admitted set, so it cannot be replayed onto a
-different crowd (tested).
+verifies it. \textbf{Inescapable:} verification recomputes $\keff$ from the histogram
+and checks $\min_c n_c \geq k_{\min}$, so a coordinator cannot certify a bound the
+histogram does not support --- a tampered number fails (tested). \textbf{Portable:} the
+certificate is a small object a member, an auditor, or a settling program checks
+without re-tracing the graph. \textbf{Bound to the round:} a blake3 commitment ties it
+to the exact admitted set, so it cannot be replayed onto a different crowd (tested).
+The certificate carries only the histogram, never member identities: it proves the
+crowd meets the floor without revealing who is in which class.
 
-\begin{honest}
-Two honest points. Unlike AXL's original sliding-window bound, this one needs no SMT
-solver: $\keff = 2^{\sum (n_c/n)\log_2 n_c}$ and $\min_c n_c \geq k_{\min}$ are
-closed-form, so verification is cheap arithmetic. This is the AXL certificate
-\emph{pattern}, not its machinery --- and that the bound is simple enough to check
-directly is a feature, because the integer floor is exactly what an on-chain settling
-program could enforce with no floating point, a natural next step. And the certificate
-carries only the histogram, never member identities: it proves the crowd meets the
-floor without revealing who is in which class, so it is itself privacy-preserving.
-\end{honest}
-
-% ===================== 8b. THE FOUR =====================
-\section{What the whole book prescribes: the Four}
-\label{sec:fw}
-
-Three of the insights above are numbers already: circularity, ambiguity, ricorso.
-A fourth comes not from one image but from the structure that recurs across the
-\emph{entire} book, and it is a claim about \emph{verification}, so it belongs here,
-next to the on-chain reality.
-
-Read start to end, \emph{Finnegans Wake} keeps returning to \textbf{the Four} ---
-Mamalujo, the four old men, drawn from the Four Masters who compiled the \emph{Annals
-of Ireland}. They appear as judges at HCE's trial, as four observers watching from
-the four corners, and as inquisitors questioning the sleeping Yawn. In every
-appearance they are senile and they \emph{contradict each other}; Joyce never lets a
-single one of them be authoritative. When a truth appears at all, it is what enough of
-the Four agree on. The book's most structurally strange chapter (the Night Lessons)
-enacts the same thing on the page: a central text flanked by independent margins that
-mock and correct it. One voice speaking alone is exactly what the book refuses.
-
-That is a prescription, and \river's deployed program had exactly the weakness it
-answers. Settlement trusted \emph{one} named verifier's signature, so one dishonest
-verifier could attest to a proof that does not exist. We replaced it with the Four:
-the pool names a committee of $N$ verifier keys and a threshold $M$, and \texttt{execute}
-requires signatures from at least $M$ \emph{distinct} committee members over the same
-tuple, none authoritative alone. A false attestation now costs $M$ colluding
-verifiers, not one. It is a bounded, real change to the on-chain program --- the code
-already checked one Ed25519 signature through instruction introspection; the committee
-generalizes that to a distinct-signer quorum --- and it is covered by five on-chain
-tests: a $2$-of-$3$ quorum settles, one vote alone does not, a member signing twice
-still counts once, and an outsider's signature does not count. This is the one insight
-from studying the whole book, rather than a single line of it, that crossed from the
-page into the program.
-
-% ===================== 9. COST =====================
-\section{Cost, and the on-chain reality}
-\label{sec:cost}
+% ===================== 11. ON-CHAIN =====================
+\section{On-chain: what runs, measured}
+\label{sec:onchain}
 
 A privacy tool nobody can afford to run is a paper, not a tool. So we measured.
 
-\begin{measured}[--- one execution]
+\begin{measured}[--- one execution, off-chain proving]
 \centering
 \begin{tabular}{rrrrr}
 \toprule
@@ -733,85 +713,85 @@ $16{,}384$ & $19{,}064$ B & $8.1$ ms & $0.43$ ms & $0$ bytes \\
 \bottomrule
 \end{tabular}\\[0.3em]
 {\footnotesize A set of $16{,}384$ members proves in $8$ ms. Proof size grows
-logarithmically: $4096\times$ the members costs $1.6\times$ the proof.}
+logarithmically: $4096\times$ the members costs $1.6\times$ the proof. The last column
+is the point: nothing to distribute, nothing to trust.}
 \end{measured}
 
-The column that decides deployability is the last one. A pairing-based prover needs a
-ceremony-produced key shipped to every client --- tens of megabytes that must exist,
-be trusted, and be distributed before anyone proves anything. \river's prover is the
-code; nothing to distribute, nothing to trust. For agents, market makers, and users
-proving before each action, that is the difference between a tool that ships and one
-that needs an install.
+The real question is whether the \emph{chain} can check the proof. If it can, no one is
+trusted; if not, someone is. There are two proof systems in play, and they land in two
+different places.
 
-\subsection{Verifying on-chain: measured, and honest about the wall}
+\textbf{The Winterfell STARK (the research core).} We built a Solana program that runs
+the real Winterfell verifier --- FRI, Merkle openings, Fiat--Shamir, constraint
+evaluation --- inside the runtime, and measured it. It runs, and it costs $3.77$M
+compute units at $k{=}4$. That exceeds Solana's $1.4$M per-transaction cap, so it needs
+execution chunked across transactions. Sweeping the FRI queries to the floor
+($4{\to}1.57$M CU) does not get under the cap even at a security level no one would
+ship. So single-transaction verification of \emph{this} proof is not a tuning problem.
+It is a \emph{field} problem: the $128$-bit field is too big.
 
-If the chain checks the proof, no one is trusted; if not, someone is. So we built a
-Solana program that runs the real Winterfell verifier --- FRI, Merkle openings,
-Fiat--Shamir, constraint evaluation --- inside the runtime, and measured it. It runs.
-It costs $3.77$M compute units at $k{=}4$ and $7.13$M at $k{=}64$. Both exceed
-Solana's $1.4$M per-transaction cap, so this needs execution chunked across
-transactions, which existing work \cite{mosaic} implements. The number tracks the
-published Solana STARK study \cite{onchainstark} ($1.1$M CU for a $4.4$\,KB proof): we
-spend $3.4\times$ the compute for a $2.7\times$ larger proof.
+\textbf{The M31 Circle STARK (the fix, now proven in a VM).} The answer, argued in the
+last version of this paper as a roadmap, is now demonstrated. A Circle STARK over the
+$31$-bit field M31 --- the field production provers use \cite{stwo}, with an existing
+on-chain Solana verifier \cite{murkl}, post-quantum, no ceremony --- shrinks both proof
+and cost dramatically.
 
-Then the sharp question: can tuning bring even the smallest set under $1.4$M? We swept
-FRI queries to the floor --- $28{\to}3.77$M, $16{\to}2.77$M, $8{\to}1.95$M,
-$4{\to}1.57$M CU. Even at four queries, a security level no one would ship, it is
-$1.57$M, still over the cap. The base cost of setup and constraint evaluation over a
-$128$-bit field dominates, and the blow-up cannot go below eight (the Rescue degree is
-five). So single-transaction verification is not a tuning problem. It is a
-\emph{field} problem, now measured rather than argued. A Circle STARK over the
-$31$-bit field M31 --- used in production provers \cite{stwo} and already an on-chain
-Solana verifier at $\sim 31$k CU \cite{murkl}, post-quantum, no ceremony --- shrinks
-both proof and cost. Porting to a small field is the concrete roadmap, a field change,
-not a possibility proof.
+\begin{measured}[--- riverrun's relation, verified inside the Solana VM]
+Using the M31 Circle-STARK verifier of \cite{murkl}, we proved and verified
+\river's relation --- membership plus nullifier plus a bound public action --- inside a
+Solana VM (LiteSVM). A real $8{,}696$-byte proof is \textbf{accepted at $159{,}849$
+compute units}, about $11\%$ of the $1.4$M cap, in a single transaction. A proof
+carrying a \emph{different} action is \textbf{rejected}. This is the whole verification,
+on-chain-class, under the cap.
+\end{measured}
 
 \begin{honest}
-Until that port, the deployed program does not verify the proof itself. Rather than
-leave that implicit, it makes the trust explicit, bounded, and \emph{distributed}: the
-pool names a committee of $N$ verifier keys and a threshold $M$, and an execution must
-carry at least $M$ signatures from \emph{distinct} committee members over exactly the
-tuple being settled, checked through the runtime's signature precompile. This removes
-the two cheap attacks --- an arbitrary signer settling an action, a watcher
-front-running a nullifier --- because none can produce a committee member's signature.
-It does \emph{not} remove trust, but it prices it: a false attestation now requires
-$M$ colluding verifiers, not one. This is the Wake's Four (Mamalujo) --- judges,
-observers, inquisitors, no single one of them ever authoritative --- read out of the
-book and built as $M$-of-$N$ threshold attestation (\S\ref{sec:fw}); it is covered by
-five on-chain tests, and the roadmap above is how the trust goes to zero. The program
-also prices a seat (an entry fee) and refuses to settle below an anonymity floor ---
-anti-Sybil that is honestly ``priced, not prevented'', with the stronger
-one-nullifier-per-verifier construction \cite{selfcred} named as the real fix.
+Two honest limits. This ran in a local Solana VM (LiteSVM), not yet on mainnet, and the
+relation it verifies is riverrun's membership-plus-nullifier-plus-action, not yet the
+full in-circuit Poseidon2 Merkle path (the hash foundation is built on Plonky3's vetted
+parameters; the arithmetization is the next step). Until that lands on mainnet, the
+deployed program does not verify the proof itself. Rather than leave that implicit, it
+makes the trust explicit, bounded, and \emph{distributed}: the pool names a committee of
+$N$ verifier keys and a threshold $M$, and an execution must carry at least $M$
+signatures from \emph{distinct} committee members over exactly the tuple being settled,
+checked through the runtime's signature precompile. This removes the two cheap attacks
+--- an arbitrary signer settling an action, a watcher front-running a nullifier --- and
+prices the rest: a false attestation now needs $M$ colluding verifiers, not one. Five
+on-chain tests cover it (a $2$-of-$3$ quorum settles, one vote alone does not, a member
+signing twice counts once, an outsider does not count). The M31 path above is how the
+trust goes to zero.
 \end{honest}
 
-% ===================== 10. THREAT MODEL =====================
-\section{The threat model, stated plainly}
+% ===================== 12. THREAT MODEL =====================
+\section{The threat model, plainly}
+\label{sec:threat}
 
-A privacy claim without a threat model is not falsifiable, and an unfalsifiable claim
-is not an engineering claim. So here is the adversary \river\ is built against.
+A privacy claim without a threat model is not falsifiable, and an unfalsifiable claim is
+not an engineering claim. So here is the adversary \river\ is built against.
 
 \textbf{What the adversary can do.} See the entire public ledger forever --- every
 transaction, amount, address, and the funding graph behind any wallet --- run modern
 chain-analysis, and keep a tag database of exchange and service addresses. Observe the
-pool's public transcript $\{R, a, n\}$ for every execution. For the funding-graph
-results, additionally observe the provenance class of the \emph{acting} identity,
-which is cheap because a fresh withdrawal wallet must be funded from somewhere visible.
+pool's public record $\{R, a, n\}$ for every execution. For the funding-graph results,
+also observe the provenance class of the \emph{acting} identity, which is cheap because
+a fresh withdrawal wallet has to be funded from somewhere visible.
 
 \textbf{What \river\ defends.} The link between an actor and their action. Given an
-execution, the adversary should do no better than $1/\keff$ at naming the author,
-where $\keff$ is the effective size of that member's provenance class --- and the
-tools here \emph{measure} $\keff$ rather than assume it.
+execution, the adversary should do no better than $1/\keff$ at naming the author, where
+$\keff$ is the effective size of that member's provenance class --- and the tools here
+\emph{measure} $\keff$ rather than assume it.
 
-\textbf{What \river\ does not defend, by design.} Amounts and balances, which are
-public here (hiding them is a separate, composable problem). The value layer of
-consensus: the ledger records that value moved one way, and no circularity changes
-that; the circularity lives on the attribution layer an analyst reads, not the
-settlement layer consensus enforces. And, in the deployed program today, the
-correctness of the membership proof, delegated to a named verifier committee
-(threshold $M$-of-$N$) until on-chain verification lands. Every number in this paper is stated against this adversary.
+\textbf{What \river\ does not defend, by design.} Amounts and balances, which are public
+here (hiding them is a separate, composable problem). The value layer of consensus: the
+ledger records that value moved, and no circularity changes that; the circularity lives
+on the attribution layer an analyst reads, not the settlement layer consensus enforces.
+And, in the deployed program today, the correctness of the membership proof, delegated
+to the verifier committee until on-chain M31 verification lands on mainnet. Every number
+in this paper is stated against this adversary.
 
-% ===================== 11. WHAT DOES NOT HOLD =====================
+% ===================== 13. WHAT DOES NOT HOLD =====================
 \section{What does not hold yet}
+\label{sec:limits}
 
 A paper that only lists its strengths is an advertisement. In one place, what \river\
 does not yet do:
@@ -822,57 +802,69 @@ does not yet do:
 \item \textbf{It is not formally zero-knowledge.} The prover does not randomize the
       witness, so the honest claim is ``the secret is not on the wire'', checked
       empirically.
-\item \textbf{Verification is off-chain today}, behind the $M$-of-$N$ committee
-      attestation (\S\ref{sec:fw}); the measured cost and the M31 path are how that
-      changes.
-\item \textbf{Security parameters are example-grade}, roughly $84$ bits, not the
-      $128$ a deployment needs.
-\item \textbf{``Rootless'' provenance is conditional}: the circularity holds only
-      while a construction's funding sources are themselves unattributable.
+\item \textbf{On-chain verification is proven in a local VM, not on mainnet.} The M31
+      relation verifies at $159{,}849$ CU in LiteSVM; the deployed program still leans on
+      the $M$-of-$N$ committee until that ships to mainnet.
+\item \textbf{riverrun ID's in-circuit membership is not built.} The seven-power
+      primitive is tested; the Poseidon2 Merkle proof over M31 and its Solana verifier
+      are the road ahead.
+\item \textbf{Security parameters are example-grade} in the Winterfell path, roughly
+      $84$ bits, not the $128$ a deployment needs.
+\item \textbf{``Rootless'' provenance is conditional}: the circularity holds only while
+      a construction's funding sources are themselves unattributable.
 \item \textbf{The ricorso proof is specified, not built}, for the set-size alignment
-      reason of Section~\ref{sec:ricorso}.
+      reason of \S\ref{sec:ricorso}.
 \item \textbf{Anti-Sybil is priced, not prevented}: money still buys $k$, though the
       funding graph makes the cheap version of the attack visible to the ruler.
 \end{itemize}
 
-The implementation is Rust, MIT-licensed, with $94$ passing tests across the core,
-the STARK, the pool, and the on-chain program, and clean static analysis. Every
+The implementation is Rust, MIT-licensed, with $143$ passing tests across the core, the
+STARK, the pool, the ruler, and the on-chain program, and clean static analysis. Every
 measurement is reproducible from the repository with one command.
 
-% ===================== 12. RELATED WORK =====================
+% ===================== 14. RELATED WORK =====================
 \section{Related work}
+\label{sec:related}
 
 \river's \emph{goal} --- hiding which member of a set acted --- is anonymous
-authentication, a mature field. PrivDID \cite{privdid} states the same
-session-unlinkability goal; anonymous-credential frameworks with predicate proofs
-\cite{predproofs,re2creds} live in the same threat model; PLUME \cite{plume}
-formalizes the nullifier. The \emph{metric} is Serjantov and Danezis
-\cite{serjantov2002}. The \emph{programme} of measuring advertised-versus-true
-anonymity is established on Ethereum \cite{tutela,beres,crosschain,du}. On-chain
-STARK verification on Solana has been done, with the same Winterfell library
-\cite{onchainstark,murkl,mosaic}. What is narrow and new here is the combination: the
-payload is behavior rather than value; the funding graph is \emph{measured} rather
-than assumed away, on \river's own constructions as well as live pools; and that
-measurement is turned into a user-facing pre-flight defense and a crowd-forming agent
-with proof-carrying certificates.
+authentication, a mature field. On Ethereum the identity layer is \textbf{Semaphore};
+riverrun ID is a post-quantum, Solana-native cousin. PrivDID \cite{privdid} states the
+same session-unlinkability goal; anonymous-credential frameworks with predicate proofs
+\cite{predproofs,re2creds} live in the same threat model; PLUME \cite{plume} formalizes
+the nullifier. The \emph{metric} is Serjantov and Danezis \cite{serjantov2002}. The
+\emph{programme} of measuring advertised-versus-true anonymity is established on Ethereum
+\cite{tutela,beres,crosschain,du}. On-chain STARK verification on Solana has been done,
+both with Winterfell \cite{onchainstark,mosaic} and with the M31 Circle-STARK verifier
+\cite{murkl} we build on. What is narrow and new here is the combination: the payload is
+behavior rather than value; one secret becomes an unlinkable per-context identity on a
+chain with no Semaphore; and the funding graph is \emph{measured} rather than assumed
+away, then turned into a user-facing pre-flight defense and a crowd-forming agent with
+checkable certificates.
 
-% ===================== 13. CONCLUSION =====================
+% ===================== 15. CONCLUSION =====================
 \section{Conclusion}
+\label{sec:conc}
 
-Two ideas, stronger together than apart. The first hides behavior, not money: commit
-an intent, execute it unlinkably, and prove the whole thing with a transparent,
-post-quantum STARK that welds membership, nullifier, and action into one object, at a
-cost measured to the compute unit. The second is a ruler for whether any such system
-works --- applied first and hardest to \river\ itself. Every anonymity pool
-advertises a number that overstates its privacy, because it counts members and
-ignores where their money came from. We measured the gap on a live pool, and then did
-the thing measurement makes possible: an agent that \emph{forms} a good crowd rather
-than hoping for one, and certifies it so no member has to trust the agent.
+Three things, stronger together than apart. A \textbf{ruler} that tells you what a
+privacy pool's anonymity is really worth --- and that runs on Solana mainnet today,
+reporting its own reliability so a rate-limited network never reads as ``private.'' An
+\textbf{identity layer} that turns one secret into a different, unlinkable identity in
+every app while keeping one-action-per-person, all from a single hash, so a quantum
+computer does not break it. And a \textbf{pool} that hides behavior instead of money,
+proven by a transparent post-quantum STARK whose on-chain verification we have now shown
+inside the Solana VM at $159{,}849$ compute units.
 
 The honest version of a privacy system ships its own strongest attack and reports what
-it finds. That is what we tried to build. In the words the system takes its name from
---- \emph{a way a lone a last a loved a long the riverrun} --- the river returns to its
-source, and so should every claim, back to the measurement that supports it.
+it finds. That is what we tried to build: a tool that measures the gap between the
+privacy a system advertises and the privacy it delivers --- and turns that measurement
+into a defense.
+
+The cypherpunks were right that no one grants you privacy; you build it or you go
+without. What that generation could not yet do was \emph{prove} to you that what they
+built worked. \river\ is one attempt to close that gap: privacy you do not have to take
+on faith, on a chain that will still be public and permanent long after the machine
+that threatens it exists. Build it post-quantum, ship your own strongest attack, and
+hand the reader the ruler. Then the claim is not ``trust us.'' It is ``check.''
 
 % ===================== APPENDIX =====================
 \appendix
@@ -886,21 +878,23 @@ The system is open-source and MIT-licensed. Everything runs from one script,
 \toprule
 claim & command \\
 \midrule
-$94$ tests green & \code{cargo test --workspace} (+ the excluded crates) \\
+$143$ tests green & \code{cargo test --workspace} \\
+riverrun ID's seven powers & \code{cargo test -p riverrun-core rotatable rln} \\
+the turn, proven in zero knowledge & \code{cargo test -p riverrun-stark rotation} \\
 one execution's cost & \code{cargo run --release --example bench} \\
 the batched round & \code{cargo run --release --example behavior\_pool} \\
 the coordinator + certificate & \code{cargo run --release --example coordinator} \\
 $\keff$ on \river's designs & \code{riverrun exhibit} \\
 $\keff$ of a live pool & \code{riverrun audit <POOL> 30} \\
 your anonymity before you act & \code{riverrun preflight <WALLET>} \\
-on-chain verification cost & \code{cargo test -p ...stark-verifier --test cu} \\
+M31 verification inside the Solana VM & \code{cargo test -p ...stark-verifier --test cu} \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-The live-data commands read only public chain data, name no individual, and print
-their own bounds: a clean result is a floor --- ``no cheap attribution found'' ---
-never a proof of anonymity.
+The live-data commands read only public chain data, name no individual, and print their
+own bounds: a clean result is a floor --- ``no cheap attribution found'' --- never a
+proof of anonymity.
 
 % ===================== BIBLIOGRAPHY =====================
 \begin{thebibliography}{99}
