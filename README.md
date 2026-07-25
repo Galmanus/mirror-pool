@@ -155,6 +155,40 @@ flowchart TD
 > 128-bit parameters already absorb. riverrun shares that quantum-resistance
 > rationale, not NIST's specific KEM/signature algorithms (ML-KEM, ML-DSA).
 
+### Why a tool like this must be post-quantum in 2026 — not *may*, *must*
+
+The argument is not "quantum computers are scary." It is an inequality, due to Michele
+Mosca. Let **X** be how long your secret must stay secret, **Y** the time to migrate a
+system to quantum-safe cryptography, and **Z** the time until a cryptographically-
+relevant quantum computer exists. **If X + Y > Z, you have already lost:** the machine
+arrives before your protection does, and everything recorded in the meantime is
+decrypted retroactively.
+
+Now put a *blockchain anonymity set* into that inequality. The ledger is permanent and
+public — the link between you and your action, if it survives at all, survives
+**forever**, so **X = ∞.** No finite Y or Z can satisfy the inequality. For a privacy
+tool whose data lives on a permanent public ledger, **X + Y > Z is not a risk to
+manage, it is a certainty** — unless the primitive is *already* quantum-safe the moment
+it is written. That is *harvest-now-decrypt-later* made exact: an adversary needs no
+quantum computer today, only a copy of the chain (free, trivial); the day the hardware
+exists, every curve-based guarantee ever written to that chain fails **at once**,
+including the ones written in 2026.
+
+*Disanalogy, stated.* For **ephemeral** secrets — a TLS session key, a monthly-rotated
+password — X is small, and a non-post-quantum scheme is defensible for a few more
+years. That is exactly the reasoning that does **not** transfer here: on-chain
+anonymity has no expiry, so the comfort ephemeral data enjoys does not apply.
+
+The standards bodies already acted on this for data *far less permanent* than a ledger:
+NIST finalized its post-quantum standards (FIPS 203/204/205) in **August 2024**, and US
+federal policy (NSM-10, OMB M-23-02) mandates migration on a fixed timeline — for email
+and web traffic. A permanent, public, financial-behavior ledger carries a stronger
+obligation than either. And meeting it costs riverrun **nothing extra**: the design is
+hash-based from the first line, so post-quantum is not a feature bolted on, it is a
+property the construction cannot avoid having. Read the other way: **in 2026, a
+permanent-ledger privacy tool that is not post-quantum is shipping a guarantee it
+already knows will expire.**
+
 - *Today (honest):* the membership proof is a transparent, hash-based Winterfell
   STARK over a 128-bit field. It is verified **off-chain** and gated on-chain by an
   M-of-N committee, because that proof is 12 to 16 KB and costs **3.77M compute

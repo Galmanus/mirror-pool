@@ -149,23 +149,44 @@ computer breaks the curve-based cryptography under most of today's privacy tools
 it does not break a hash. Section~\ref{sec:pq} says exactly why that matters now and
 not in ten years.
 
-\subsection{Why post-quantum, and why now}
+\subsection{Why a tool like this must be post-quantum --- not \emph{may}, \emph{must}}
 \label{sec:pq}
 
-The usual objection is that quantum computers big enough to break today's cryptography
-do not exist yet. True. The reason to care anyway has a name: \textbf{harvest now,
-decrypt later}. The blockchain is public and permanent. An adversary can copy all of
-it today, sit on it, and break it the day the hardware arrives. Anything you want kept
-private for longer than the hardware timeline has to be protected with cryptography
-the hardware cannot break --- \emph{now}, at the moment you act, not later.
+The usual objection is that a quantum computer big enough to break today's cryptography
+does not exist yet. True, and beside the point. The argument for post-quantum here is
+not about fear; it is an inequality, due to Mosca. Let $X$ be how long a secret must
+stay secret, $Y$ the time to migrate a system to quantum-safe cryptography, and $Z$ the
+time until a cryptographically-relevant quantum computer exists. If
+\[ X + Y > Z, \]
+the machine arrives before the protection does, and everything recorded in the meantime
+is decrypted retroactively.
 
-Curve-based privacy tools fail this test: Shor's algorithm breaks the curve, and the
-recorded data is already in the adversary's hands. Hash-based tools pass it: the best
-known quantum attack on a hash is Grover's, which only halves the security level, and
-a $256$-bit hash absorbs that with room to spare. \river\ is hash-only by design, so a
-user who hides a behavior today is still hidden after quantum hardware exists. The
-standards bodies agree on the direction: NIST's post-quantum signature standard, FIPS
-$205$ (SLH-DSA), is itself hash-based.
+Now put a blockchain anonymity set into that inequality. The ledger is public and
+permanent: the link between an actor and their action, if it survives at all, survives
+forever, so $X = \infty$. No finite $Y$ or $Z$ satisfies the inequality. For a privacy
+tool whose data lives on a permanent public ledger, $X + Y > Z$ is not a risk to
+manage; it is a \emph{certainty} --- unless the primitive is \emph{already} quantum-safe
+at the moment of writing. This is what \textbf{harvest-now-decrypt-later} means made
+precise: an adversary needs no quantum computer today, only a copy of the chain, which
+is free; the day the hardware exists, every curve-based guarantee ever written to that
+chain fails at once, including the ones written in 2026.
+
+\emph{Disanalogy, stated.} For ephemeral secrets --- a TLS session key, a
+monthly-rotated password --- $X$ is small, and a non-post-quantum scheme is defensible
+for a few more years. That is exactly the reasoning that does not transfer here:
+on-chain anonymity has no expiry, so the comfort ephemeral data enjoys does not apply.
+
+Curve-based privacy tools fail the test concretely: Shor's algorithm breaks the curve,
+and the recorded data is already in the adversary's hands. Hash-based tools pass it: the
+best known quantum attack on a hash is Grover's, which only halves the security level,
+and a $256$-bit hash absorbs that with room to spare. \river\ is hash-only by design, so
+a user who hides a behavior today is still hidden after quantum hardware exists --- at no
+extra cost, because the property is structural, not bolted on. The standards bodies have
+already acted on this for data far less permanent than a ledger: NIST finalized its
+post-quantum standards (FIPS 203/204/205) in August 2024, and its hash-based signature,
+FIPS 205 (SLH-DSA), rests on the same conservative assumption \river\ does. Read the
+other way: in 2026, a permanent-ledger privacy tool that is \emph{not} post-quantum is
+shipping a guarantee it already knows will expire.
 
 % ===================== 3. RIVERRUN ID =====================
 \section{riverrun ID: one secret, seven powers}
