@@ -50,12 +50,21 @@ ignores one thing that is public: **where each person's money came from.** If th
 other 29 were funded from the same place and you weren't, you stand out — your crowd
 of 30 collapses to a crowd of 1. You thought you were hidden; you weren't.
 
+```mermaid
+flowchart LR
+    P["The pool says:<br/><b>hidden among 30</b>"] --> S{"Group everyone by<br/>where their money<br/>came from (public!)"}
+    S --> G1["funded from<br/>exchange A<br/><b>18 people</b>"]
+    S --> G2["funded from<br/>exchange B<br/><b>6 people</b>"]
+    S --> G3["you — a source<br/>no one else shares<br/><b>1 person</b>"]
+    G3 --> R["Your REAL crowd = <b>1</b><br/>advertised 30, effective ~6.5"]
+```
+
 **riverrun does two things about that:**
 
-1. **It measures the truth.** It is the only tool that reads a pool and tells you your
-   *real* anonymity, not the advertised one — a lie-detector for privacy pools. On a
-   live mainnet pool, an advertised **30** was worth an effective **6.5**, and one
-   depositor was worth exactly **1**. *This part runs on mainnet today.*
+1. **It measures the truth.** It reads a pool and tells you your *real* anonymity,
+   not the advertised one — a lie-detector for privacy pools. On a live mainnet pool,
+   an advertised **30** was worth an effective **6.5**, and one depositor was worth
+   exactly **1**. *This part runs on mainnet today.*
 2. **It hides you for real.** It cuts the link between **you** and **what you did**.
    Like a ballot box: everyone sees a valid vote went in; nobody sees who cast it.
 
@@ -65,11 +74,36 @@ different persona in every app, DAO, and vote — impossible to cluster together
 still enforcing *one action per place* (one vote, one airdrop claim). Anonymity **and**
 fairness at once. (That is riverrun ID — see [`docs/RIVERRUN_ID.md`](docs/RIVERRUN_ID.md).)
 
+```mermaid
+flowchart TD
+    K["Your ONE secret<br/>(the puzzle piece)"]
+    K --> D1["disguise<br/>@ the DAO"]
+    K --> D2["disguise<br/>@ the airdrop"]
+    K --> D3["disguise<br/>@ the vote"]
+    D1 -. "unlinkable" .- D2
+    D2 -. "unlinkable" .- D3
+    D1 --> A1["one vote"]
+    D2 --> A2["one claim"]
+    D3 --> A3["one action"]
+```
+
+*One secret, a fresh unlinkable identity in every context, one action each. Turn the
+piece to a new angle and it's a different shape — but only you can turn it, and only
+you can prove it was the same piece all along, without revealing which.*
+
 **And it survives quantum computers.** A future quantum machine will break the locks
 today's crypto uses — and a blockchain keeps everything forever, so an adversary can
 copy your data now and decrypt it in ten years (*harvest-now-decrypt-later*).
 riverrun's locks are built from hashes, which that machine cannot open, so what you
 hide today stays hidden after quantum arrives.
+
+```mermaid
+flowchart LR
+    T0["<b>Today</b><br/>attacker copies<br/>the whole chain"] --> T1["<b>+10 years</b><br/>a quantum computer<br/>arrives"]
+    T1 --> Q{"tries to break<br/>the saved data"}
+    Q --> X["most privacy tools:<br/>elliptic-curve locks<br/><b>cracked ✗</b>"]
+    Q --> H["riverrun: only hashes<br/>on the chain<br/><b>nothing to crack ✓</b>"]
+```
 
 **Where it honestly stands.** The measurement tool is **finished and runs on mainnet**.
 The privacy/identity layer is **built and tested** (the primitive runs, its proof is
