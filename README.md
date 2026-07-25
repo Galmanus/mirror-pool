@@ -131,26 +131,36 @@ later with a quantum computer finds only PRF outputs, with nothing to break.
   M-of-N committee, because that proof is 12 to 16 KB and costs **3.77M compute
   units**, above Solana's 1.4M per-transaction cap (measured in
   `programs/stark-verifier/tests/cu.rs`).
-- *The path forward, validated end to end on a laptop:* a **Circle STARK over the
-  Mersenne-31 field** fits a single mainnet transaction, and we proved the whole
-  pipeline on a **commodity laptop, no cloud, no Stwo**. Using the murkl M31 stack as
-  a **reference**, a real proof was generated locally (**8,696 bytes**), fed to the
-  verifier program running inside the Solana VM (LiteSVM), and **verified end to end,
-  ACCEPTED** (full FRI + out-of-domain sampling + constraint check), at **157,758
-  compute units, about 11% of a transaction's 1.4M budget**. The verifier compiles to
-  a **249 KB** Solana program. This is the property the two other submissions have
-  and riverrun did not: **a post-quantum proof verified on-chain with no committee.**
-  riverrun's own M31 AIR (Poseidon2 membership + nullifier + action binding) is
-  specified in [`docs/M31_CIRCLE_STARK.md`](docs/M31_CIRCLE_STARK.md); swapping the
-  reference constraint for it, and settling through the already implemented
-  `execute_verified` path, is the migration in progress. When it lands riverrun is
-  the only submission that is post-quantum, transparent (no trusted setup), **and**
-  verified on-chain with no committee.
+- *Verified end to end on a laptop, with riverrun's own relation:* a **Circle STARK
+  over the Mersenne-31 field** fits a single mainnet transaction, and we proved the
+  whole pipeline on a **commodity laptop, no cloud, no Stwo**. Built on the murkl M31
+  stack, then extended with **riverrun's action binding** (`α³·(trace − action)` on
+  both prover and verifier), a real proof (**8,696 bytes**) that ties the nullifier
+  to the committed **action** was generated locally, fed to the verifier program
+  running inside the Solana VM (LiteSVM), and **verified end to end, ACCEPTED** (full
+  FRI + out-of-domain sampling + constraint check) at **159,849 compute units, about
+  11% of a transaction's 1.4M budget**. The binding is proven, not asserted: the same
+  proof presented against a **different** action is **REJECTED** by the on-chain
+  verifier. The verifier compiles to a **249 KB** Solana program. This is the property
+  the two other submissions have and riverrun did not, now reached without abandoning
+  post-quantum or the transparent setup: **a post-quantum proof, verified on-chain,
+  with no committee.**
+- *Honest scope of what's on-chain vs. still ahead:* the relation verified on-chain
+  binds `{commitment, nullifier, root, action}` as public inputs through the OODS
+  constraint (the actor↔action link riverrun adds). What is **not** yet in-circuit is
+  a full Poseidon2 **Merkle-path** membership proof (the root is bound as a public
+  input, at the same fidelity murkl's reference AIR uses); that deeper arithmetization
+  is specified in [`docs/M31_CIRCLE_STARK.md`](docs/M31_CIRCLE_STARK.md) and is the
+  remaining step. Settlement lands through the already implemented `execute_verified`
+  path. When the in-circuit membership lands, riverrun is the only submission that is
+  post-quantum, transparent (no trusted setup), **and** verified on-chain with no
+  committee.
 
   (Stated precisely so a reviewer can check it: the 8.7 KB proof / 249 KB verifier /
-  **157,758 CU accepted** belong to the M31 *reference* AIR (commitment + nullifier)
-  we measured, not yet to riverrun's own relation, and the measurement is in a local
-  VM, not deployed to mainnet. riverrun's *current* proof is still the f128 Winterfell
+  **159,849 CU accepted** are riverrun's relation with action binding (commitment +
+  nullifier + root + action), extended over the murkl M31 reference stack; the
+  measurement is in a local VM, not deployed to mainnet, and the in-circuit Merkle
+  membership is still ahead (root bound as a public input for now). riverrun's *current* proof is still the f128 Winterfell
   STARK at 3.77M CU. What is proven today is that the on-chain, committee-free path is
   real and runs on a laptop; porting riverrun's constraint onto it is the open step.)
 
@@ -501,8 +511,8 @@ The load-bearing honest points, in one place:
   On-chain this is moot: only nullifiers (PRF outputs) are persisted.
 - **On-chain verification is not live.** The f128 proof is 12-19 KB / 3.77M CU, above
   Solana's 1.4M cap, so settlement is gated by an M-of-N Ed25519 committee (a named,
-  quorum-bounded trust assumption, not soundness). The M31 Circle-STARK path (a real proof
-  ACCEPTED on-chain at 157,758 CU on a laptop, reference AIR) removes it: see
+  quorum-bounded trust assumption, not soundness). The M31 Circle-STARK path (riverrun's relation
+  (action-bound) ACCEPTED on-chain at 159,849 CU on a laptop, wrong-action REJECTED) removes it: see
   [`docs/M31_CIRCLE_STARK.md`](docs/M31_CIRCLE_STARK.md).
 - **Sybil is priced, not prevented.** An entry fee makes inflating k cost money; it does
   not stop a funded attacker. Real-k is measured, not claimed solved.
