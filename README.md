@@ -48,44 +48,47 @@ inventory, protocols and agents that cannot broadcast their playbook, and everyd
 users who simply refuse to be clustered and profiled. The privacy that used to need
 a specialist, in one command.
 
-## In plain words
+## In plain words — for someone who has never heard of riverrun
 
-**riverrun is *Tornado Cash for behavior, not funds*.** You prove you are a
-legitimate member of a group and then act — without revealing *which* member you
-are. The link between **you** and **what you did** is cut. It is **post-quantum**
-(built on hashes, no elliptic curves), so a quantum computer cannot undo it. Think
-of a ballot box: everyone sees that a valid voter voted; nobody sees who voted for
-what. riverrun does that for on-chain actions.
+**A blockchain is a glass house.** Everything you do on it — every swap, transfer,
+vote — is recorded forever and visible to everyone. Your name is not attached, but
+your *behavior* is: when you act, how much, with whom. AI-driven analytics read that
+pattern and re-identify you. A trader's strategy gets copied, a whale's moves get
+front-run, an ordinary user gets profiled. In the glass house, you are an open book.
 
-**What's ready today (tested):**
+**"But crypto already has privacy tools?"** It does, and they overstate. A pool tells
+you *"you're hidden among 30 people, so a 1-in-30 guess."* That counts heads and
+ignores one thing that is public: **where each person's money came from.** If the
+other 29 were funded from the same place and you weren't, you stand out — your crowd
+of 30 collapses to a crowd of 1. You thought you were hidden; you weren't.
 
-- The **measurement tool** (`riverrun preflight / audit / trace`) — runs against
-  mainnet now and scores a pool's *real* anonymity (the "k=30 that's actually 6.5").
-  This is the finished, production-grade deliverable.
-- The **crypto primitives** — BLAKE3/Rescue commitments, per-round nullifiers,
-  membership relation — implemented and tested.
-- **Secure secret generation** — 256 bits from the OS CSPRNG (`Secret::random`).
-  This was previously missing; a privacy tool that doesn't mint the user's secret
-  is a footgun. Now closed and tested end-to-end.
-- **128-bit security parameters** for the STARK (was an ~84-bit demo set).
-- The **membership proof** runs, and the **on-chain Solana program** works
-  (per-round nullifier anti-replay, published root, M-of-N committee attestation).
-- **What is stored on-chain forever is only the nullifier** — an opaque,
-  post-quantum (PRF) value. So a **user's on-chain movement is genuinely
-  quantum-safe today**: an adversary who archives the chain now to decrypt later
-  has no secret and no proof to attack.
+**riverrun does two things about that:**
 
-**What's not ready yet (honest):**
+1. **It measures the truth.** It is the only tool that reads a pool and tells you your
+   *real* anonymity, not the advertised one — a lie-detector for privacy pools. On a
+   live mainnet pool, an advertised **30** was worth an effective **6.5**, and one
+   depositor was worth exactly **1**. *This part runs on mainnet today.*
+2. **It hides you for real.** It cuts the link between **you** and **what you did**.
+   Like a ballot box: everyone sees a valid vote went in; nobody sees who cast it.
 
-- **Formal zero-knowledge** of the off-chain proof. No ready-made library provides
-  it — *not* Winterfell, *not* Stwo/Circle STARK (both are STARKs for integrity,
-  not privacy). It is a research item, and it affects only whoever sees the
-  off-chain proof — **not** the permanent on-chain record.
-- **On-chain proof verification** is still too costly to fit one Solana
-  transaction, so a committee (Ed25519) stands in. It *authorizes* settlement; it
-  does **not** de-anonymize, and breaking it is a soundness break, not a privacy one.
-- It is a **research prototype, not audited.** Do not guard real funds or
-  identities with the pool yet. The measurement tool, by contrast, is finished.
+**The powerful part — one secret, many disguises.** Think of a puzzle piece only you
+can turn; each angle is a different, unlinkable disguise of you. One secret becomes a
+different persona in every app, DAO, and vote — impossible to cluster together — while
+still enforcing *one action per place* (one vote, one airdrop claim). Anonymity **and**
+fairness at once. (That is riverrun ID — see [`docs/RIVERRUN_ID.md`](docs/RIVERRUN_ID.md).)
+
+**And it survives quantum computers.** A future quantum machine will break the locks
+today's crypto uses — and a blockchain keeps everything forever, so an adversary can
+copy your data now and decrypt it in ten years (*harvest-now-decrypt-later*).
+riverrun's locks are built from hashes, which that machine cannot open, so what you
+hide today stays hidden after quantum arrives.
+
+**Where it honestly stands.** The measurement tool is **finished and runs on mainnet**.
+The privacy/identity layer is **built and tested** (the primitive runs, its proof is
+verified in a local Solana VM), but it is **not yet deployed to mainnet and not
+audited** — do not guard real funds or identities with it yet. riverrun assembles
+math the field already gave us into something Solana does not have; the honest edges
+are stated plainly throughout, which is what makes the strong claims trustworthy.
 
 ## Innovations, and why they matter
 
