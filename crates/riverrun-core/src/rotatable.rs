@@ -138,6 +138,45 @@ pub fn check_turn(statement: &TurnStatement, witness: &TurnWitness) -> bool {
     merkle_verify(&statement.prev_root, &shape, &witness.inclusion)
 }
 
+// ---------------------------------------------------------------------------
+// Selective linkage — the cloak's dual: unlinkable by default, linkable only by
+// you, only to whom you choose, only for the contexts you pick.
+// ---------------------------------------------------------------------------
+
+/// The public statement of a *chosen* link: "these two shapes are the same piece."
+///
+/// By default a piece's shapes at different angles are unlinkable (that is the
+/// whole point). This is the holder's opt-in override: they can prove to a verifier
+/// of their choosing that two specific shapes come from one secret — for portable
+/// reputation, an accountability disclosure, or "yes, that was also me" — while
+/// revealing **nothing** about the secret and **nothing** about any *other* angle.
+/// The verifier learns only that `shape_a` (at `angle_a`) and `shape_b` (at
+/// `angle_b`) share a holder. Any third identity stays as unlinkable as before.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct LinkStatement {
+    pub shape_a: Hash,
+    pub angle_a: Angle,
+    pub shape_b: Hash,
+    pub angle_b: Angle,
+}
+
+/// The private witness — the piece itself, never revealed.
+#[derive(Clone, Debug)]
+pub struct LinkWitness {
+    pub secret: Secret,
+}
+
+/// Evaluate the selective-link relation in the clear. Returns `true` iff one secret
+/// produces both shapes — the statement a zero-knowledge proof of a chosen link
+/// enforces (same STARK machinery as the rest: two shape derivations over one
+/// secret). It reveals only the two chosen angles; the secret and every other angle
+/// stay hidden.
+pub fn check_link(statement: &LinkStatement, witness: &LinkWitness) -> bool {
+    let piece = witness.secret.piece();
+    piece.shape(statement.angle_a) == statement.shape_a
+        && piece.shape(statement.angle_b) == statement.shape_b
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -315,5 +354,66 @@ mod tests {
             !check_turn(&impostor, &TurnWitness { secret: secret(99), inclusion: dao_set.prove(2).unwrap() }),
             "only the holder of my secret can prove my continuity"
         );
+    }
+
+    // --- selective linkage: the cloak's dual ---
+
+    #[test]
+    fn the_holder_can_link_two_of_their_identities_on_demand() {
+        // I choose to prove that my DAO persona and my forum persona are the same me.
+        let me = secret(1);
+        let dao: Angle = 100;
+        let forum: Angle = 200;
+        let stmt = LinkStatement {
+            shape_a: me.piece().shape(dao),
+            angle_a: dao,
+            shape_b: me.piece().shape(forum),
+            angle_b: forum,
+        };
+        assert!(
+            check_link(&stmt, &LinkWitness { secret: me }),
+            "the holder can prove two of their own shapes share one secret"
+        );
+    }
+
+    #[test]
+    fn an_impostor_cannot_forge_a_link_between_someone_elses_identities() {
+        // Two shapes that really belong to `me`; an impostor tries to claim them.
+        let me = secret(1);
+        let dao: Angle = 100;
+        let forum: Angle = 200;
+        let stmt = LinkStatement {
+            shape_a: me.piece().shape(dao),
+            angle_a: dao,
+            shape_b: me.piece().shape(forum),
+            angle_b: forum,
+        };
+        let impostor = secret(2);
+        assert!(
+            !check_link(&stmt, &LinkWitness { secret: impostor }),
+            "no one but the holder can link the holder's identities"
+        );
+    }
+
+    #[test]
+    fn linking_two_contexts_reveals_nothing_about_a_third() {
+        // Proving dao <-> forum are the same piece must not expose my identity in a
+        // third context: the link statement never mentions it, and that third shape
+        // remains an independent PRF output, unlinkable as before.
+        let me = secret(1);
+        let (dao, forum, secret_vote): (Angle, Angle, Angle) = (100, 200, 300);
+        let stmt = LinkStatement {
+            shape_a: me.piece().shape(dao),
+            angle_a: dao,
+            shape_b: me.piece().shape(forum),
+            angle_b: forum,
+        };
+        assert!(check_link(&stmt, &LinkWitness { secret: me }));
+        // the third identity appears nowhere in the proven statement...
+        let third = me.piece().shape(secret_vote);
+        assert_ne!(third, stmt.shape_a);
+        assert_ne!(third, stmt.shape_b);
+        // ...and is indistinguishable from a stranger's shape at the same angle.
+        assert_ne!(third, secret(2).piece().shape(secret_vote));
     }
 }
