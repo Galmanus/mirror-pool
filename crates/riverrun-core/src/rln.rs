@@ -30,6 +30,16 @@ use crate::{tagged_hash, Hash};
 const P: u128 = (1u128 << 61) - 1;
 
 const RLN_COEF: &[u8] = b"riverrun/rln-coef/v1";
+const RLN_X: &[u8] = b"riverrun/rln-x/v1";
+
+/// What can go wrong recovering a secret from shares.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RlnError {
+    /// Two interpolation points share an `x`-coordinate — a malformed or adversarial
+    /// transcript. Recovery at `x=0` is undefined, so [`recover`] refuses rather than
+    /// dividing by zero. Callers must supply points with distinct `x`.
+    DuplicateX,
+}
 
 fn fadd(a: u128, b: u128) -> u128 {
     (a + b) % P
@@ -81,10 +91,40 @@ fn coefficient(secret: &Secret, theta: u64, i: usize) -> u128 {
     to_field(&h)
 }
 
+/// The action point `x` for a use in context `θ` acting on `action`:
+/// `H(RLN_X ‖ θ ‖ action)` reduced to the field (remapped away from `0`).
+///
+/// Deriving `x` from the action content — rather than letting the actor choose it — is
+/// a **security requirement**, not a convenience. It makes `x` unpredictable and binds
+/// it to the act, so (a) two distinct actions yield two distinct points, which is what
+/// makes the `N+1`-th action over-determine the polynomial, and (b) an actor cannot
+/// suppress that point by replaying an `x`, nor pick `x=0` (which would publish `P(0)=s`
+/// directly). This is the invariant the whole rate limit rests on.
+pub fn action_point(theta: u64, action: &[u8]) -> u128 {
+    let h: Hash = tagged_hash(RLN_X, &[&theta.to_le_bytes(), action]);
+    match to_field(&h) {
+        0 => 1, // x=0 would reveal the secret as P(0); ~2^-61 event, remapped
+        x => x,
+    }
+}
+
+/// The `(x, P(x))` point a use publishes, with `x` correctly derived from the action
+/// via [`action_point`]. **Prefer this** over calling [`share`] with a hand-chosen `x`;
+/// the low-level `share` is for callers who derive `x` themselves and understand the
+/// invariant above.
+pub fn share_for_action(secret: &Secret, theta: u64, limit: usize, action: &[u8]) -> (u128, u128) {
+    let x = action_point(theta, action);
+    (x, share(secret, theta, limit, x))
+}
+
 /// The share revealed by one action: `P(x) = s + a_1·x + … + a_N·x^N`, where the
 /// action's point is `x`. `limit` is `N` (the number of actions allowed before the
 /// secret leaks). Returns the field element `P(x)`; the pair `(x, P(x))` is what the
 /// action publishes.
+///
+/// `x` **must** be unpredictable, nonzero, and unique per action — use [`action_point`]
+/// (or [`share_for_action`]) to produce it. A freely chosen or repeated `x` breaks the
+/// rate limit; `x=0` publishes the secret.
 pub fn share(secret: &Secret, theta: u64, limit: usize, x: u128) -> u128 {
     let x = x % P;
     let mut acc = identity(secret); // P(0) = s
@@ -101,8 +141,10 @@ pub fn share(secret: &Secret, theta: u64, limit: usize, x: u128) -> u128 {
 /// [`identity`] — the over-actor is unmasked. Given fewer than `N+1`, it interpolates
 /// a *different* polynomial and returns some other value, so `s` stays hidden.
 ///
-/// Panics if two points share an `x` (a malformed transcript, not a normal input).
-pub fn recover(points: &[(u128, u128)]) -> u128 {
+/// Returns [`RlnError::DuplicateX`] if two points share an `x` (a malformed or
+/// adversarial transcript). It does **not** panic: recovery runs on inputs an attacker
+/// may craft, so a bad transcript must be an error, not a crash.
+pub fn recover(points: &[(u128, u128)]) -> Result<u128, RlnError> {
     let mut acc = 0u128;
     for (j, &(xj, yj)) in points.iter().enumerate() {
         let mut num = 1u128; // ∏_{m≠j} (0 - x_m)
@@ -113,12 +155,14 @@ pub fn recover(points: &[(u128, u128)]) -> u128 {
             }
             num = fmul(num, fsub(0, xm));
             let d = fsub(xj, xm);
-            assert!(d != 0, "duplicate x in interpolation");
+            if d == 0 {
+                return Err(RlnError::DuplicateX);
+            }
             den = fmul(den, d);
         }
         acc = fadd(acc, fmul(yj, fmul(num, finv(den))));
     }
-    acc
+    Ok(acc)
 }
 
 #[cfg(test)]
@@ -140,7 +184,7 @@ mod tests {
             .iter()
             .map(|&x| (x, share(&s, theta, limit, x)))
             .collect();
-        assert_eq!(recover(&pts), identity(&s), "N+1 points must recover the secret");
+        assert_eq!(recover(&pts).unwrap(), identity(&s), "N+1 points must recover the secret");
     }
 
     #[test]
@@ -152,7 +196,7 @@ mod tests {
         let pts: Vec<(u128, u128)> =
             [7u128, 99].iter().map(|&x| (x, share(&s, theta, limit, x))).collect();
         // interpolating 2 points as a line gives a different constant term than s
-        assert_ne!(recover(&pts), identity(&s), "N points must not reveal the secret");
+        assert_ne!(recover(&pts).unwrap(), identity(&s), "N points must not reveal the secret");
     }
 
     #[test]
@@ -166,7 +210,7 @@ mod tests {
             .iter()
             .map(|&(theta, x)| (x + theta as u128, share(&s, theta, limit, x)))
             .collect();
-        assert_ne!(recover(&pts), identity(&s), "cross-context points must not unmask");
+        assert_ne!(recover(&pts).unwrap(), identity(&s), "cross-context points must not unmask");
     }
 
     #[test]
@@ -182,5 +226,47 @@ mod tests {
         for a in [1u128, 2, 3, 7, 12345, P - 1] {
             assert_eq!(fmul(a, finv(a)), 1, "a * a^-1 must be 1");
         }
+    }
+
+    #[test]
+    fn the_action_point_is_bound_to_the_action_and_context() {
+        // F2: x is derived from the action, so distinct actions give distinct points,
+        // the same action is deterministic, and the context separates them.
+        assert_ne!(action_point(1, b"buy"), action_point(1, b"sell"), "distinct actions -> distinct x");
+        assert_eq!(action_point(1, b"buy"), action_point(1, b"buy"), "deterministic");
+        assert_ne!(action_point(1, b"buy"), action_point(2, b"buy"), "context separates x");
+        // and x is never 0 (x=0 would publish P(0)=s)
+        for a in [b"".as_slice(), b"buy", b"x", b"a longer action payload"] {
+            assert_ne!(action_point(7, a), 0, "x must never be 0");
+        }
+    }
+
+    #[test]
+    fn share_for_action_uses_the_derived_point() {
+        let s = secret(1);
+        let (x, y) = share_for_action(&s, 42, 2, b"vote yes");
+        assert_eq!(x, action_point(42, b"vote yes"));
+        assert_eq!(y, share(&s, 42, 2, x));
+    }
+
+    #[test]
+    fn n_plus_one_distinct_actions_unmask_via_action_point() {
+        // The rate limit enforced end-to-end through the safe API: limit N=2, three
+        // distinct actions in one context each yield a distinct point, and the third
+        // over-determines the polynomial, recovering the secret.
+        let s = secret(1);
+        let theta = 42u64;
+        let pts: Vec<(u128, u128)> = [b"act-1".as_slice(), b"act-2", b"act-3"]
+            .iter()
+            .map(|a| share_for_action(&s, theta, 2, a))
+            .collect();
+        assert_eq!(recover(&pts).unwrap(), identity(&s), "N+1 distinct actions unmask");
+    }
+
+    #[test]
+    fn recover_errors_on_duplicate_x_instead_of_panicking() {
+        // F3: a malformed transcript (two points sharing an x) is an error, not a crash.
+        let pts = [(7u128, 100u128), (7u128, 200u128)];
+        assert_eq!(recover(&pts), Err(RlnError::DuplicateX));
     }
 }

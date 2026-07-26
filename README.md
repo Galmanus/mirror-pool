@@ -450,7 +450,7 @@ dApp, a DAO, an airdrop, a vote) derives a full identity there. From that one se
 | **rln** | rate-limit yourself; the `N+1`-th action unmasks you (Shamir) | `rln::*` |
 | **credential** | show an issuer's attribute per context, without doxxing | `check_attribute` |
 
-**44 tests green.** You are invisible by default, accountable where it matters,
+**48 tests green.** You are invisible by default, accountable where it matters,
 linkable only on your terms, delegable, rate-limited, credential-bearing — one secret,
 total control of your own exposure. Solana has no Semaphore; this is a post-quantum
 one. Full spec: [`docs/RIVERRUN_ID.md`](docs/RIVERRUN_ID.md).
@@ -617,7 +617,7 @@ programs/mirror-pool/Cargo.toml --example devnet_demo`.
 
 | crate | what it is | status |
 |---|---|---|
-| `riverrun-core` | the post-quantum primitives, the membership *relation*, and the **rotatable-piece identity suite** (shape/fit/turn/link/grant/rln/credential — the 7 powers of riverrun ID) | 44 tests |
+| `riverrun-core` | the post-quantum primitives, the membership *relation*, and the **rotatable-piece identity suite** (shape/fit/turn/link/grant/rln/credential — the 7 powers of riverrun ID) | 48 tests |
 | `riverrun-eval` | adversarial harness for the behavioral channel — clustering attacker → chance | 4 tests + exhibit |
 | `riverrun-trace` | the `provenance-tracer`: backward funding-graph adversary + circularity defense + live-mainnet adapter + the repeated-use erosion ruler | 37 tests + 2 exhibits |
 | `programs/mirror-pool` | the on-chain Solana program: commitment accumulator, per-round nullifier registry (PDA-per-nullifier anti-replay), published root, verifier-attested settlement, entry fee + anonymity-set floor | builds to `.so`; 21 e2e tests green (10 committee-of-one + 5 M-of-N quorum + 2 vault payout + 4 STARK-verified path); **the current committee code is deployed and exercised live on devnet** (full commit + relayer-execute lifecycle, [signatures](#the-action-made-real--money-moves-the-actor-does-not)) |
@@ -657,7 +657,7 @@ cargo test --manifest-path crates/riverrun-stark/Cargo.toml                # STA
 cargo test --manifest-path crates/riverrun-pool-zk/Cargo.toml              # the pool driven by the STARK
 ```
 
-**150+ tests green** across the workspace (riverrun-core alone: 44, incl. the 7-power identity suite; STARK incl. the rotation-in-ZK proof).
+**150+ tests green** across the workspace (riverrun-core alone: 48, incl. the 7-power identity suite; STARK incl. the rotation-in-ZK proof).
 
 ## Security status & honest limitations
 
