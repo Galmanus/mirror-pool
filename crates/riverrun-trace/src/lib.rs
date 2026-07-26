@@ -23,6 +23,7 @@
 
 pub mod cert;
 pub mod coordinator;
+pub mod repeated;
 pub mod graph;
 pub mod rng;
 #[cfg(feature = "onchain")]
