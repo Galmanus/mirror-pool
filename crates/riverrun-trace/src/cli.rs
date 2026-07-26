@@ -88,7 +88,8 @@ fn ask(prompt: &str) -> String {
 /// The default experience when you just run `riverrun`: a plain-language menu that
 /// guides you, so you never need to know a command or paste a hash.
 fn guide() {
-    cmd_status();
+    banner();
+    status_rows();
     loop {
         println!("  {}", bold("What would you like to do?"));
         println!();
@@ -265,9 +266,29 @@ fn header() {
     println!("  {}", cyan("▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔"));
 }
 
-fn cmd_status() {
+/// The opening screen: a full teal wordmark, for `riverrun` with no arguments.
+fn banner() {
+    let art = [
+        r"              ██",
+        r"              ▀▀",
+        r"  ██▄████   ████     ██▄  ▄██   ▄████▄    ██▄████   ██▄████  ██    ██  ██▄████▄",
+        r"  ██▀         ██      ██  ██   ██▄▄▄▄██   ██▀       ██▀      ██    ██  ██▀   ██",
+        r"  ██          ██      ▀█▄▄█▀   ██▀▀▀▀▀▀   ██        ██       ██    ██  ██    ██",
+        r"  ██       ▄▄▄██▄▄▄    ████    ▀██▄▄▄▄█   ██        ██       ██▄▄▄███  ██    ██",
+        r"  ▀▀       ▀▀▀▀▀▀▀▀     ▀▀       ▀▀▀▀▀    ▀▀        ▀▀        ▀▀▀▀ ▀▀  ▀▀    ▀▀",
+    ];
+    println!();
+    for line in art {
+        println!("  {}", cyan(line));
+    }
+    println!();
+    println!("       {}", dim("anonymity on Solana   ·   post-quantum   ·   you can measure it"));
+    println!("  {}", dim("──────────────────────────────────────────────────────────────────────────"));
+}
+
+/// The status rows: connection, post-quantum, identity, and how to measure.
+fn status_rows() {
     let active = load_session();
-    header();
     println!();
     match &active {
         Some(hex) => println!(
@@ -290,6 +311,11 @@ fn cmd_status() {
     println!();
     println!("    {}  {}", label("measure yours"), cyan("riverrun preflight <wallet>"));
     println!();
+}
+
+fn cmd_status() {
+    header();
+    status_rows();
 }
 
 /// connect: activate a working identity on this machine.
