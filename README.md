@@ -90,18 +90,20 @@ strong ones worth trusting.
 **Who it's for:** traders whose strategies get copied, whales who get front-run, market
 makers, DAOs, and anyone who refuses to be an open book on-chain.
 
-### Watch it run
+### Use it to become anonymous
 
-Just type `riverrun`. A status panel shows your protection at a glance (like a VPN or
-Tor panel, but honest about what it does), and a plain-language menu guides you. No
-commands to memorize, no hashes to paste. Below: create an identity and watch two
-contexts come out completely unlinkable, then connect.
+Just type `riverrun`. A status panel shows where you stand, and a plain-language menu
+walks you through the real steps to disappear on Solana: measure your exposure, use a
+fresh wallet, fund it from an origin many people share so you join a crowd, act, and
+verify you vanished. No commands to memorize, no hashes to paste, and riverrun never
+touches your keys or moves your funds. It measures, picks the move, and proves you
+arrived.
 
-<img src="scripts/demo.svg" alt="riverrun guided mode: a Tor-style status panel, a plain-language menu, one secret becoming two unlinkable identities, and connect" width="820">
+<img src="scripts/demo.svg" alt="riverrun guided mode: a status panel, the step-by-step to become anonymous on Solana, and one secret becoming two unlinkable identities" width="820">
 
-*Anyone can use it. `riverrun` opens the guide; `riverrun status`, `connect`,
-`disconnect` are the simple actions; the power verbs (`preflight`, `audit`, `id`) are
-still there for scripts and CI.*
+*Anyone can use it. `riverrun` opens the guide; the power verbs (`preflight`, `audit`,
+`id`) are still there for scripts and CI. Honest by design: riverrun makes you
+unlinkable, it does not hide that you transacted.*
 
 ---
 
