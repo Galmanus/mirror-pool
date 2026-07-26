@@ -160,6 +160,75 @@ fn guided_anonymize() {
     println!();
 }
 
+/// A tiny xorshift so the scramble varies per value, with no rand dependency.
+fn xorshift(s: &mut u64) -> u64 {
+    *s ^= *s << 13;
+    *s ^= *s >> 7;
+    *s ^= *s << 17;
+    *s
+}
+
+/// Watch a hash lock in: the bytes scramble and resolve left to right into the real
+/// value. Honest, it resolves to the actual derived hash. Only animates on a terminal;
+/// piped output just prints the result.
+fn hash_anim(label: &str, target_hex: &str) {
+    use std::io::Write;
+    let show = 32.min(target_hex.len());
+    let tgt = &target_hex[..show];
+    if !USE_COLOR.load(Ordering::Relaxed) {
+        println!("     {}  {}", label, tgt);
+        return;
+    }
+    let hexc = b"0123456789abcdef";
+    let mut s = 0x9E37_79B9_7F4A_7C15u64 ^ target_hex.bytes().fold(0u64, |a, b| a.rotate_left(5) ^ b as u64);
+    let frames = 16u32;
+    for f in 0..=frames {
+        let locked = (show as u32 * f / frames) as usize;
+        let mut line = String::with_capacity(show);
+        for (i, ch) in tgt.chars().enumerate() {
+            if i < locked {
+                line.push(ch);
+            } else {
+                line.push(hexc[(xorshift(&mut s) % 16) as usize] as char);
+            }
+        }
+        let (lock, scr) = line.split_at(locked);
+        print!("\r     {}  {}{}  {}", dim(label), cyan(lock), dim(scr), dim("hashing"));
+        std::io::stdout().flush().ok();
+        std::thread::sleep(std::time::Duration::from_millis(55));
+    }
+    println!("\r     {}  {}  {}        ", dim(label), bold(tgt), green("✓"));
+}
+
+/// Watch a 256-bit secret be generated: entropy fills in.
+fn mint_anim(hex: &str) {
+    use std::io::Write;
+    if !USE_COLOR.load(Ordering::Relaxed) {
+        return;
+    }
+    let hexc = b"0123456789abcdef";
+    let mut s = 0xD1B5_4A32_D192_ED03u64 ^ hex.bytes().fold(0u64, |a, b| a.rotate_left(7) ^ b as u64);
+    let show = 48.min(hex.len());
+    let frames = 14u32;
+    for f in 0..=frames {
+        let locked = (show as u32 * f / frames) as usize;
+        let mut line = String::with_capacity(show);
+        for (i, ch) in hex[..show].chars().enumerate() {
+            if i < locked {
+                line.push(ch);
+            } else {
+                line.push(hexc[(xorshift(&mut s) % 16) as usize] as char);
+            }
+        }
+        let (lock, scr) = line.split_at(locked);
+        print!("\r     {}  {}{}", dim("entropy"), green(lock), dim(scr));
+        std::io::stdout().flush().ok();
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    print!("\r{}\r", " ".repeat(70));
+    std::io::stdout().flush().ok();
+}
+
 /// Guided: create a private identity, and see two contexts come out unlinkable.
 fn guided_identity() {
     println!();
@@ -168,6 +237,8 @@ fn guided_identity() {
     println!();
     let secret = riverrun_core::commitment::Secret::random();
     let hex = hex_encode(secret.as_bytes());
+    println!("  {} {}", cyan("◈"), dim("generating a 256-bit post-quantum secret…"));
+    mint_anim(&hex);
     println!("  {} your secret (write it down, it is your whole identity):", green("✓"));
     println!("      {}", bold(&hex));
     println!();
@@ -187,9 +258,10 @@ fn guided_identity() {
         let shape = hex_encode(&piece.shape(angle));
         let fit = hex_encode(&piece.fit(angle));
         println!();
-        println!("  {} your identity for {}", green("✓"), cyan(&ctx));
-        println!("      {} {}   {}", dim("who you are :"), bold(&shape[..12]), dim("nobody can link this to your other apps"));
-        println!("      {} {}   {}", dim("one action  :"), bold(&fit[..12]), dim("spend once, e.g. one vote or one claim"));
+        println!("  {} deriving your identity for {} …", cyan("◈"), cyan(&ctx));
+        hash_anim("who you are (shape)", &shape);
+        hash_anim("one action  (fit)  ", &fit);
+        println!("     {}", dim("nobody can link these to you, or to your other apps."));
         count += 1;
         if count == 2 {
             println!();
