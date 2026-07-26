@@ -43,6 +43,7 @@ pub fn main() {
         "watch" => cmd_watch(rest, json),
         "trace" => cmd_trace(rest, json),
         "exhibit" => cmd_exhibit(json),
+        "id" => cmd_id(rest, json),
         "help" | "-h" | "--help" => help(),
         "version" | "-V" | "--version" => version(),
         other => {
@@ -183,6 +184,8 @@ fn help() {
          \x20 trace     <wallet>              one wallet's funding provenance, one hop at a time\n\
          \x20 exhibit                         the effective-k metric on riverrun's own\n\
          \x20                                 constructions (offline, no RPC)\n\
+         \x20 id <new|show|erosion>          riverrun ID: one secret, a different\n\
+         \x20                                 unlinkable identity per context, offline\n\
          \x20 version                         print the version and exit\n\
          \n\
          OPTIONS\n\
@@ -563,6 +566,118 @@ fn cmd_trace(args: &[String], json: bool) {
 }
 
 // --- exhibit (offline) ------------------------------------------------------
+
+// ---- id subcommand helpers ----
+
+fn hex_encode(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        s.push_str(&format!("{b:02x}"));
+    }
+    s
+}
+
+fn hex_decode_32(s: &str) -> Option<[u8; 32]> {
+    let s = s.trim();
+    if s.len() != 64 {
+        return None;
+    }
+    let mut out = [0u8; 32];
+    for i in 0..32 {
+        out[i] = u8::from_str_radix(&s[2 * i..2 * i + 2], 16).ok()?;
+    }
+    Some(out)
+}
+
+/// A context string becomes an angle by hashing, so a user names contexts by words
+/// ("dao-vote", "airdrop") rather than numbers.
+fn context_angle(context: &str) -> u64 {
+    let h = blake3::hash(context.as_bytes());
+    let mut b = [0u8; 8];
+    b.copy_from_slice(&h.as_bytes()[..8]);
+    u64::from_le_bytes(b)
+}
+
+/// riverrun ID from the command line: one secret, a different unlinkable identity per
+/// context, and the erosion ruler that says when to rotate.
+fn cmd_id(args: &[String], json: bool) {
+    match args.first().map(|s| s.as_str()).unwrap_or("help") {
+        "new" => {
+            let secret = riverrun_core::commitment::Secret::random();
+            let hex = hex_encode(secret.as_bytes());
+            if json {
+                println!("{{\"tool\":\"riverrun\",\"command\":\"id new\",\"secret\":\"{hex}\"}}");
+                return;
+            }
+            println!("your riverrun ID secret (keep it safe, it is your whole identity):");
+            println!("  {hex}");
+            println!();
+            println!("one secret becomes a different, unlinkable identity in every context.");
+            println!("try:  riverrun id show {} dao-vote", &hex[..16]);
+        }
+        "show" => {
+            let (Some(sec_hex), Some(context)) = (args.get(1), args.get(2)) else {
+                eprintln!("usage: riverrun id show <secret-hex> <context>");
+                std::process::exit(2);
+            };
+            let Some(bytes) = hex_decode_32(sec_hex) else {
+                eprintln!("secret must be 64 hex chars (32 bytes). mint one with: riverrun id new");
+                std::process::exit(2);
+            };
+            let secret = riverrun_core::commitment::Secret::from_bytes(bytes);
+            let angle = context_angle(context);
+            let piece = secret.piece();
+            let shape = hex_encode(&piece.shape(angle));
+            let fit = hex_encode(&piece.fit(angle));
+            let turn = hex_encode(&piece.turn(angle));
+            if json {
+                println!("{{\"tool\":\"riverrun\",\"command\":\"id show\",\"context\":\"{context}\",\"angle\":{angle},\"shape\":\"{shape}\",\"fit\":\"{fit}\",\"turn\":\"{turn}\"}}");
+                return;
+            }
+            println!("context: {context}");
+            println!("  shape (your identity here) : {shape}");
+            println!("  fit   (your one action)    : {fit}");
+            println!("  turn  (continuity tag, ZK) : {turn}");
+            println!();
+            println!("the same secret in another context gives a different, unlinkable shape.");
+        }
+        "erosion" => {
+            use crate::repeated::{repeated_use_effective_k, Use};
+            // one persistent identity across three contexts; its crowd intersects down
+            // 6 -> 3 -> 1 against a floor of 4.
+            let uses = [Use::new(1, 0..6), Use::new(2, 0..3), Use::new(3, [0u32])];
+            let e = repeated_use_effective_k(30, &uses, 4.0);
+            if json {
+                let keff: Vec<String> = e.k_eff.iter().map(|k| format!("{k}")).collect();
+                let rot = e
+                    .rotate_before
+                    .map(|i| (i + 1).to_string())
+                    .unwrap_or_else(|| "null".into());
+                println!("{{\"tool\":\"riverrun\",\"command\":\"id erosion\",\"k_min\":4,\"k_eff\":[{}],\"rotate_before_use\":{rot}}}", keff.join(","));
+                return;
+            }
+            println!("repeated-use erosion of one persistent identity (floor k_min = 4):");
+            println!();
+            for (i, k) in e.k_eff.iter().enumerate() {
+                let flag = if *k < 4.0 { "  <- below the floor" } else { "" };
+                println!("  after use {}: effective anonymity = {:>4.1}{}", i + 1, k, flag);
+            }
+            println!();
+            match e.rotate_before {
+                Some(i) => println!("rotate (turn) before use {}: acting again under this secret drops you below the floor.", i + 1),
+                None => println!("safe: the identity stays above the floor across every use."),
+            }
+            println!("turn resets the secret; re-fund from a common origin to reset provenance too.");
+        }
+        _ => {
+            println!("riverrun id — one secret, a different unlinkable identity per context\n");
+            println!("USAGE");
+            println!("  riverrun id new                       mint a fresh secret");
+            println!("  riverrun id show <secret> <context>   your shape/fit/turn in a context");
+            println!("  riverrun id erosion                   how a persistent identity erodes, when to rotate");
+        }
+    }
+}
 
 fn cmd_exhibit(json: bool) {
     const SEED: u64 = 0x000C_0FFE_ED15_EA5E;
