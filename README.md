@@ -90,6 +90,14 @@ strong ones worth trusting.
 **Who it's for:** traders whose strategies get copied, whales who get front-run, market
 makers, DAOs, and anyone who refuses to be an open book on-chain.
 
+### Watch riverrun ID from the terminal
+
+<img src="scripts/demo_id.svg" alt="riverrun id: one secret, a different unlinkable identity per context, and the erosion ruler that says when to rotate" width="820">
+
+*One secret, two contexts, two identities nobody can link back to you. Then the erosion
+ruler says when to rotate. Offline, no RPC: `riverrun id new`, `id show <secret> <context>`,
+`id erosion`.*
+
 ---
 
 *Everything from here down is the **technical story**, for developers and bounty
