@@ -14,7 +14,7 @@
 
 [![Rust](https://img.shields.io/badge/Rust-end%20to%20end-000000?logo=rust)](https://www.rust-lang.org)
 [![Solana](https://img.shields.io/badge/Solana-SBF%20program-14F195?logo=solana&logoColor=black)](https://solana.com/privacy)
-[![tests](https://img.shields.io/badge/tests-130%2B%20green-4c1)](#workspace)
+[![tests](https://img.shields.io/badge/tests-150%2B%20green-4c1)](#workspace)
 [![CLI](https://img.shields.io/badge/CLI-preflight%20%C2%B7%20audit%20%C2%B7%20--json-14F195)](#run-it)
 [![post-quantum](https://img.shields.io/badge/STARK-post--quantum%2C%20no%20setup-8A2BE2)](#innovations-and-why-they-matter)
 [![license](https://img.shields.io/badge/license-MIT-blue)](#license)
@@ -469,6 +469,32 @@ mainnet-cheap M31 port is the [same migration](#innovations-and-why-they-matter)
 "zero knowledge" means the witness stays off the wire — Winterfell is not *formally*
 ZK. The rare, real edge is the **combination, post-quantum, tested**. Nothing overstated.
 
+### The ruler, extended to identity — measuring erosion under repeated use
+
+A study of the anonymity literature ([`docs/RIVERRUN_ID_THEORY.md`](docs/RIVERRUN_ID_THEORY.md))
+places riverrun ID precisely, and turns up one claim to make *stronger* and one weakness
+to state. Stronger: the deployed pseudonym standard (BBS per-verifier) is unlinkable
+only *computationally* — retroactively breakable by a quantum adversary, which its own
+literature flags as the open requirement. riverrun ID's `shape`/`fit` are hashes, so
+their unlinkability is **everlasting**: not merely post-quantum, but unrecoverable from
+today's transcript by any future machine.
+
+The weakness is deeper, and it is our own ruler's. `effective-k` scores a *single*
+action; a riverrun-ID identity is one secret used *repeatedly*, and Danezis (co-author
+of the metric) warned that single-shot entropy is "very poor" at repeated use. The
+reason is concrete: cryptographic unlinkability hides the pseudonym, but the funding
+**origin is a persistent quasi-identifier** that recurs under every use, so an adversary
+links a user's contexts by origin and **intersects** the candidate sets. We define and
+**measure** that erosion — `repeated_use_effective_k` in `riverrun-trace` (6 tests) —
+as the running intersection of a persistent identity's candidate sets, with a
+differential-privacy budget. The number decays as `k_eff⁽ⁿ⁾ = |U|·2^(−Σεᵢ)`, and the
+closure is that **the metric fires a power riverrun already has**: when the budget is
+spent, `turn` to a fresh secret. Measure, then defend — now on identity. The honest
+edge, stated in [`docs/REPEATED_USE_ANONYMITY.md`](docs/REPEATED_USE_ANONYMITY.md): `turn`
+resets the secret, not your provenance, so rotation must compose with re-funding from a
+common origin. An anonymous identity that measures its own erosion and rotates before it
+is named.
+
 ## The privacy is proven by adversaries in this repo
 
 The discipline: **build the attacker; the defense is its dual.** You cannot
@@ -593,7 +619,7 @@ programs/mirror-pool/Cargo.toml --example devnet_demo`.
 |---|---|---|
 | `riverrun-core` | the post-quantum primitives, the membership *relation*, and the **rotatable-piece identity suite** (shape/fit/turn/link/grant/rln/credential — the 7 powers of riverrun ID) | 44 tests |
 | `riverrun-eval` | adversarial harness for the behavioral channel — clustering attacker → chance | 4 tests + exhibit |
-| `riverrun-trace` | the `provenance-tracer`: backward funding-graph adversary + circularity defense + live-mainnet adapter | 7 tests + 2 exhibits |
+| `riverrun-trace` | the `provenance-tracer`: backward funding-graph adversary + circularity defense + live-mainnet adapter + the repeated-use erosion ruler | 37 tests + 2 exhibits |
 | `programs/mirror-pool` | the on-chain Solana program: commitment accumulator, per-round nullifier registry (PDA-per-nullifier anti-replay), published root, verifier-attested settlement, entry fee + anonymity-set floor | builds to `.so`; 21 e2e tests green (10 committee-of-one + 5 M-of-N quorum + 2 vault payout + 4 STARK-verified path); **the current committee code is deployed and exercised live on devnet** (full commit + relayer-execute lifecycle, [signatures](#the-action-made-real--money-moves-the-actor-does-not)) |
 | `crates/riverrun-stark` | the post-quantum, transparent **STARK proving the whole relation** — membership, nullifier and action in one proof (Rescue-Prime + FRI, no trusted setup) — plus the ricorso primitives and relation | 23 tests green (excluded — pulls Winterfell) |
 | `crates/riverrun-pool-zk` | **the** pool: commit → execute → settle driven by the STARK. `Execution` carries an opaque proof + public data only, never the secret | 7 tests + demo (excluded — pulls Winterfell) |
@@ -631,7 +657,7 @@ cargo test --manifest-path crates/riverrun-stark/Cargo.toml                # STA
 cargo test --manifest-path crates/riverrun-pool-zk/Cargo.toml              # the pool driven by the STARK
 ```
 
-**130+ tests green** across the workspace (riverrun-core alone: 44, incl. the 7-power identity suite; STARK incl. the rotation-in-ZK proof).
+**150+ tests green** across the workspace (riverrun-core alone: 44, incl. the 7-power identity suite; STARK incl. the rotation-in-ZK proof).
 
 ## Security status & honest limitations
 
