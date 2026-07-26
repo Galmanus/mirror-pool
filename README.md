@@ -8,7 +8,7 @@
   ▀▀       ▀▀▀▀▀▀▀▀     ▀▀       ▀▀▀▀▀    ▀▀        ▀▀        ▀▀▀▀ ▀▀  ▀▀    ▀▀
 ```
 
-> Built for the **`mirror-pool`** bounty — *Privacy-Through-Noise tooling for
+> Built for the **`mirror-pool`** bounty, *Privacy-Through-Noise tooling for
 > Solana*. *riverrun* is the first word of Joyce's *Finnegans Wake*, the river that
 > flows in a circle back to its own beginning: a funding trail with no origin to trace.
 
@@ -19,20 +19,20 @@
 [![post-quantum](https://img.shields.io/badge/STARK-post--quantum%2C%20no%20setup-8A2BE2)](#innovations-and-why-they-matter)
 [![license](https://img.shields.io/badge/license-MIT-blue)](#license)
 
-**riverrun gives you real privacy on a blockchain — and, unlike anything else, it
+**riverrun gives you real privacy on a blockchain, and, unlike anything else, it
 tells you exactly how private you actually are.**
 
 ## In plain words
 
 A blockchain is a **wall of glass**. Everything you do with money on it stays there,
-on display, forever — and outside the glass there are people with their faces pressed
+on display, forever, and outside the glass there are people with their faces pressed
 against it, writing down your every move, to learn who you are and guess what you'll
 do next.
 
 riverrun closes the curtain. It does **two things**.
 
 **1. It counts the crowd for real.** Every privacy tool promises *"here you disappear
-into a crowd."* riverrun is the one that checks whether that's true — and sometimes
+into a crowd."* riverrun is the one that checks whether that's true, and sometimes
 finds the "crowd" is just you, alone. A pool tells you *"hidden among 30."* But that
 counts heads and ignores one public fact: **where each person's money came from.** Sort
 by that, and your crowd of 30 can collapse to a crowd of **1**.
@@ -42,16 +42,16 @@ flowchart LR
     P["The pool says:<br/><b>hidden among 30</b>"] --> S{"Group everyone by<br/>where their money<br/>came from (public!)"}
     S --> G1["funded from<br/>exchange A<br/><b>18 people</b>"]
     S --> G2["funded from<br/>exchange B<br/><b>6 people</b>"]
-    S --> G3["you — a source<br/>no one else shares<br/><b>1 person</b>"]
+    S --> G3["you, a source<br/>no one else shares<br/><b>1 person</b>"]
     G3 --> R["Your REAL crowd = <b>1</b><br/>advertised 30, effective ~6.5"]
 ```
 
-*On a live Solana pool, an advertised crowd of **30** was really **6.5** — and one
+*On a live Solana pool, an advertised crowd of **30** was really **6.5**, and one
 depositor was completely **alone**. It doesn't promise privacy; it measures it. This
 part runs on mainnet today.*
 
 **2. It gives you a different face at every door.** With **one key**, you become a
-different person on every site — and no one can piece them back together into you —
+different person on every site, and no one can piece them back together into you, 
 while each site can still enforce *"one person, one vote."* You stay invisible without
 becoming a ghost who acts a thousand times. Think of a puzzle piece only you can turn:
 each angle is a different, unlinkable disguise of you.
@@ -69,18 +69,18 @@ flowchart TD
     D3 --> A3["one action"]
 ```
 
-*This is **riverrun ID** — one secret, seven unlinkable powers ([`docs/RIVERRUN_ID.md`](docs/RIVERRUN_ID.md)).*
+*This is **riverrun ID**, one secret, seven unlinkable powers ([`docs/RIVERRUN_ID.md`](docs/RIVERRUN_ID.md)).*
 
 And it's built to **last**: even years from now, when a computer powerful enough to
-break today's cryptography exists, what's yours stays yours — riverrun's locks are
+break today's cryptography exists, what's yours stays yours, riverrun's locks are
 hashes, which that machine cannot open. (A blockchain keeps everything forever, so an
 attacker can copy your data today to crack it later; here there is nothing to crack.)
 
-> **In one line: privacy you don't have to trust — you can measure it.**
+> **In one line: privacy you don't have to trust, you can measure it.**
 
 **Where it honestly stands.** The **measurement tool** is finished and **runs on
 mainnet today**. The **identity/privacy layer** is **built and tested** (its proof
-verifies in a local Solana VM), but **not yet on mainnet and not audited** — don't
+verifies in a local Solana VM), but **not yet on mainnet and not audited**, don't
 guard real funds or identities with it yet. Every strong claim below is paired with
 its honest edge; that pairing is what makes the strong ones trustworthy.
 
@@ -89,7 +89,7 @@ DAOs, and anyone who refuses to be an open book on-chain.
 
 ---
 
-*Everything from here down is the **technical story** — for developers and bounty
+*Everything from here down is the **technical story**, for developers and bounty
 judges: the numbers, the proofs, the on-chain measurements, and the honest limits.*
 
 ## Innovations, and why they matter
@@ -131,8 +131,8 @@ flowchart TD
     H --> SHOR{"<b>Shor's algorithm</b><br/>breaks discrete-log and factoring"}
     H --> GROV{"<b>Grover's algorithm</b><br/>speeds up brute force"}
 
-    SHOR --> S1["curve-based privacy<br/>(Groth16/BN254, ElGamal)<br/>keys recovered — <b>cracked ✗</b>"]
-    SHOR --> S2["riverrun: no curve anywhere<br/>on chain — <b>nothing for Shor<br/>to attack ✓</b>"]
+    SHOR --> S1["curve-based privacy<br/>(Groth16/BN254, ElGamal)<br/>keys recovered, <b>cracked ✗</b>"]
+    SHOR --> S2["riverrun: no curve anywhere<br/>on chain, <b>nothing for Shor<br/>to attack ✓</b>"]
 
     GROV --> G1["halves a hash's security:<br/>256-bit → 128-bit effective<br/><b>parameters already absorb it ✓</b>"]
 
@@ -155,7 +155,7 @@ flowchart TD
 > 128-bit parameters already absorb. riverrun shares that quantum-resistance
 > rationale, not NIST's specific KEM/signature algorithms (ML-KEM, ML-DSA).
 
-### Why a tool like this must be post-quantum in 2026 — not *may*, *must*
+### Why a tool like this must be post-quantum in 2026, not *may*, *must*
 
 The argument is not "quantum computers are scary." It is an inequality, due to Michele
 Mosca. Let **X** be how long your secret must stay secret, **Y** the time to migrate a
@@ -165,23 +165,23 @@ arrives before your protection does, and everything recorded in the meantime is
 decrypted retroactively.
 
 Now put a *blockchain anonymity set* into that inequality. The ledger is permanent and
-public — the link between you and your action, if it survives at all, survives
+public, the link between you and your action, if it survives at all, survives
 **forever**, so **X = ∞.** No finite Y or Z can satisfy the inequality. For a privacy
 tool whose data lives on a permanent public ledger, **X + Y > Z is not a risk to
-manage, it is a certainty** — unless the primitive is *already* quantum-safe the moment
+manage, it is a certainty**, unless the primitive is *already* quantum-safe the moment
 it is written. That is *harvest-now-decrypt-later* made exact: an adversary needs no
 quantum computer today, only a copy of the chain (free, trivial); the day the hardware
 exists, every curve-based guarantee ever written to that chain fails **at once**,
 including the ones written in 2026.
 
-*Disanalogy, stated.* For **ephemeral** secrets — a TLS session key, a monthly-rotated
-password — X is small, and a non-post-quantum scheme is defensible for a few more
+*Disanalogy, stated.* For **ephemeral** secrets, a TLS session key, a monthly-rotated
+password, X is small, and a non-post-quantum scheme is defensible for a few more
 years. That is exactly the reasoning that does **not** transfer here: on-chain
 anonymity has no expiry, so the comfort ephemeral data enjoys does not apply.
 
 The standards bodies already acted on this for data *far less permanent* than a ledger:
 NIST finalized its post-quantum standards (FIPS 203/204/205) in **August 2024**, and US
-federal policy (NSM-10, OMB M-23-02) mandates migration on a fixed timeline — for email
+federal policy (NSM-10, OMB M-23-02) mandates migration on a fixed timeline, for email
 and web traffic. A permanent, public, financial-behavior ledger carries a stronger
 obligation than either. And meeting it costs riverrun **nothing extra**: the design is
 hash-based from the first line, so post-quantum is not a feature bolted on, it is a
@@ -215,7 +215,7 @@ already knows will expire.**
   public input, at the same fidelity murkl's reference AIR uses). That deeper
   arithmetization is specified in [`docs/M31_CIRCLE_STARK.md`](docs/M31_CIRCLE_STARK.md)
   and is being built milestone by milestone.
-- *In-circuit membership, milestone 1 of 4 — done and honest:* the hash foundation is
+- *In-circuit membership, milestone 1 of 4, done and honest:* the hash foundation is
   real, not hand-rolled. A **vetted Poseidon2 over Mersenne-31** (Plonky3's
   `p3-mersenne-31`, canonical parameters `RF=8, RP=14, α=5`, no invented constants)
   runs on the laptop; a real Poseidon2 **Merkle tree** is built and a membership
@@ -257,14 +257,14 @@ cargo install --git https://github.com/solanabr/mirror-pool \
 
 ### Run it
 
-The simplest question, *"am I exposed?"* — one command, one argument, your wallet:
+The simplest question, *"am I exposed?"*, one command, one argument, your wallet:
 
 ```console
 $ riverrun preflight <YOUR_WALLET>
 ```
 
 It samples the pool, traces your funding graph against it, and answers in plain
-words: **EXPOSED**, **WEAK**, or **OK** — with what to do about it. To score a whole
+words: **EXPOSED**, **WEAK**, or **OK**, with what to do about it. To score a whole
 pool instead of one wallet:
 
 ```console
@@ -281,7 +281,7 @@ A set advertising 30 delivers an effective 6.5, and one member is alone in their
 provenance class (`severity: critical` fires whenever any member is fully exposed).
 Method and the arithmetic behind the number: [`docs/EFFECTIVE_K.md`](docs/EFFECTIVE_K.md).
 
-Machine-readable, for pipelines and CI — and it reports its **own reliability**, so
+Machine-readable, for pipelines and CI, and it reports its **own reliability**, so
 a rate-limited or unreachable RPC can never be mistaken for a clean "private"
 result. A real run just now, over the public mainnet-beta endpoint (verbatim, `jq`
 selecting fields):
@@ -304,7 +304,7 @@ result **partial** rather than silently reporting a smaller number as fact. Poin
 `$SOLANA_RPC` at a paid endpoint for a clean, complete run.
 
 The lighter single-wallet trace *does* fit inside the public endpoint's budget, and
-when it does the result comes back clean — a real run just now, verbatim:
+when it does the result comes back clean, a real run just now, verbatim:
 
 ```console
 $ riverrun trace 9fhQBbumKEFuXtMBDw8AaQyAjCorLGJQiS3skWZdQyQD --json \
@@ -319,7 +319,7 @@ $ riverrun trace 9fhQBbumKEFuXtMBDw8AaQyAjCorLGJQiS3skWZdQyQD --json \
 }
 ```
 
-`reliable: true`, `rpc_failures: 0` — a clean, live read against mainnet-beta. Same
+`reliable: true`, `rpc_failures: 0`, a clean, live read against mainnet-beta. Same
 tool, same honesty flag: it tells you when the number is trustworthy and when it is
 not. The ruler runs on mainnet today.
 
@@ -328,59 +328,59 @@ not. The ruler runs on mainnet today.
 | `preflight <wallet> [pool]` | the anonymity **you** would get in a pool, before you deposit |
 | `audit <pool>` | a live pool's effective k vs the k it advertises, with a severity |
 | `trace <wallet>` | one wallet's funding provenance, hop by hop |
-| `exhibit` | the metric on riverrun's own constructions — offline, deterministic |
+| `exhibit` | the metric on riverrun's own constructions, offline, deterministic |
 
-Global flags: `--json` (machine-readable on stdout, progress on stderr — `| jq` is
+Global flags: `--json` (machine-readable on stdout, progress on stderr, `| jq` is
 clean), `--version`. Exit codes: `0` ok, `1` no data (RPC unreachable **or** empty
-pool — a network failure never reads as "private"), `2` bad usage or address.
+pool, a network failure never reads as "private"), `2` bad usage or address.
 Endpoint is `$SOLANA_RPC`, else mainnet-beta. Every live result is a **floor**:
 a bounded, SOL-only trace, so "OK" means "no cheap attribution found", never
 "anonymous".
 
-**Two maturity levels, kept honest — and this is the whole story of the repo.**
+**Two maturity levels, kept honest, and this is the whole story of the repo.**
 The **measurement tooling** (`preflight` / `audit` / `trace` / `exhibit`) is
 finished, machine-readable, and runs today against mainnet. *That is the
-deliverable.* Behind it is a **research** pool — a post-quantum STARK that severs
-the actor↔action link — that is implemented and tested but hand-rolled and
+deliverable.* Behind it is a **research** pool, a post-quantum STARK that severs
+the actor↔action link, that is implemented and tested but hand-rolled and
 unaudited: a prototype, not for production, and marked as such wherever it appears.
 Collapsing the two would be dishonest in both directions, so the repo never does.
-Everything is Rust, MIT, **107 tests green**. See all of it in one command —
-`./demo.sh` — or read the **[whitepaper (PDF)](paper/riverrun.pdf)**.
+Everything is Rust, MIT, **107 tests green**. See all of it in one command, 
+`./demo.sh`, or read the **[whitepaper (PDF)](paper/riverrun.pdf)**.
 
 ---
 
-## Why "riverrun" — and what the book gave us
+## Why "riverrun", and what the book gave us
 
 *Finnegans Wake* (James Joyce, 1939) is a novel with **no beginning**. Its last
-sentence breaks off mid-phrase — *"a way a lone a last a loved a long the"* — and
+sentence breaks off mid-phrase, *"a way a lone a last a loved a long the"*, and
 runs straight into its first word, *"riverrun."* The book is a circle. It is written
 in a dream-language where every word carries many meanings at once, and it runs on
-Giambattista Vico's idea that history moves in cycles that return to their start —
+Giambattista Vico's idea that history moves in cycles that return to their start, 
 the pun *"a commodius vicus of recirculation"* hides Vico's name. Its river, Anna
 Livia, flows to the sea and comes back as rain.
 
 That is not decoration here. Three of the book's ideas are load-bearing:
 
-- **A circle has no beginning.** The book's core structural fact — no origin, no
-  source — is exactly the defense against the funding-graph attack. A funding trail
+- **A circle has no beginning.** The book's core structural fact, no origin, no
+  source, is exactly the defense against the funding-graph attack. A funding trail
   that loops back on itself has no origin to trace, so an adversary who walks it
   backward never reaches an attributable start. The same 2000 members are worth
-  **500** with an origin and **2000** without one — measured in
+  **500** with an origin and **2000** without one, measured in
   [the ruler](#innovations-and-why-they-matter).
-- **The *ricorso* — the return that begins again.** Vico's fourth age restarts the
+- **The *ricorso*, the return that begins again.** Vico's fourth age restarts the
   cycle. riverrun borrows it to let the anonymity set be **reborn** each cycle, so a
   member's history stops accumulating and no one is linked across epochs
   (whitepaper §5).
-- **Irreducible polysemy.** In the book, a word doesn't hide its "real" meaning — it
+- **Irreducible polysemy.** In the book, a word doesn't hide its "real" meaning, it
   *has* no single one; every reading is valid, none privileged. That is the
   **ambiguous-origin** construction: the funding trail reaches *many* origins, none
   privileged, so "which is the real one" is **undefined**, not hidden. We measure
   **2.90 bits** of doubt about which, at full effective-k. And it is the *robust*
   version: "no origin" (the circle above) is an idealization that, the moment one
-  funding source is a known exchange, degrades exactly to this — ambiguity is where
+  funding source is a known exchange, degrades exactly to this, ambiguity is where
   the defense actually lives.
 - **Here Comes Everybody.** The book's protagonist, HCE, is at once one man and
-  everyone — an identity that dissolves into the crowd. That is the anonymity set:
+  everyone, an identity that dissolves into the crowd. That is the anonymity set:
   you act as *everybody*, and which one you are is undecidable.
   *(Disanalogy: HCE is a single dream-figure who is everyone; here there are many
   real members, and the cryptography makes which one acted genuinely undefined, not
@@ -394,24 +394,24 @@ The flow mirrors Tornado, but the payload is a **behavior**, not a fund transfer
 
 1. **Commit** (the "deposit"). A member publishes `C = H(secret ‖ action)` into
    the pool's Merkle set. This registers *"some member of this set intends action
-   A"* — without revealing who.
+   A"*, without revealing who.
 2. **Execute** (the "withdrawal" / *saque*). Later, ideally in a synchronized
    round of identical actions, action `A` is performed from a fresh identity with
    a zero-knowledge proof: *"I know a `secret` whose commitment `H(secret‖A)` is
    in the set, and my nullifier this round is `n`."* The action is public; the
    author is not.
 3. **Settle.** The pool verifies the proof, checks the nullifier is fresh (one
-   execution per member per round — anti-replay), spends it, and releases the
+   execution per member per round, anti-replay), spends it, and releases the
    action. The public transcript is `{root, action, nullifier}` with no link back
    to a commitment.
 
-Run it — `cargo run --manifest-path crates/riverrun-pool-zk/Cargo.toml --example behavior_pool --release`:
+Run it, `cargo run --manifest-path crates/riverrun-pool-zk/Cargo.toml --example behavior_pool --release`:
 
 ```
 committed members : 4
 set root          : 25c8d68dde1c377d…
 
-synchronized round — public transcript the observer sees:
+synchronized round, public transcript the observer sees:
 #     action (public)       nullifier           proof
 ------------------------------------------------------------------
 1     5741524448544957…     f581d90d496307d1…   12503 B
@@ -429,33 +429,33 @@ Both guards are enforced by the proof, not by a field comparison: the leaf is
 makes the STARK fail to verify.
 
 Same action, distinct nullifiers, one root. The nullifier is `Rescue(secret‖round)`
-— unlinkable to any commitment. Grow the set to `k` and the actor↔action link is
+, unlinkable to any commitment. Grow the set to `k` and the actor↔action link is
 `1/k`, by construction. (`crates/riverrun-pool-zk/src/lib.rs`)
 
-## riverrun ID — one secret, seven powers (the puzzle piece)
+## riverrun ID, one secret, seven powers (the puzzle piece)
 
 Picture a puzzle piece only you can turn; each angle is a different, unlinkable
 disguise of you. A single `Secret` is the piece, and any public **context** `θ` (a
 dApp, a DAO, an airdrop, a vote) derives a full identity there. From that one secret,
-`Secret::piece()` gives **seven powers** — each a tested relation in `crates/riverrun-core`
+`Secret::piece()` gives **seven powers**, each a tested relation in `crates/riverrun-core`
 (`rotatable.rs`, `rln.rs`), each provable in zero knowledge over the same STARK:
 
 | power | what you can do | test |
 |---|---|---|
 | **shape** | be a different, unlinkable identity in every context | `unlinkable_across_angles` |
-| **fit** | act once per context — sybil-resistant | `binding_within_an_angle` |
+| **fit** | act once per context, sybil-resistant | `binding_within_an_angle` |
 | **turn** | prove you're the same across cycles in ZK, revealing *which* to no one | `check_turn` + `tests/rotation.rs` |
-| **link** | reveal that two of your identities are one — to whom *you* choose | `check_link` |
+| **link** | reveal that two of your identities are one, to whom *you* choose | `check_link` |
 | **grant** | delegate one context to an agent, scoped and bound to that agent | `check_delegation` |
 | **rln** | rate-limit yourself; the `N+1`-th action unmasks you (Shamir) | `rln::*` |
 | **credential** | show an issuer's attribute per context, without doxxing | `check_attribute` |
 
 **48 tests green.** You are invisible by default, accountable where it matters,
-linkable only on your terms, delegable, rate-limited, credential-bearing — one secret,
+linkable only on your terms, delegable, rate-limited, credential-bearing, one secret,
 total control of your own exposure. Solana has no Semaphore; this is a post-quantum
 one. Full spec: [`docs/RIVERRUN_ID.md`](docs/RIVERRUN_ID.md).
 
-The **turn** is the heart of it — the *ricorso* Joyce's Vico gave us, the set reborn
+The **turn** is the heart of it, the *ricorso* Joyce's Vico gave us, the set reborn
 each cycle. The holder proves *"I rotated the same piece that was a member of the
 previous set"* revealing only `{prev_root, turn_tag, angle}`, spending the tag once so
 one piece cannot fork into many seats. It is **proven in zero knowledge**, its
@@ -463,18 +463,18 @@ negatives rejected, in `crates/riverrun-stark/tests/rotation.rs` (a forged tag, 
 tag from another angle, both fail).
 
 *Honest, same caveats as every proof here:* the seven are hash- and field-based
-relations — the Semaphore / RLN / anonymous-credential family, **synthesis, not new
+relations, the Semaphore / RLN / anonymous-credential family, **synthesis, not new
 crypto**. Each is ZK-provable over the STARK, which today is the f128 Rescue one (the
 mainnet-cheap M31 port is the [same migration](#innovations-and-why-they-matter)), and
-"zero knowledge" means the witness stays off the wire — Winterfell is not *formally*
+"zero knowledge" means the witness stays off the wire, Winterfell is not *formally*
 ZK. The rare, real edge is the **combination, post-quantum, tested**. Nothing overstated.
 
-### The ruler, extended to identity — measuring erosion under repeated use
+### The ruler, extended to identity, measuring erosion under repeated use
 
 A study of the anonymity literature ([`docs/RIVERRUN_ID_THEORY.md`](docs/RIVERRUN_ID_THEORY.md))
 places riverrun ID precisely, and turns up one claim to make *stronger* and one weakness
 to state. Stronger: the deployed pseudonym standard (BBS per-verifier) is unlinkable
-only *computationally* — retroactively breakable by a quantum adversary, which its own
+only *computationally*, retroactively breakable by a quantum adversary, which its own
 literature flags as the open requirement. riverrun ID's `shape`/`fit` are hashes, so
 their unlinkability is **everlasting**: not merely post-quantum, but unrecoverable from
 today's transcript by any future machine.
@@ -485,11 +485,11 @@ of the metric) warned that single-shot entropy is "very poor" at repeated use. T
 reason is concrete: cryptographic unlinkability hides the pseudonym, but the funding
 **origin is a persistent quasi-identifier** that recurs under every use, so an adversary
 links a user's contexts by origin and **intersects** the candidate sets. We define and
-**measure** that erosion — `repeated_use_effective_k` in `riverrun-trace` (6 tests) —
+**measure** that erosion, `repeated_use_effective_k` in `riverrun-trace` (6 tests), 
 as the running intersection of a persistent identity's candidate sets, with a
 differential-privacy budget. The number decays as `k_eff⁽ⁿ⁾ = |U|·2^(−Σεᵢ)`, and the
 closure is that **the metric fires a power riverrun already has**: when the budget is
-spent, `turn` to a fresh secret. Measure, then defend — now on identity. The honest
+spent, `turn` to a fresh secret. Measure, then defend, now on identity. The honest
 edge, stated in [`docs/REPEATED_USE_ANONYMITY.md`](docs/REPEATED_USE_ANONYMITY.md): `turn`
 resets the secret, not your provenance, so rotation must compose with re-funding from a
 common origin. An anonymous identity that measures its own erosion and rotates before it
@@ -501,19 +501,19 @@ The discipline: **build the attacker; the defense is its dual.** You cannot
 credibly claim privacy against an attack you never ran.
 
 - **Behavioral channel** (`cargo run -p riverrun-eval`). A clustering attacker that
-  fingerprints wallets by co-buy timing and position sizing — the real Solana
+  fingerprints wallets by co-buy timing and position sizing, the real Solana
   signal. Against a synchronized round of identical actions it collapses to
   chance: **12.5% attribution at k=8, 1.5% at k=64** (= `1/k`). Same attacker,
   same population; the only difference is the pool.
 
 - **Provenance channel** (`riverrun exhibit`). The leak every noise tool
   leaves open: trace a wallet's funding *backward* and reach an attributable
-  origin. The `provenance-tracer` measures it, and — proven on **live mainnet** —
+  origin. The `provenance-tracer` measures it, and, proven on **live mainnet**, 
   a shallow, SOL-only walk names an origin for a real user wallet in **two hops**.
   The repo also ships the *defense*: a cyclic-provenance construction that drives
   the tracer's root-hit rate to 0 (or dissolves *which* origin across many, 2.9
   bits of ambiguity). This axis is hard for every noise-based design, riverrun
-  included — the contribution here is measuring it rather than assuming it away,
+  included, the contribution here is measuring it rather than assuming it away,
   and the same ruler now runs against **live pools**, not only this repo's
   constructions. See [Innovations](#innovations-and-why-they-matter).
 
@@ -528,14 +528,14 @@ credibly claim privacy against an attack you never ran.
 | 16,384 | 19,064 B | **8.1 ms** | 0.43 ms | **0 bytes** |
 
 An anonymity set of **16,384 members** proves in **8 milliseconds**. Proof size
-grows logarithmically — 4096× the members costs 1.6× the proof.
+grows logarithmically, 4096× the members costs 1.6× the proof.
 
 The column that decides whether this is deployable is the last one. A
 pairing-based system needs a proving key produced by a ceremony and shipped to
 every client; for a Merkle circuit of this depth that is tens of megabytes of
 setup which must exist, be trusted, and be distributed before anyone can prove
-anything. riverrun's prover is the code. For the audience the brief names —
-agents, market makers, ordinary users proving before each action — that is the
+anything. riverrun's prover is the code. For the audience the brief names, 
+agents, market makers, ordinary users proving before each action, that is the
 difference between a tool that ships and one that needs an install.
 
 The honest other side: 12–19 KB does not fit in a 1,232-byte Solana transaction,
@@ -554,11 +554,11 @@ for.
 | **Circle STARK** ([murkl](https://github.com/exidz/murkl)) | transfers, in anonymous pools | yes, ~31k CU, ~8.7 KB proof | no | yes |
 | **MPC / FHE** ([Arcium](https://www.arcium.com/), Umbra) | shared encrypted state, balances, amounts | via the MXE network | no | depends on the primitive |
 | **Confidential Transfers** (Token-2022) | amounts and balances | native, protocol level | no | no (ElGamal) |
-| **riverrun** | the **actor↔action link** — who did it, not what or how much | **in the Solana VM: yes** — an M31 proof of riverrun's relation verifies at **~160k CU** (post-quantum, action-bound); not yet on mainnet, committee is today's fallback | no | yes (hash-based) |
+| **riverrun** | the **actor↔action link**, who did it, not what or how much | **in the Solana VM: yes**, an M31 proof of riverrun's relation verifies at **~160k CU** (post-quantum, action-bound); not yet on mainnet, committee is today's fallback | no | yes (hash-based) |
 
 Efficiency cuts both ways and it is worth being exact about which way. On
 **verification compute**, a small-field STARK is the cheapest thing on this list:
-murkl verifies at ~31k CU, against ~250k CU for a Groth16 verifier — 8× cheaper,
+murkl verifies at ~31k CU, against ~250k CU for a Groth16 verifier, 8× cheaper,
 post-quantum, and with no ceremony. On **proof size**, Groth16's 256 bytes beats
 every STARK here by two orders of magnitude, and that is what buys it a
 single-transaction verification path. On **prover cost and setup**, riverrun wins
@@ -567,48 +567,48 @@ outright: 8 ms for a 16,384-member set and nothing to distribute.
 Read the last row honestly. riverrun is the only one whose payload is *behaviour*
 rather than value, which is what the `mirror-pool` brief asks for, and it needs no
 ceremony. Until recently it was also the only one that did **not** verify its proof
-on-chain — that gap is now closing. A post-quantum **M31 Circle-STARK proof of
+on-chain, that gap is now closing. A post-quantum **M31 Circle-STARK proof of
 riverrun's relation, with action binding, verifies inside the Solana VM at ~160k CU**
 (the same class of verifier as murkl, extended with riverrun's constraint), and the
 program already consumes it committee-free through `execute_verified`. Stated exactly
 so it can be checked: this is measured in a local VM, not deployed to mainnet, and
 the membership is bound as a public input rather than proven by a full in-circuit
-Poseidon2 Merkle path (that hash foundation is built — Plonky3's vetted parameters —
+Poseidon2 Merkle path (that hash foundation is built, Plonky3's vetted parameters, 
 and its arithmetization is the open milestone). The committee is the current on-chain
 fallback, not the destination.
 
 The comparison that matters most is with the Circle STARK work: it demonstrates
 that transparent, post-quantum, on-chain verification is *available today* on Solana
 at ~31k CU. riverrun now proves its **own** relation on that same class of verifier
-— the remaining distance to "no asterisk" is a mainnet deployment and the in-circuit
+, the remaining distance to "no asterisk" is a mainnet deployment and the in-circuit
 membership, not a change of cryptographic scheme.
 
-## The action, made real — money moves, the actor does not
+## The action, made real, money moves, the actor does not
 
 The cloak is not a settlement stub: on `execute`, the program moves a **fixed
 denomination** of real value from a **shared vault** to a recipient the member
-committed to — the vault PDA signs the transfer, so **no member's key touches the
+committed to, the vault PDA signs the transfer, so **no member's key touches the
 action**, and the amount is identical for every execution, so the value leaving the
 pool reveals nothing about *which* member acted. The recipient is bound into the
 committee's attestation, so a relayer **cannot redirect** it (proven by test:
-`a_relayer_cannot_redirect_the_payout`). Amounts stay public by design — riverrun
+`a_relayer_cannot_redirect_the_payout`). Amounts stay public by design, riverrun
 hides *who*, not *how much*.
 
 **Proven live on devnet, on the current CPI + M-of-N committee code** (program
 `BFy2ehVxpBrtwMCWwufpfbbsoWtZVYVaZBzDE2eAG7az`, pool
-`ECMvkQSiQS6ko2kHhyDV5tCi2o9MViy5pqsdfNWpu3fX`). Four distinct roles — authority,
-verifier, member, relayer — kept separate on purpose, because the claim *is* who
+`ECMvkQSiQS6ko2kHhyDV5tCi2o9MViy5pqsdfNWpu3fX`). Four distinct roles, authority,
+verifier, member, relayer, kept separate on purpose, because the claim *is* who
 signs what:
 
 | step | signed by | on-chain effect | signature |
 |---|---|---|---|
 | `commit` | the **member** | joins the crowd | [`bcjJUbwY…`](https://explorer.solana.com/tx/bcjJUbwY4PGTAwazba6Btp2STnYRDaN1z2kcMcZbiYngGcmB2rvK35ZmsdWeyvKCnKL7qfah3nzR5eABTWUT9ei?cluster=devnet) |
 | **`execute`** | the **relayer alone** | **0.001 SOL vault → recipient** (member's key absent) | [`5rmZVsgZ…`](https://explorer.solana.com/tx/5rmZVsgZPUD8MxZTxRuJWK2A94jBUWD6bD7F27FHE52VGoFKviM1Yz8qcVaGf2TomVNptUhci6LJ8xp7DHWY7qdT?cluster=devnet) |
-| `execute` (double-spend) | rejected on-chain | nullifier anti-replay | — |
+| `execute` (double-spend) | rejected on-chain | nullifier anti-replay |, |
 
 Recipient `FkoPZwk4…` went **0 → 1,000,000 lamports** on that `execute`, whose only
 signer is the relayer. Open it and check: the member signed `commit` and **nothing
-else** — real value moved, and the actor is nowhere in the transaction that moved it.
+else**, real value moved, and the actor is nowhere in the transaction that moved it.
 The nullifier + event footprint keeps a private action on the order of **$0.0002**
 plus the denomination itself. Reproduce: `cargo run --manifest-path
 programs/mirror-pool/Cargo.toml --example devnet_demo`.
@@ -617,12 +617,12 @@ programs/mirror-pool/Cargo.toml --example devnet_demo`.
 
 | crate | what it is | status |
 |---|---|---|
-| `riverrun-core` | the post-quantum primitives, the membership *relation*, and the **rotatable-piece identity suite** (shape/fit/turn/link/grant/rln/credential — the 7 powers of riverrun ID) | 48 tests |
-| `riverrun-eval` | adversarial harness for the behavioral channel — clustering attacker → chance | 4 tests + exhibit |
+| `riverrun-core` | the post-quantum primitives, the membership *relation*, and the **rotatable-piece identity suite** (shape/fit/turn/link/grant/rln/credential, the 7 powers of riverrun ID) | 48 tests |
+| `riverrun-eval` | adversarial harness for the behavioral channel, clustering attacker → chance | 4 tests + exhibit |
 | `riverrun-trace` | the `provenance-tracer`: backward funding-graph adversary + circularity defense + live-mainnet adapter + the repeated-use erosion ruler | 37 tests + 2 exhibits |
 | `programs/mirror-pool` | the on-chain Solana program: commitment accumulator, per-round nullifier registry (PDA-per-nullifier anti-replay), published root, verifier-attested settlement, entry fee + anonymity-set floor | builds to `.so`; 21 e2e tests green (10 committee-of-one + 5 M-of-N quorum + 2 vault payout + 4 STARK-verified path); **the current committee code is deployed and exercised live on devnet** (full commit + relayer-execute lifecycle, [signatures](#the-action-made-real--money-moves-the-actor-does-not)) |
-| `crates/riverrun-stark` | the post-quantum, transparent **STARK proving the whole relation** — membership, nullifier and action in one proof (Rescue-Prime + FRI, no trusted setup) — plus the ricorso primitives and relation | 23 tests green (excluded — pulls Winterfell) |
-| `crates/riverrun-pool-zk` | **the** pool: commit → execute → settle driven by the STARK. `Execution` carries an opaque proof + public data only, never the secret | 7 tests + demo (excluded — pulls Winterfell) |
+| `crates/riverrun-stark` | the post-quantum, transparent **STARK proving the whole relation**, membership, nullifier and action in one proof (Rescue-Prime + FRI, no trusted setup), plus the ricorso primitives and relation | 23 tests green (excluded, pulls Winterfell) |
+| `crates/riverrun-pool-zk` | **the** pool: commit → execute → settle driven by the STARK. `Execution` carries an opaque proof + public data only, never the secret | 7 tests + demo (excluded, pulls Winterfell) |
 
 **Everything this repo claims, in one command:**
 
@@ -631,8 +631,8 @@ programs/mirror-pool/Cargo.toml --example devnet_demo`.
 ./demo.sh --live   # also measures a live mainnet pool, ~5 min
 ```
 
-It runs the suites, the mechanism, both adversaries, the ruler, and — if the SBF
-toolchain is present — builds the on-chain program and runs its e2e tests. Every
+It runs the suites, the mechanism, both adversaries, the ruler, and, if the SBF
+toolchain is present, builds the on-chain program and runs its e2e tests. Every
 stage prints numbers; where a number is a floor rather than a result, the stage
 says so.
 
@@ -644,7 +644,7 @@ cargo run --manifest-path crates/riverrun-pool-zk/Cargo.toml \
   --example behavior_pool --release                                # the mechanism
 cargo run -p riverrun-eval                                        # behavioral deanon → chance
 cargo run -p riverrun-trace --features onchain --bin riverrun -- exhibit  # provenance: field vs circularity
-# the unified CLI — one binary, four verbs (needs --features onchain for live data):
+# the unified CLI: one binary, four verbs (needs --features onchain for live data):
 cargo run -p riverrun-trace --features onchain --bin riverrun -- help
 cargo run -p riverrun-trace --features onchain --bin riverrun -- preflight <WALLET>  # your anonymity before you act
 cargo run -p riverrun-trace --features onchain --bin riverrun -- audit <POOL> 30      # a pool's effective k
@@ -661,7 +661,7 @@ cargo test --manifest-path crates/riverrun-pool-zk/Cargo.toml              # the
 
 ## Security status & honest limitations
 
-**riverrun states its own maturity exactly — and that precision is what lets you
+**riverrun states its own maturity exactly, and that precision is what lets you
 trust every number above it.** The measurement tooling (`preflight` / `audit` /
 `trace` / `exhibit`) is finished and runs on mainnet today. The behavioral-privacy
 pool is implemented and tested; it is hand-rolled and unaudited, so it is not for
@@ -673,32 +673,32 @@ Where each piece stands, located precisely:
 - **Self-audited, with every fix carried by a test.** A security pass of the settlement
   and identity code closed three findings, each with a regression test: the
   STARK-verified path did **not** bind the payout recipient (the settling relayer could
-  redirect the denomination — now a verified public input); the RLN action point was
-  caller-chosen (rate-limit-evadable, and `x=0` published the secret — now derived from
+  redirect the denomination, now a verified public input); the RLN action point was
+  caller-chosen (rate-limit-evadable, and `x=0` published the secret, now derived from
   the action and never zero); and RLN recovery panicked on an adversarial transcript
   (now returns an error). A read-audit of the STARK confirmed the membership/nullifier/
   action **weld**, the action binding, and the batched-round **seam** hold (the negatives
   are tested: a member presenting another's nullifier, a different action, a cross-member
-  claim). This does **not** replace an independent formal audit — still on the roadmap —
+  claim). This does **not** replace an independent formal audit, still on the roadmap, 
   but the findings it surfaced are *closed*, not noted.
-- **Post-quantum by construction.** Every value the pool commits is a hash — no
-  curves, no pairings — so the permanent ledger is quantum-safe from the first
+- **Post-quantum by construction.** Every value the pool commits is a hash, no
+  curves, no pairings, so the permanent ledger is quantum-safe from the first
   transaction. This is the one property a pairing-based design cannot retrofit.
-- **On-chain verification — reached in the VM, closing on mainnet.** A post-quantum
+- **On-chain verification, reached in the VM, closing on mainnet.** A post-quantum
   M31 Circle-STARK proof of riverrun's relation (action-bound) verifies inside the
   Solana VM at **~160k CU**, a wrong action rejected, and the program consumes it
   committee-free through `execute_verified`. What remains is a mainnet deploy and
   swapping the public-input root binding for a full in-circuit Poseidon2 Merkle path
   (the hash foundation is built, on Plonky3's vetted parameters). Until then an M-of-N
-  Ed25519 committee is the on-chain fallback — a named, quorum-bounded trust
+  Ed25519 committee is the on-chain fallback, a named, quorum-bounded trust
   assumption, not the destination. See
   [`docs/M31_CIRCLE_STARK.md`](docs/M31_CIRCLE_STARK.md).
-- **Not formally zero-knowledge — and it barely bites on-chain.** Winterfell keeps the
+- **Not formally zero-knowledge, and it barely bites on-chain.** Winterfell keeps the
   witness off the wire but is a *soundness* STARK, not a formal zk-STARK. On-chain only
   nullifiers (PRF outputs) persist, so the permanent record stays unlinkable regardless.
 - **Sybil is priced, not prevented; the trace is a floor.** An entry fee makes inflating
   the set cost money without stopping a funded attacker (real-k is measured, never
-  claimed solved), and every live figure is a conservative floor — "OK" means "no cheap
+  claimed solved), and every live figure is a conservative floor, "OK" means "no cheap
   attribution found", never "anonymous". These are the honest edges of *any* measured
   anonymity system; riverrun states them rather than hiding them.
 
@@ -706,14 +706,14 @@ Full audit, threat model, and negative results: **[docs/SECURITY.md](docs/SECURI
 
 ## Related work
 
-riverrun's *goal* is not new — hiding which member of a set acted is anonymous
+riverrun's *goal* is not new, hiding which member of a set acted is anonymous
 authentication, and PrivDID, anonymous credentials and PLUME's deterministic
 nullifiers all live there. The effective-k metric is Serjantov & Danezis (2002).
 Measuring advertised-versus-true anonymity is an established programme on
 Ethereum (Tutela, Béres et al., the 2025 cross-chain Tornado study). On-chain
 STARK verification on Solana has been done, including with Winterfell.
 
-What is narrowly different here is the payload — behaviour rather than value —
+What is narrowly different here is the payload, behaviour rather than value, 
 and that the funding graph is measured rather than assumed away, on riverrun's
 own constructions as well as other people's. The full accounting, including what
 the literature says this repo's anti-Sybil *should* be:
@@ -734,10 +734,10 @@ the literature says this repo's anti-Sybil *should* be:
   necessary, not sufficient.
 - Longer-running / Surfpool soak of the on-chain program (already deployed and
   exercised on devnet; in-process e2e passes).
-- **LWE-hard cover** — anchor indistinguishability on Learning-With-Errors so
+- **LWE-hard cover**, anchor indistinguishability on Learning-With-Errors so
   separating real from cover is provably as hard as worst-case lattice problems
   (measured → *provable* privacy). Paper track.
-- **Provenance flow** — a monotone privacy functional (a Perelman-style Lyapunov
+- **Provenance flow**, a monotone privacy functional (a Perelman-style Lyapunov
   quantity) under which any trace flows to a canonical, indistinguishable form.
   Paper track.
 
@@ -751,66 +751,66 @@ accounting in [docs/RELATED_WORK.md](docs/RELATED_WORK.md) and
 
 **Anonymity metrics & mixer de-anonymization**
 - Serjantov & Danezis, *Towards an Information Theoretic Metric for Anonymity*,
-  PET 2002 (Outstanding Paper) — the effective anonymity-set size `effective_k`
+  PET 2002 (Outstanding Paper), the effective anonymity-set size `effective_k`
   implements. <https://bib.mixnetworks.org/pdf/serjantov2002towards.pdf>
 - Wu et al., *Tutela: Assessing User-Privacy on Ethereum and Tornado Cash*,
-  arXiv:2201.06811 — true-vs-advertised pool size. <https://arxiv.org/abs/2201.06811>
+  arXiv:2201.06811, true-vs-advertised pool size. <https://arxiv.org/abs/2201.06811>
 - Béres et al., *Blockchain is Watching You: Profiling and Deanonymizing
   Ethereum Users*, arXiv:2005.14051. <https://arxiv.org/abs/2005.14051>
 - *Clustering Deposit and Withdrawal Activity in Tornado Cash*, arXiv:2510.09433
-  (2025) — 20–35% of withdrawals linked cross-chain. <https://arxiv.org/abs/2510.09433>
+  (2025), 20–35% of withdrawals linked cross-chain. <https://arxiv.org/abs/2510.09433>
 - Du et al., *Breaking the Anonymity of Ethereum Mixing Services Using Graph
   Feature Learning*, IEEE TIFS 2024. <https://doi.org/10.1109/TIFS.2023.3326984>
 
 **Nullifiers & anonymous authentication**
-- Gupta & Gurkan, *PLUME: An ECDSA Nullifier Scheme*, ePrint 2022/1255 —
+- Gupta & Gurkan, *PLUME: An ECDSA Nullifier Scheme*, ePrint 2022/1255, 
   formalizes the deterministic nullifier riverrun uses. <https://eprint.iacr.org/2022/1255>
-- *PrivDID*, ePrint 2026/127 — session unlinkability, no trusted setup.
+- *PrivDID*, ePrint 2026/127, session unlinkability, no trusted setup.
   <https://eprint.iacr.org/2026/127>
-- *Anonymous Self-Credentials*, ePrint 2025/618 — one-nullifier-per-verifier
+- *Anonymous Self-Credentials*, ePrint 2025/618, one-nullifier-per-verifier
   Sybil resistance, the anti-Sybil riverrun's `entry_fee` *should* become.
   <https://eprint.iacr.org/2025/618>
 - *Formalizing Privacy of Anonymous Credentials: A Provably Secure Framework with
-  Predicate Proofs*, ePrint 2026/1373 — the identity/credential-privacy threat
+  Predicate Proofs*, ePrint 2026/1373, the identity/credential-privacy threat
   model riverrun works in. <https://eprint.iacr.org/2026/1373>
-- *Re2creds: Reusable Anonymous Credentials*, ePrint 2026/119 — reusable
+- *Re2creds: Reusable Anonymous Credentials*, ePrint 2026/119, reusable
   presentations without linkage. <https://eprint.iacr.org/2026/119>
 
 **On-chain STARK verification on Solana** (the roadmap, with numbers)
 - Yano, *Full L1 On-Chain ZK-STARK+PQC Verification on Solana: A Measurement
-  Study*, ePrint 2025/1741 — a Winterfell STARK on L1 at ~1.1M CU / 4.4 KB proof.
+  Study*, ePrint 2025/1741, a Winterfell STARK on L1 at ~1.1M CU / 4.4 KB proof.
   <https://eprint.iacr.org/2025/1741>
-- **murkl** — Circle STARK verifier as a Solana CPI target, ~31k CU over M31,
+- **murkl**, Circle STARK verifier as a Solana CPI target, ~31k CU over M31,
   post-quantum. <https://github.com/exidz/murkl>
-- **mosaic** (Wiener Labs) — trait-based on-chain verifier lib; chunked FRI-STARK
+- **mosaic** (Wiener Labs), trait-based on-chain verifier lib; chunked FRI-STARK
   across transactions. <https://github.com/wienerlabs/mosaic>
 
 **Proving stack & fields**
 - Szepieniec, Ashur & Dhooghe, *Rescue-Prime: a Standard Specification (SoK)*,
-  ePrint 2020/1143 — the arithmetization-oriented hash the AIR computes in-circuit.
+  ePrint 2020/1143, the arithmetization-oriented hash the AIR computes in-circuit.
   <https://eprint.iacr.org/2020/1143>
-- **Winterfell** — the STARK prover/verifier riverrun builds on (Rescue-Prime
+- **Winterfell**, the STARK prover/verifier riverrun builds on (Rescue-Prime
   Merkle AIR, f128). <https://github.com/facebook/winterfell>
-- **Plonky3** — small-field toolkit, HVZK work. <https://github.com/Plonky3/Plonky3>
-- **Stwo / S-two** (StarkWare) — production Circle STARK over M31, the target
+- **Plonky3**, small-field toolkit, HVZK work. <https://github.com/Plonky3/Plonky3>
+- **Stwo / S-two** (StarkWare), production Circle STARK over M31, the target
   field for a cheap on-chain port. <https://github.com/starkware-libs/stwo>
 
 **Solana privacy ecosystem** (what riverrun is placed against)
-- Confidential Transfers (Token-2022) — native encrypted amounts.
+- Confidential Transfers (Token-2022), native encrypted amounts.
   <https://solana.com/privacy>
-- `groth16-solana` (Light Protocol / Helius) — the one production ZK verifier on
+- `groth16-solana` (Light Protocol / Helius), the one production ZK verifier on
   Solana today. <https://github.com/Lightprotocol/groth16-solana> ·
   [Helius acquires Light](https://www.helius.dev/blog/light-protocol-acquisition)
-- **Arcium** — MPC/FHE confidential compute, C-SPL. <https://www.arcium.com/>
-- **Umbra** — Arcium-based shielded pool. <https://sdk.umbraprivacy.com/introduction>
-- **Privacy Cash** — the live SOL pool `riverrun audit` measures
+- **Arcium**, MPC/FHE confidential compute, C-SPL. <https://www.arcium.com/>
+- **Umbra**, Arcium-based shielded pool. <https://sdk.umbraprivacy.com/introduction>
+- **Privacy Cash**, the live SOL pool `riverrun audit` measures
   (`9fhQBbumKEFuXtMBDw8AaQyAjCorLGJQiS3skWZdQyQD`).
   <https://github.com/Privacy-Cash/privacy-cash>
 
 **The bounty & the name**
 - Superteam Brazil, *Build Privacy-Through-Noise tooling for Solana*.
   <https://github.com/solanabr>
-- Joyce, *Finnegans Wake* (1939) — "riverrun, past Eve and Adam's, by a commodius
+- Joyce, *Finnegans Wake* (1939), "riverrun, past Eve and Adam's, by a commodius
   vicus of recirculation"; Vico's cycle is the *ricorso* the set-rebirth borrows.
 
 ## License
