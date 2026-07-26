@@ -19,23 +19,22 @@
 [![post-quantum](https://img.shields.io/badge/STARK-post--quantum%2C%20no%20setup-8A2BE2)](#innovations-and-why-they-matter)
 [![license](https://img.shields.io/badge/license-MIT-blue)](#license)
 
-**riverrun gives you real privacy on a blockchain, and, unlike anything else, it
-tells you exactly how private you actually are.**
+**riverrun gives you real privacy on a blockchain. And unlike anything else, it tells
+you exactly how private you actually are.**
 
 ## In plain words
 
-A blockchain is a **wall of glass**. Everything you do with money on it stays there,
-on display, forever, and outside the glass there are people with their faces pressed
-against it, writing down your every move, to learn who you are and guess what you'll
-do next.
+A blockchain is a **wall of glass**. Everything you do with money on it stays there, on
+display, forever. Outside the glass, people press their faces up and write down your
+every move, so they can work out who you are and guess what you will do next.
 
 riverrun closes the curtain. It does **two things**.
 
-**1. It counts the crowd for real.** Every privacy tool promises *"here you disappear
-into a crowd."* riverrun is the one that checks whether that's true, and sometimes
-finds the "crowd" is just you, alone. A pool tells you *"hidden among 30."* But that
-counts heads and ignores one public fact: **where each person's money came from.** Sort
-by that, and your crowd of 30 can collapse to a crowd of **1**.
+**1. It counts the crowd for real.** Every privacy tool promises the same thing: *"here
+you disappear into a crowd."* riverrun is the one that actually checks. And sometimes it
+finds the crowd is just you, alone. A pool tells you *"you're hidden among 30."* But that
+only counts heads. It ignores something that is public: **where each person's money came
+from.** Sort the crowd by that, and your 30 can shrink to **1**.
 
 ```mermaid
 flowchart LR
@@ -46,15 +45,15 @@ flowchart LR
     G3 --> R["Your REAL crowd = <b>1</b><br/>advertised 30, effective ~6.5"]
 ```
 
-*On a live Solana pool, an advertised crowd of **30** was really **6.5**, and one
-depositor was completely **alone**. It doesn't promise privacy; it measures it. This
-part runs on mainnet today.*
+*We ran this on a live Solana pool. It advertised a crowd of **30**. The real number was
+**6.5**, and one depositor was completely **alone**. riverrun doesn't promise privacy. It
+measures it. And this part works on mainnet today.*
 
-**2. It gives you a different face at every door.** With **one key**, you become a
-different person on every site, and no one can piece them back together into you, 
-while each site can still enforce *"one person, one vote."* You stay invisible without
-becoming a ghost who acts a thousand times. Think of a puzzle piece only you can turn:
-each angle is a different, unlinkable disguise of you.
+**2. It gives you a different face at every door.** With **one key** you become a
+different person on every site, and nobody can piece those identities back into you. Each
+site can still make sure you act only once: one vote, one claim. You stay invisible
+without turning into a ghost who acts a thousand times. Think of a puzzle piece that only
+you can turn. Every angle is a different, unlinkable disguise.
 
 ```mermaid
 flowchart TD
@@ -69,23 +68,24 @@ flowchart TD
     D3 --> A3["one action"]
 ```
 
-*This is **riverrun ID**, one secret, seven unlinkable powers ([`docs/RIVERRUN_ID.md`](docs/RIVERRUN_ID.md)).*
+*This is **riverrun ID**: one secret, seven unlinkable powers ([`docs/RIVERRUN_ID.md`](docs/RIVERRUN_ID.md)).*
 
-And it's built to **last**: even years from now, when a computer powerful enough to
-break today's cryptography exists, what's yours stays yours, riverrun's locks are
-hashes, which that machine cannot open. (A blockchain keeps everything forever, so an
-attacker can copy your data today to crack it later; here there is nothing to crack.)
+And it's built to **last**. Years from now, when a computer finally exists that can break
+today's cryptography, what's yours stays yours. riverrun's locks are hashes, and that
+machine can't open them. (A blockchain keeps everything forever, so an attacker can copy
+your data today and try to crack it later. Here there is nothing to crack.)
 
-> **In one line: privacy you don't have to trust, you can measure it.**
+> **In one line: privacy you don't have to trust. You can measure it.**
 
-**Where it honestly stands.** The **measurement tool** is finished and **runs on
-mainnet today**. The **identity/privacy layer** is **built and tested** (its proof
-verifies in a local Solana VM), but **not yet on mainnet and not audited**, don't
-guard real funds or identities with it yet. Every strong claim below is paired with
-its honest edge; that pairing is what makes the strong ones trustworthy.
+**Where it honestly stands.** The **measurement tool** is finished, and it **runs on
+mainnet today**. The **identity and privacy layer** is **built and tested** (its proof
+checks out inside a local Solana VM), but it is **not on mainnet yet and has not been
+audited**. Don't guard real money or real identities with it yet. Every strong claim
+below comes with its honest limit right beside it, and that pairing is what makes the
+strong ones worth trusting.
 
-**For** traders whose strategies get copied, whales who get front-run, market makers,
-DAOs, and anyone who refuses to be an open book on-chain.
+**Who it's for:** traders whose strategies get copied, whales who get front-run, market
+makers, DAOs, and anyone who refuses to be an open book on-chain.
 
 ---
 
