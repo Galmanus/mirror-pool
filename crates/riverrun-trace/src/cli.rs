@@ -92,20 +92,18 @@ fn guide() {
     loop {
         println!("  {}", bold("What would you like to do?"));
         println!();
-        println!("    {}  {}  {}", green("1"), bold("Am I exposed?       "), dim("check your real anonymity before you act"));
-        println!("    {}  {}  {}", green("2"), bold("Create an identity  "), dim("one secret, a different face in every app"));
-        println!("    {}  {}  {}", green("3"), bold("When to refresh?    "), dim("how an identity wears out with use"));
-        println!("    {}  {}  {}", green("4"), bold("Measure a pool      "), dim("its real anonymity vs what it advertises"));
-        println!("    {}  {}  {}", cyan("c"), bold("Connect / disconnect"), dim("activate or clear your identity"));
-        println!("    {}  {}", dim("q"), dim("quit"));
+        println!("    {}   {}   {}", cyan("1"), bold("Become anonymous  "), dim("the step-by-step to disappear on Solana"));
+        println!("    {}   {}   {}", cyan("2"), bold("Am I exposed?     "), dim("check your anonymity right now"));
+        println!("    {}   {}   {}", cyan("3"), bold("Create an identity"), dim("one secret, a different face in every app"));
+        println!("    {}   {}   {}", cyan("4"), bold("Measure a pool    "), dim("its real anonymity vs what it advertises"));
+        println!();
+        println!("    {}   {}   {}", dim("c"), dim("connect / disconnect"), dim("activate or clear your identity"));
+        println!("    {}   {}", dim("q"), dim("quit"));
         println!();
         match ask(&format!("  {} ", cyan("›"))).as_str() {
-            "1" => guided_preflight(),
-            "2" => guided_identity(),
-            "3" => {
-                println!();
-                cmd_id(&["erosion".to_string()], false);
-            }
+            "1" => guided_anonymize(),
+            "2" => guided_preflight(),
+            "3" => guided_identity(),
             "4" => guided_audit(),
             "c" | "connect" => cmd_connect(),
             "d" | "disconnect" => cmd_disconnect(),
@@ -118,6 +116,47 @@ fn guide() {
         }
         println!();
     }
+}
+
+/// The product: walk a person through actually becoming anonymous on Solana. The
+/// mechanism is real and needs no unaudited pool: act from a fresh wallet funded from an
+/// origin many others share, so the link from you to the action is broken and you are one
+/// of a large crowd. riverrun measures where you start, picks the move, and verifies you
+/// arrived. It never touches your keys and never moves your funds.
+fn guided_anonymize() {
+    println!();
+    println!("  {}", bold("Become anonymous on Solana"));
+    println!("  {}", dim("Break the link between you and what you do. Not hiding the transaction,"));
+    println!("  {}", dim("hiding WHO did it. Four steps. riverrun never touches your keys."));
+    println!();
+
+    println!("  {}  {}", cyan("1"), bold("Where are you now?"));
+    let w = ask(&format!("     {} the wallet you use today (or Enter to skip) › ", cyan("›")));
+    if !w.is_empty() {
+        cmd_preflight(std::slice::from_ref(&w), false);
+    }
+    println!();
+
+    println!("  {}  {}", cyan("2"), bold("Use a fresh wallet for the sensitive action"));
+    println!("     {}", dim("A new wallet with no history that ties it to you."));
+    println!("     {}   {}", cyan("solana-keygen new -o fresh.json"), dim("(riverrun never sees your keys)"));
+    println!();
+
+    println!("  {}  {}", cyan("3"), bold("Fund it into a crowd"));
+    println!("     {}", dim("Fund the fresh wallet from an origin many people share, so you blend in."));
+    println!("     {}  {}", green("do   "), dim("withdraw to it from a major exchange: thousands share that origin"));
+    println!("     {}  {}", red("avoid"), dim("funding it from your current wallet, that re-links you at once"));
+    println!();
+
+    println!("  {}  {}", cyan("4"), bold("Act, then verify you disappeared"));
+    println!("     {}", dim("Do your action from the fresh wallet, then check your anonymity:"));
+    let f = ask(&format!("     {} the fresh wallet, to verify (or Enter to skip) › ", cyan("›")));
+    if !f.is_empty() {
+        cmd_preflight(std::slice::from_ref(&f), false);
+    }
+    println!();
+    println!("  {}  {}", green("✓"), dim("riverrun keeps watching and warns you if your crowd shrinks."));
+    println!();
 }
 
 /// Guided: create a private identity, and see two contexts come out unlinkable.
@@ -212,28 +251,37 @@ fn clear_session() {
 /// The status panel: your privacy state at a glance, like a VPN or Tor panel, but
 /// honest about what riverrun does. It does not tunnel your traffic. It makes your
 /// actions unlinkable and measures how hidden you really are.
+/// A dim, fixed-width label so the value columns line up. Padding is applied to the
+/// plain text before coloring, so the alignment survives the ANSI codes.
+fn label(s: &str) -> String {
+    dim(&format!("{s:<13}"))
+}
+
 fn cmd_status() {
     let active = load_session();
     println!();
-    println!("  {}", bold("riverrun  ·  your privacy status"));
-    println!("  {}", dim("────────────────────────────────────────────────────────"));
+    println!("  {}   {}", bold(&cyan("riverrun")), dim("privacy on Solana, in plain words"));
+    println!();
     match &active {
-        Some(hex) => {
-            println!("   {}  {}     identity active on this machine ({}…)", green("●"), green("CONNECTED"), &hex[..8]);
-        }
-        None => {
-            println!("   {}  {}   no identity active. run `riverrun connect` to start", dim("○"), dim("NOT CONNECTED"));
-        }
+        Some(hex) => println!(
+            "    {}  {}  {}  {}",
+            green("●"),
+            label("status"),
+            green("connected"),
+            dim(&format!("· {}…", &hex[..6]))
+        ),
+        None => println!(
+            "    {}  {}  {}  {}",
+            dim("○"),
+            label("status"),
+            dim("not connected"),
+            dim(&format!("· run {}", cyan("riverrun connect")))
+        ),
     }
-    println!("   {}  {}   {}", green("⚛"), bold("post-quantum "), green("ON  (hash-based, harvest-now-decrypt-later proof)"));
-    println!("   {}  {}   {}", cyan("◆"), bold("identity     "), dim("a different, unlinkable face in every app"));
-    println!("   {}  {}   {}", yellow("⚑"), bold("real anonymity"), dim("run `riverrun preflight <wallet>` to measure yours"));
-    println!("  {}", dim("────────────────────────────────────────────────────────"));
-    println!("  {}", dim("simple:  connect  ·  disconnect  ·  status  ·  guide"));
-    if active.is_none() {
-        println!();
-        println!("  {}", dim("note: riverrun makes you unlinkable, it does not hide that you transacted."));
-    }
+    println!("    {}  {}  {}", green("●"), label("post-quantum"), "on, everlasting");
+    println!("    {}  {}  {}", cyan("●"), label("identity"), dim("a different, unlinkable face in every app"));
+    println!();
+    println!("    {}  {}", label("measure yours"), cyan("riverrun preflight <wallet>"));
     println!();
 }
 
