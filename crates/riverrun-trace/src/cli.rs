@@ -31,12 +31,286 @@ const SCAN_TX: usize = 6;
 const POOL_SIG_SCAN: usize = 300;
 const MIN_DEPOSIT: u64 = 10_000_000; // 0.01 SOL
 
+// ---- color: TTY-aware, NO_COLOR-respecting, off for --json and pipes ----
+use std::io::IsTerminal;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static USE_COLOR: AtomicBool = AtomicBool::new(false);
+
+fn paint(code: &str, s: &str) -> String {
+    if USE_COLOR.load(Ordering::Relaxed) {
+        format!("\x1b[{code}m{s}\x1b[0m")
+    } else {
+        s.to_string()
+    }
+}
+fn red(s: &str) -> String { paint("1;31", s) }
+fn green(s: &str) -> String { paint("1;32", s) }
+fn yellow(s: &str) -> String { paint("1;33", s) }
+fn cyan(s: &str) -> String { paint("36", s) }
+fn dim(s: &str) -> String { paint("2", s) }
+
+/// A severity or verdict word, uppercased and colored by risk: red for danger,
+/// yellow for weak, green for safe. Color with intention (clig.dev).
+fn paint_risk(word: &str) -> String {
+    let up = word.to_uppercase();
+    match word.to_ascii_lowercase().as_str() {
+        "critical" | "high" | "exposed" => red(&up),
+        "medium" | "weak" => yellow(&up),
+        "low" | "ok" | "indistinguishable" => green(&up),
+        _ => up,
+    }
+}
+
+fn bold(s: &str) -> String { paint("1", s) }
+
+/// Color an arbitrary string (a number, a phrase) by a severity level.
+fn paint_by_sev(sev: &str, s: &str) -> String {
+    match sev {
+        "critical" | "high" => red(s),
+        "medium" => yellow(s),
+        _ => green(s),
+    }
+}
+
+// ---- interactive, guided mode: anyone can use it, no commands, no hashes ----
+
+/// Print a prompt and read one line from the user.
+fn ask(prompt: &str) -> String {
+    use std::io::Write;
+    print!("{prompt}");
+    std::io::stdout().flush().ok();
+    let mut s = String::new();
+    std::io::stdin().read_line(&mut s).ok();
+    s.trim().to_string()
+}
+
+/// The default experience when you just run `riverrun`: a plain-language menu that
+/// guides you, so you never need to know a command or paste a hash.
+fn guide() {
+    cmd_status();
+    loop {
+        println!("  {}", bold("What would you like to do?"));
+        println!();
+        println!("    {}  {}  {}", green("1"), bold("Am I exposed?       "), dim("check your real anonymity before you act"));
+        println!("    {}  {}  {}", green("2"), bold("Create an identity  "), dim("one secret, a different face in every app"));
+        println!("    {}  {}  {}", green("3"), bold("When to refresh?    "), dim("how an identity wears out with use"));
+        println!("    {}  {}  {}", green("4"), bold("Measure a pool      "), dim("its real anonymity vs what it advertises"));
+        println!("    {}  {}  {}", cyan("c"), bold("Connect / disconnect"), dim("activate or clear your identity"));
+        println!("    {}  {}", dim("q"), dim("quit"));
+        println!();
+        match ask(&format!("  {} ", cyan("›"))).as_str() {
+            "1" => guided_preflight(),
+            "2" => guided_identity(),
+            "3" => {
+                println!();
+                cmd_id(&["erosion".to_string()], false);
+            }
+            "4" => guided_audit(),
+            "c" | "connect" => cmd_connect(),
+            "d" | "disconnect" => cmd_disconnect(),
+            "s" | "status" => cmd_status(),
+            "q" | "quit" | "exit" | "" => {
+                println!("  stay private.");
+                break;
+            }
+            _ => println!("  {} type 1, 2, 3, 4, c, or q.", yellow("?")),
+        }
+        println!();
+    }
+}
+
+/// Guided: create a private identity, and see two contexts come out unlinkable.
+fn guided_identity() {
+    println!();
+    println!("  {}", bold("Let's create your private identity."));
+    println!("  {}", dim("One secret becomes a different, unlinkable identity in every app you use."));
+    println!();
+    let secret = riverrun_core::commitment::Secret::random();
+    let hex = hex_encode(secret.as_bytes());
+    println!("  {} your secret (write it down, it is your whole identity):", green("✓"));
+    println!("      {}", bold(&hex));
+    println!();
+    let mut count = 0;
+    loop {
+        let prompt = if count == 0 {
+            format!("  {} which app or place? (e.g. dao-vote, airdrop) › ", cyan("›"))
+        } else {
+            format!("  {} another one? (or press Enter to finish) › ", cyan("›"))
+        };
+        let ctx = ask(&prompt);
+        if ctx.is_empty() {
+            break;
+        }
+        let angle = context_angle(&ctx);
+        let piece = secret.piece();
+        let shape = hex_encode(&piece.shape(angle));
+        let fit = hex_encode(&piece.fit(angle));
+        println!();
+        println!("  {} your identity for {}", green("✓"), cyan(&ctx));
+        println!("      {} {}   {}", dim("who you are :"), bold(&shape[..12]), dim("nobody can link this to your other apps"));
+        println!("      {} {}   {}", dim("one action  :"), bold(&fit[..12]), dim("spend once, e.g. one vote or one claim"));
+        count += 1;
+        if count == 2 {
+            println!();
+            println!("  {} your two identities are completely different.", yellow("→"));
+            println!("      {}", dim("that is the whole point: one secret, and no one can connect them to you."));
+        }
+    }
+    println!();
+}
+
+/// Guided: check your anonymity in a pool before you act.
+fn guided_preflight() {
+    println!();
+    println!("  {}", dim("Paste your wallet and I'll check the anonymity you would actually get."));
+    let w = ask(&format!("  {} wallet › ", cyan("›")));
+    if w.is_empty() {
+        return;
+    }
+    println!();
+    cmd_preflight(&[w], false);
+}
+
+// ---- session + protection panel (Tor-panel feel, honest about what it is) ----
+
+fn session_path() -> Option<std::path::PathBuf> {
+    let home = std::env::var_os("HOME")?;
+    Some(std::path::Path::new(&home).join(".riverrun").join("session"))
+}
+
+/// The active identity secret, if one is connected on this machine.
+fn load_session() -> Option<String> {
+    let p = session_path()?;
+    std::fs::read_to_string(p)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| s.len() == 64)
+}
+
+fn save_session(secret_hex: &str) -> std::io::Result<()> {
+    let p = session_path()
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "no HOME"))?;
+    if let Some(dir) = p.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    std::fs::write(&p, secret_hex)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600));
+    }
+    Ok(())
+}
+
+fn clear_session() {
+    if let Some(p) = session_path() {
+        let _ = std::fs::remove_file(p);
+    }
+}
+
+/// The status panel: your privacy state at a glance, like a VPN or Tor panel, but
+/// honest about what riverrun does. It does not tunnel your traffic. It makes your
+/// actions unlinkable and measures how hidden you really are.
+fn cmd_status() {
+    let active = load_session();
+    println!();
+    println!("  {}", bold("riverrun  ·  your privacy status"));
+    println!("  {}", dim("────────────────────────────────────────────────────────"));
+    match &active {
+        Some(hex) => {
+            println!("   {}  {}     identity active on this machine ({}…)", green("●"), green("CONNECTED"), &hex[..8]);
+        }
+        None => {
+            println!("   {}  {}   no identity active. run `riverrun connect` to start", dim("○"), dim("NOT CONNECTED"));
+        }
+    }
+    println!("   {}  {}   {}", green("⚛"), bold("post-quantum "), green("ON  (hash-based, harvest-now-decrypt-later proof)"));
+    println!("   {}  {}   {}", cyan("◆"), bold("identity     "), dim("a different, unlinkable face in every app"));
+    println!("   {}  {}   {}", yellow("⚑"), bold("real anonymity"), dim("run `riverrun preflight <wallet>` to measure yours"));
+    println!("  {}", dim("────────────────────────────────────────────────────────"));
+    println!("  {}", dim("simple:  connect  ·  disconnect  ·  status  ·  guide"));
+    if active.is_none() {
+        println!();
+        println!("  {}", dim("note: riverrun makes you unlinkable, it does not hide that you transacted."));
+    }
+    println!();
+}
+
+/// connect: activate a working identity on this machine.
+fn cmd_connect() {
+    if let Some(hex) = load_session() {
+        println!();
+        println!("  {} already connected ({}…). run `riverrun disconnect` to clear it.", green("●"), &hex[..8]);
+        cmd_status();
+        return;
+    }
+    let secret = riverrun_core::commitment::Secret::random();
+    let hex = hex_encode(secret.as_bytes());
+    match save_session(&hex) {
+        Ok(()) => {
+            println!();
+            println!("  {} connected. a fresh identity is active on this machine.", green("●"));
+            cmd_status();
+        }
+        Err(e) => {
+            eprintln!("  {} could not save session: {e}", red("error"));
+            std::process::exit(1);
+        }
+    }
+}
+
+/// disconnect: clear the active identity.
+fn cmd_disconnect() {
+    let had = load_session().is_some();
+    clear_session();
+    println!();
+    if had {
+        println!("  {} disconnected. the identity was cleared from this machine.", dim("○"));
+    } else {
+        println!("  {} nothing to disconnect. no identity was active.", dim("○"));
+    }
+    println!();
+}
+
+/// Guided: measure a pool's real anonymity.
+fn guided_audit() {
+    println!();
+    let p = ask(&format!("  {} pool address (or Enter for the default) › ", cyan("›")));
+    println!();
+    if p.is_empty() {
+        cmd_audit(&[], false);
+    } else {
+        cmd_audit(&[p], false);
+    }
+}
+
 pub fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let json = take_flag(&mut args, "--json");
-    let cmd = args.first().cloned().unwrap_or_else(|| "help".to_string());
-    let rest: &[String] = if args.is_empty() { &[] } else { &args[1..] };
+    let no_color = take_flag(&mut args, "--no-color");
+    USE_COLOR.store(
+        !json
+            && !no_color
+            && std::env::var_os("NO_COLOR").is_none()
+            && (std::env::var_os("CLICOLOR_FORCE").is_some() || std::io::stdout().is_terminal()),
+        Ordering::Relaxed,
+    );
+    if args.is_empty() {
+        if std::io::stdout().is_terminal() && std::io::stdin().is_terminal() {
+            guide();
+        } else {
+            help();
+        }
+        return;
+    }
+    let cmd = args[0].clone();
+    let rest: &[String] = &args[1..];
     match cmd.as_str() {
+        "guide" | "start" | "menu" => guide(),
+        "status" => cmd_status(),
+        "connect" => cmd_connect(),
+        "disconnect" => cmd_disconnect(),
         "preflight" => cmd_preflight(rest, json),
         "audit" => cmd_audit(rest, json),
         "scan" => cmd_scan(rest, json),
@@ -191,6 +465,15 @@ fn help() {
          OPTIONS\n\
          \x20 --json                          emit a machine-readable JSON result on stdout\n\
          \x20                                 (progress stays on stderr; pipe with `| jq`)\n\
+         \x20 --no-color                      disable color (also off when piped or NO_COLOR set)\n\
+         \n\
+         EXAMPLES\n\
+         \x20 riverrun preflight <WALLET>           am I exposed in the default pool?\n\
+         \x20 riverrun audit <POOL> 30              a pool's real anonymity, 30 samples\n\
+         \x20 riverrun id new                       mint an identity secret\n\
+         \x20 riverrun id show <SECRET> dao-vote    your unlinkable identity in one context\n\
+         \x20 riverrun id erosion                   how a persistent identity erodes, when to rotate\n\
+         \x20 riverrun audit <POOL> --json | jq     machine-readable, for scripts and CI\n\
          \n\
          DEFAULTS\n\
          \x20 pool  {DEFAULT_POOL}  (Privacy Cash)\n\
@@ -273,23 +556,24 @@ fn cmd_preflight(args: &[String], json: bool) {
     print!("VERDICT                : ");
     match p.verdict {
         Verdict::Exposed => println!(
-            "EXPOSED\n\nYou would be alone in your provenance class. The pool's size is\n\
-             irrelevant to you — an adversary reading the funding graph attributes your\n\
+            "{}\n\nYou would be alone in your provenance class. The pool's size is\n\
+             irrelevant to you: an adversary reading the funding graph attributes your\n\
              action at once. Fund a fresh wallet from a source other depositors also use\n\
              (a major exchange withdrawal is the usual one), or wait for a same-origin\n\
-             crowd. Anonymity is a crowd of people who look like you, not a large crowd."
+             crowd. Anonymity is a crowd of people who look like you, not a large crowd.",
+            red("EXPOSED")
         ),
         Verdict::Weak => println!(
-            "WEAK\n\nOnly {} of {} depositors share your provenance class, so your real\n\
+            "{}\n\nOnly {} of {} depositors share your provenance class, so your real\n\
              anonymity here is far below the advertised {}. Consider funding through a\n\
              more common origin, or waiting for a larger same-class crowd.",
-            p.personal_k, p.advertised_k, p.advertised_k
+            yellow("WEAK"), p.personal_k, p.advertised_k, p.advertised_k
         ),
         Verdict::Ok => println!(
-            "OK (within the trace bound)\n\n{} of {} depositors share your provenance class,\n\
+            "{}\n\n{} of {} depositors share your provenance class,\n\
              a healthy fraction, so the crowd is genuinely yours. This is a floor: a deeper\n\
              trace can only shrink your class, so 'OK' means 'no cheap attribution found'.",
-            p.personal_k, p.advertised_k
+            green("OK (within the trace bound)"), p.personal_k, p.advertised_k
         ),
     }
     println!("\n(RPC calls: {})", rpc.calls);
@@ -340,20 +624,27 @@ fn cmd_audit(args: &[String], json: bool) {
 
     println!("\n=== funding-graph exposure of a live anonymity set ===");
     println!("pool                   : {pool}");
-    println!("severity               : {}", sev.to_uppercase());
+    println!("severity               : {}", paint_risk(sev));
     println!("depositors sampled     : {classes_len}");
     println!("reach an origin        : {rooted}/{classes_len} ({:.0}%)", 100.0 * rooted as f64 / classes_len as f64);
     println!("provenance classes     : {}", ek.classes);
-    println!("advertised k           : {}  ->  effective k : {:.1}  (worst case {})", classes_len, ek.effective, ek.worst_case);
+    println!(
+        "advertised k           : {}  ->  effective k : {}  (worst case {})",
+        classes_len,
+        paint_by_sev(sev, &format!("{:.1}", ek.effective)),
+        ek.worst_case
+    );
     println!(
         "\nAdvertised anonymity counts members. Effective k is what those members are\n\
          worth once an adversary sorts them by funding provenance. A floor: bounded\n\
          trace, SOL only. See docs/EFFECTIVE_K.md."
     );
     if rpc.failures > 0 {
-        println!("WARNING: {} RPC call(s) failed — this is a partial floor, not the full picture.", rpc.failures);
+        println!("{}: {} RPC call(s) failed, this is a partial floor, not the full picture.", yellow("WARNING"), rpc.failures);
     }
     println!("(RPC calls: {}, failures: {})", rpc.calls, rpc.failures);
+    // anticipate the next action (gh primer): send the reader to the personal check.
+    println!("\n{}", dim(&format!("next: riverrun preflight <YOUR_WALLET> {pool}   (the anonymity YOU would get, before you deposit)")));
 }
 
 // --- scan / watch (the autonomous screening agent) --------------------------
@@ -634,10 +925,10 @@ fn cmd_id(args: &[String], json: bool) {
                 println!("{{\"tool\":\"riverrun\",\"command\":\"id show\",\"context\":\"{context}\",\"angle\":{angle},\"shape\":\"{shape}\",\"fit\":\"{fit}\",\"turn\":\"{turn}\"}}");
                 return;
             }
-            println!("context: {context}");
-            println!("  shape (your identity here) : {shape}");
-            println!("  fit   (your one action)    : {fit}");
-            println!("  turn  (continuity tag, ZK) : {turn}");
+            println!("context: {}", cyan(context));
+            println!("  {} : {shape}", dim("shape (your identity here)"));
+            println!("  {} : {fit}", dim("fit   (your one action)   "));
+            println!("  {} : {turn}", dim("turn  (continuity tag, ZK)"));
             println!();
             println!("the same secret in another context gives a different, unlinkable shape.");
         }
@@ -659,13 +950,16 @@ fn cmd_id(args: &[String], json: bool) {
             println!("repeated-use erosion of one persistent identity (floor k_min = 4):");
             println!();
             for (i, k) in e.k_eff.iter().enumerate() {
-                let flag = if *k < 4.0 { "  <- below the floor" } else { "" };
-                println!("  after use {}: effective anonymity = {:>4.1}{}", i + 1, k, flag);
+                let below = *k < 4.0;
+                let num = format!("{:>4.1}", k);
+                let num = if below { red(&num) } else { green(&num) };
+                let flag = if below { red("  <- below the floor") } else { String::new() };
+                println!("  after use {}: effective anonymity = {}{}", i + 1, num, flag);
             }
             println!();
             match e.rotate_before {
-                Some(i) => println!("rotate (turn) before use {}: acting again under this secret drops you below the floor.", i + 1),
-                None => println!("safe: the identity stays above the floor across every use."),
+                Some(i) => println!("{} before use {}: acting again under this secret drops you below the floor.", yellow("rotate (turn)"), i + 1),
+                None => println!("{}: the identity stays above the floor across every use.", green("safe")),
             }
             println!("turn resets the secret; re-fund from a common origin to reset provenance too.");
         }

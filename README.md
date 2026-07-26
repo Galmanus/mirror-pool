@@ -90,13 +90,18 @@ strong ones worth trusting.
 **Who it's for:** traders whose strategies get copied, whales who get front-run, market
 makers, DAOs, and anyone who refuses to be an open book on-chain.
 
-### Watch riverrun ID from the terminal
+### Watch it run
 
-<img src="scripts/demo_id.svg" alt="riverrun id: one secret, a different unlinkable identity per context, and the erosion ruler that says when to rotate" width="820">
+Just type `riverrun`. A status panel shows your protection at a glance (like a VPN or
+Tor panel, but honest about what it does), and a plain-language menu guides you. No
+commands to memorize, no hashes to paste. Below: create an identity and watch two
+contexts come out completely unlinkable, then connect.
 
-*One secret, two contexts, two identities nobody can link back to you. Then the erosion
-ruler says when to rotate. Offline, no RPC: `riverrun id new`, `id show <secret> <context>`,
-`id erosion`.*
+<img src="scripts/demo.svg" alt="riverrun guided mode: a Tor-style status panel, a plain-language menu, one secret becoming two unlinkable identities, and connect" width="820">
+
+*Anyone can use it. `riverrun` opens the guide; `riverrun status`, `connect`,
+`disconnect` are the simple actions; the power verbs (`preflight`, `audit`, `id`) are
+still there for scripts and CI.*
 
 ---
 
