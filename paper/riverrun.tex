@@ -13,6 +13,108 @@
 {\color{river}\rule{\textwidth}{0.6pt}}\\[1.0em]
 \end{center}
 
+% ===================== ELI5, READ THIS FIRST =====================
+\begin{center}
+{\Large\bfseries\color{river}In plain words}\\[0.2em]
+{\footnotesize\color{steel}read this first: no math, no jargon}
+\end{center}
+\vspace{0.6em}
+
+\begin{center}
+\begin{minipage}{0.9\textwidth}
+\centering\color{ink}
+{\large\bfseries Our goal is to empower people and to make knowledge accessible.}\\[0.35em]
+{\normalsize Privacy should not be a luxury for the technical and the wealthy, and a
+whitepaper should not be a wall that only cryptographers can climb. riverrun puts control
+of your own exposure back in your hands, and this paper is written so that anyone can
+understand it. Making a powerful thing understandable is part of the work, not an
+afterthought.}
+\end{minipage}
+\end{center}
+\vspace{0.7em}
+
+\begin{intuition}
+\textbf{A note on method.} A whitepaper should be readable by a normal person before it
+is readable by a cryptographer. So this one opens with the whole idea in plain words.
+Everything said here is made precise later in the paper, and each plain-words idea below
+carries a link to the exact section that proves it, so you can jump from any simple claim
+straight to its technical version. If the simple version and the technical version ever
+disagree, that is a bug in the paper, not a simplification. We think every tech
+whitepaper should be written this way, and we offer this as a small contribution to how
+they are written from here on.
+\end{intuition}
+
+\vspace{0.4em}
+\textbf{The problem.} A blockchain is like a wall of glass. Everything you do with money
+on it stays there, on display, forever. Your name is not written on it, but your
+behavior is: what you buy, how much, when, and in what order. Outside the glass,
+companies you never hired press their faces to it and write all of this down. From the
+pattern alone they can work out who you are, and guess what you will do next. On a
+blockchain, you are an open book.
+
+Most privacy tools try to hide your \emph{money}, the amounts and the balances. riverrun
+hides something different, and we think more important. It hides \emph{you}: which
+person, out of a crowd, actually did a thing.
+
+\vspace{0.3em}
+\textbf{What riverrun does, in three pictures.}
+
+\emph{1. It hides you in a crowd of look-alikes.} Imagine you want to do something
+without being watched, so you do it at the same moment as a crowd of people who all look
+exactly like you. A snoop sees the crowd but cannot tell which one was you. That is the
+whole trick. riverrun builds that crowd around your action, and cuts the thread that
+ties the action back to you. \emph{(The precise version is the pool, \S\ref{sec:pool}
+and \S\ref{sec:round}.)}
+
+\emph{2. It gives you a different face at every door.} Today, ``sign in with Google''
+means one identity follows you everywhere and Google sees all of it. riverrun is the
+opposite. From one key you get a different, unconnectable identity at every door: one in
+a vote, one in an app, one in an airdrop. Nobody can put the pieces back together into
+you. And yet each door can still make sure you go through only once: one vote, one claim.
+You are invisible without becoming a ghost who acts a thousand times. \emph{(The precise
+version is riverrun ID, \S\ref{sec:id}.)}
+
+\emph{3. It cannot be broken later, not even by a computer that does not exist yet.} A
+blockchain keeps everything forever, so a patient attacker can copy your data today and
+wait for a future, far more powerful computer to crack it. Most privacy tools use locks
+that such a computer will open. riverrun uses a different kind of lock, built only from a
+one-way scramble that even that future machine cannot undo. What you hide today stays
+hidden, for good. \emph{(The precise version is \S\ref{sec:pq} and
+\S\ref{sub:everlasting}.)}
+
+\vspace{0.3em}
+\textbf{And one more thing: it does not just promise, it checks.} Every privacy tool
+tells you ``you are hidden among 30 people.'' riverrun is the one that actually goes and
+counts the real crowd. Often the real crowd is far smaller than advertised, and sometimes
+it is just you, standing alone. riverrun measures that out loud, on the real network, so
+you know your true privacy before you rely on it. It even turns the same measuring tool
+on itself. \emph{(The precise version is the ruler, \S\ref{sec:ruler}.)}
+
+\vspace{0.3em}
+\textbf{Who this is for.} Anyone who does not want to be an open book on a blockchain. A
+trader whose strategy gets copied the moment they move. A large holder who gets
+front-run. An ordinary person who does not want a stranger profiling their salary or
+their savings. And, going forward, any app that needs ``anonymous, but one action per
+person'': private voting, fair airdrops, reputation you can carry without a trail.
+
+\vspace{0.3em}
+\textbf{What is honest to say it cannot do yet.} riverrun is real, tested, and open. The
+measuring tool works on the live network today. The privacy engine works and has been
+checked, including by attacking our own code and fixing what we found. But the piece that
+would let the blockchain itself verify everything, with no trusted helper, is built and
+proven in a test environment, not yet live on the main network. So do not guard real
+money or a real identity with the engine yet. We say exactly where each piece stands all
+through the paper, because a privacy tool that will not be honest about its own limits is
+not one you should trust with your privacy. \emph{(Stated precisely in
+\S\ref{sec:onchain}, the self-audit in \S\ref{sub:selfaudit}, and the full list in
+\S\ref{sec:limits}.)}
+
+\vspace{0.4em}
+That is riverrun, in plain words. The rest of this paper is only these few ideas, made
+precise and made real.
+
+\clearpage
+
 \begin{center}
 \begin{minipage}{0.80\textwidth}
 \centering\itshape\color{ink}
