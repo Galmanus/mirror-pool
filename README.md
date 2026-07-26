@@ -19,8 +19,11 @@
 [![post-quantum](https://img.shields.io/badge/STARK-post--quantum%2C%20no%20setup-8A2BE2)](#innovations-and-why-they-matter)
 [![license](https://img.shields.io/badge/license-MIT-blue)](#license)
 
-**riverrun gives you real privacy on a blockchain. And unlike anything else, it tells
-you exactly how private you actually are.**
+**riverrun, the anonymity layer for Solana. Post-quantum.**
+
+Every privacy tool hides your money. riverrun hides *you*: which person, out of a crowd,
+actually did a thing. And it is built from hashes, so no computer, not even a quantum
+one, can undo it.
 
 ## In plain words
 
