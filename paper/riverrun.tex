@@ -222,6 +222,364 @@ trail that loops back on itself has no origin to trace (\S\ref{sec:ruler}). That
 strongest defense the ruler finds.
 \end{intuition}
 
+% ===================== PHILOSOPHY =====================
+\section{What privacy is, and why behavioral privacy is its hardest case}
+\label{sec:philosophy}
+
+A privacy tool that cannot say what privacy \emph{is} will build the wrong thing. So
+before the cryptography, the concept. This section argues four claims that the rest of
+the paper depends on: privacy is not secrecy, privacy is a right and not a mere
+preference, anonymity is a distinct and collective good, and behavioral privacy, hiding
+\emph{who} rather than \emph{how much}, is the hardest case of all and the one most
+worth solving on a public ledger.
+
+\subsection{Privacy is not secrecy, and not the same as anonymity}
+
+The three words are used as if interchangeable, and they are not. \textbf{Secrecy} is
+hiding a fact from everyone. \textbf{Privacy}, in the definition we take from the
+cypherpunk tradition and which matches ordinary intuition, is the \emph{power to
+selectively reveal yourself to the world}: to choose who learns what, and when. A
+private matter is not one nobody may know. It is one you decide who knows. You are not
+keeping your salary secret when you tell your bank and hide it from a stranger on the
+street. You are exercising privacy, which is control over an audience.
+
+\textbf{Anonymity} is a third thing again. It is unlinkability between an actor and an
+act. A message is anonymous not when its contents are hidden, they may be fully public,
+but when no one can tie it to its author. This is the good riverrun defends. The amounts
+are not hidden, the actions are not hidden, the fact that \emph{someone} acted is not
+hidden. What is severed is the link from the act back to the person.
+
+\begin{intuition}
+A worked distinction. A sealed envelope is \textbf{secrecy}: the letter inside is hidden
+from all. A letter you show your lawyer but not your neighbor is \textbf{privacy}: you
+choose the audience. A signed-but-unaddressed leaflet dropped in a crowd, whose author
+no one can name, is \textbf{anonymity}: the content is open, the author is not. Most
+blockchain privacy work builds the first, confidential amounts. riverrun builds the
+third, and offers the second, selective revelation, as a set of user-controlled powers
+(\S\ref{sec:id}).
+\end{intuition}
+
+The distinction is old. Warren and Brandeis founded the modern legal concept on ``the
+right to be let alone'' \cite{warrenbrandeis}. Westin reframed it as informational
+self-determination, the claim of individuals to determine for themselves when and how
+information about them is communicated \cite{westin}. Gavison analyzed it as a measure
+of the access others have to you, along the axes of secrecy, anonymity, and solitude
+\cite{gavison}. Across these, privacy is control, not concealment, which is why a system
+that only conceals amounts leaves the person exposed.
+
+\subsection{Privacy is a right, because its absence is a chilling force}
+
+Is privacy a preference, a luxury one may forgo, or a right, a precondition for other
+goods? The argument for the second is not sentimental. It is structural, and it runs
+through the \textbf{panopticon}.
+
+Bentham designed the panopticon as a prison in which a single guard might watch any
+cell, and no prisoner could tell when they were watched \cite{bentham}. Foucault saw
+that the genius of the design was not the watching but the \emph{uncertainty} of it: not
+knowing when you are observed, you behave at all times as if you are \cite{foucault}. The
+watcher's power becomes automatic and internalized. The prisoner guards themselves.
+
+A public ledger is a panopticon with the uncertainty removed and replaced by something
+worse, a certainty that runs backward in time. Every action is not merely watchable, it
+is recorded, permanently, and readable by anyone, forever. The chilling effect that
+Foucault described as a tendency becomes, on-chain, a fact. A person who knows their
+every payment is public and permanent does not transact freely. They avoid the
+controversial donation, the sensitive purchase, the association that could be held
+against them in a future whose norms they cannot predict. This is the
+\emph{disanalogy that makes the ledger worse than Bentham's prison}: the panopticon's
+inmate is watched only in the present, and forgotten when released, while the ledger's
+subject is watched in a present that never ends, by observers who have not yet been born,
+under laws not yet written.
+
+\begin{honest}
+The chilling-effect argument is empirical, and honesty requires the state of the
+evidence. Studies of surveillance and self-censorship (for instance, measured drops in
+sensitive search traffic after mass-surveillance disclosures) support the direction of
+the effect, but its magnitude on-chain is not something we have measured, and we do not
+claim a number. What we claim is narrower and defensible: a permanent public record of
+behavior creates a structural incentive toward self-censorship, and removing the link
+from act to actor removes that incentive. Whether any given user feels chilled is
+theirs to say. That the architecture chills is a property of the architecture.
+\end{honest}
+
+\subsection{``Nothing to hide,'' and why it fails}
+
+The standard objection to privacy is that an honest person has nothing to hide, so only
+wrongdoers want it. The argument fails on three counts, and naming them sharpens what
+riverrun defends. First, it \textbf{mistakes the good}. Privacy is not the concealment of
+wrongdoing but control over an audience (\S\ref{sec:philosophy}); the person who closes
+the bathroom door has nothing to hide and everything to keep private, and the distinction
+is not about guilt. Second, it \textbf{assumes a fixed and benevolent observer}. On a
+permanent ledger the observer is not one authority today but every authority forever,
+under norms that change: an act legal and ordinary now may be reread by a future regime,
+employer, or insurer, and the record does not expire. The person with nothing to hide
+today cannot know they have nothing to hide in 2050, which is the timescale a permanent
+record actually spans. Third, it \textbf{ignores aggregation}. Solove's analysis
+\cite{solove} shows that harm accrues not from any single disclosure but from the
+assembly of many innocuous facts into a profile that predicts, sorts, and prices a person,
+which is precisely what behavioral chain-analysis does. The response to ``nothing to
+hide'' is that privacy protects against the aggregate future use of the present record,
+and no individual act reveals whether that protection was needed.
+
+\subsection{Contextual integrity: privacy as appropriate flow}
+
+Nissenbaum's framework of \textbf{contextual integrity} \cite{nissenbaum} gives the
+sharpest account of what riverrun ID implements. Privacy, on this view, is not secrecy and
+not a binary of public-versus-private, but the preservation of \emph{appropriate
+information flows}: each social context, a bank, a vote, a clinic, a marketplace, carries
+norms about what information flows to whom, and a violation is not disclosure as such but
+disclosure that breaks the context's norm. Your pharmacist knowing your prescription is
+appropriate; your employer knowing it is not, even though both are ``someone knowing.''
+
+A public ledger destroys contextual integrity by collapsing all contexts into one: every
+flow is visible to every observer, so the norms that separate a vote from a purchase from a
+donation cannot hold. riverrun ID is contextual integrity made cryptographic. The
+\textbf{shape} power gives each context a distinct, unlinkable identity, so information
+that flows within one context does not leak across to another, and the \textbf{link} power
+lets the holder, and only the holder, join two contexts when the norm permits it. The
+design target is not to hide everything from everyone, which is secrecy and which no useful
+system provides, but to restore the boundaries between contexts that the ledger erased.
+This is why the identity layer is central and the pool is one application: the deeper good
+is appropriate flow, and hiding a single behavior is one instance of it.
+
+\subsection{Surveillance is an economy, not an accident}
+
+The chilling effect would matter less if surveillance were rare. It is not, because it is
+profitable. Zuboff's account of \textbf{surveillance capitalism} \cite{zuboff} describes
+an economic order in which human behavior is the raw material: it is captured, rendered
+into data, and traded as prediction, and the incentive to capture more is structural, not
+malicious. A permanent public ledger is the ideal input to this economy, a stream of
+behavioral data that is free to collect, impossible to delete, and attributable at
+increasing accuracy as the models improve. The market for chain-analysis, firms that
+de-anonymize on-chain behavior for exchanges, regulators, and traders, is the concrete
+instance, and it grows because the data grows and the models feeding on it get better.
+
+This reframes riverrun's purpose in economic terms. The point is not to defeat a
+particular adversary but to \emph{raise the cost} of behavioral surveillance from near
+zero toward something, and to give the individual a tool whose protection does not depend
+on the goodwill of the firms profiting from its absence. The cypherpunk premise of
+\S\ref{sec:cypherpunk}, that no large organization grants privacy out of beneficence, is
+not cynicism but a correct reading of the incentive structure: the parties who could grant
+behavioral privacy are the parties who profit from selling its absence, so the only
+durable source of it is a tool the individual runs for themselves.
+
+\subsection{Anonymity is a collective good, not only a private one}
+
+Here is the fact that makes anonymity unlike most goods, and that shapes every design
+decision in this paper. \textbf{Your anonymity is made of other people.} A secret you
+hold alone, a password, is yours entirely. But you cannot be anonymous alone. To be
+unlinkable to your act, there must be others who could equally have done it. The
+\emph{anonymity set} is that crowd, and it is a shared resource. When you join a privacy
+pool you consume some of its anonymity and also contribute to everyone else's. When you
+leave, or when you stand out, you diminish theirs.
+
+This has three consequences that run through the paper. First, anonymity is
+\emph{non-excludable and rivalrous in a specific way}, closer to a commons than to
+private property, which means it can be depleted by misuse (a member who acts a thousand
+times, \S\ref{sec:pool}) and must be protected by rules that bind everyone (the
+nullifier, one act per member). Second, the \emph{quality} of the set is not given by
+its size, because the members are not interchangeable if their funding origins differ,
+which is the entire subject of the ruler (\S\ref{sec:ruler}). Third, forming a good set
+is a coordination problem, not an individual one, which is why riverrun includes an
+agent that forms crowds on purpose (\S\ref{sec:coord}) rather than hoping a good crowd
+appears.
+
+\begin{intuition}
+The structural isomorphism, stated and then bounded. Anonymity behaves like herd
+immunity in epidemiology: an individual's protection depends on enough others also
+participating, and free-riders who take protection without contributing weaken the whole.
+\emph{Disanalogy:} herd immunity protects even non-participants once a threshold is
+crossed, whereas an anonymity set protects only its members, and a non-member gains
+nothing from the crowd's existence. The commons is real, the externality runs only
+inward.
+\end{intuition}
+
+\subsection{Behavioral privacy is the hard case, and the neglected one}
+
+There are, we said in \S\ref{sec:philosophy} above and will not repeat, two privacies on
+a ledger: \emph{how much} and \emph{who}. The field has poured its effort into the
+first. Confidential transfers, shielded balances, and value-mixers hide amounts, and
+they are mature and valuable. Behavioral privacy, hiding which person out of a crowd
+performed a public act, has been comparatively neglected. Three reasons, and each is a
+reason it is the harder problem.
+
+First, \textbf{behavior is higher-dimensional than value}. An amount is one number.
+A behavior is a pattern: timing, sequence, counterparties, sizing, the choice of venue.
+Chain-analysis clusters on that pattern, and hiding it means hiding a shape, not a
+scalar. Second, \textbf{the leak is often outside the protocol}. Even a perfect
+in-protocol mix leaves the funding graph visible, and the funding graph re-identifies the
+actor, which is why the ruler exists and why we treat provenance as a first-class
+adversary channel rather than an afterthought (\S\ref{sec:ruler}). Third,
+\textbf{behavioral privacy is what predictive adversaries want}. An adversary who learns
+your balance has learned a fact. An adversary who learns your behavioral fingerprint can
+\emph{predict and front-run} you, which is a strictly greater harm, and it is the harm
+that grows as the models feeding on the permanent public record improve.
+
+The claim of this paper is that behavioral privacy is both the harder problem and the
+more valuable one, and that Solana, in particular, has no primitive for it at all. That
+absence is the opportunity riverrun addresses. The philosophy is not decoration. It sets
+the target precisely: not to hide the money, which others do well, but to sever the actor
+from the act, permanently, in a way a future machine cannot reverse, while being honest
+at every step about how large the remaining crowd really is.
+
+% ===================== CYPHERPUNK =====================
+\section{The cypherpunk line, and where riverrun turns it}
+\label{sec:cypherpunk}
+
+riverrun stands in a tradition, and naming it precisely is both an intellectual debt and
+a way to state what is new. The tradition is the cypherpunk one: the claim that privacy
+in the electronic age is not granted by institutions but built by individuals writing
+code. This section traces that line, from its origin in the cryptography of the 1980s to
+its collision with the law in the 2020s, and then states the one turn riverrun tries to
+add to it.
+
+\subsection{Chaum: privacy is a cryptographic problem, not a policy one}
+
+The line begins with David Chaum. In 1981 he described the \textbf{mix network}, a way
+to send mail so that no observer, not even the relays themselves, could link a sender to
+a receiver \cite{chaum81}. The mechanism, wrapping a message in layers of encryption
+that each relay peels and shuffles, is the direct ancestor of every anonymity network
+since, including Tor, and its core idea, that unlinkability can be a mathematical
+property rather than a promise, is the seed of everything here. In 1985 Chaum went
+further, arguing in ``Security without Identification'' that a society could run its
+transactions, credentials, and payments without a central register of who did what, and
+that the alternative, a ``dossier society'' of total records, was a choice, not a
+necessity \cite{chaum85}. His DigiCash implemented anonymous electronic money a decade
+before Bitcoin. Chaum's contribution to riverrun is foundational and specific: the idea
+that anonymity is a construction, that a nullifier-like token can prevent double-spending
+without naming the spender, and that the goal is a system where identification is the
+exception a user chooses, not the default the system imposes.
+
+\subsection{May and Hughes: the manifestos}
+
+If Chaum supplied the mathematics, Tim May and Eric Hughes supplied the politics. May's
+\emph{Crypto Anarchist Manifesto} (1988) predicted that cryptography would let people
+interact and transact without revealing identity, and that this would shift power away
+from institutions whose leverage rested on their monopoly over records \cite{may88}.
+Hughes' \emph{A Cypherpunk's Manifesto} (1993) is the more disciplined document, and the
+one riverrun takes most directly \cite{hughes93}. Three of its lines are load-bearing
+here.
+
+\begin{quote}
+\emph{``Privacy is necessary for an open society in the electronic age. Privacy is not
+secrecy. A private matter is something one doesn't want the whole world to know, but a
+secret matter is something one doesn't want anybody to know. Privacy is the power to
+selectively reveal oneself to the world.''}
+\end{quote}
+
+That is the definition we adopted in \S\ref{sec:philosophy}, and it is exactly what
+riverrun ID's \textbf{link} power makes cryptographic: the holder chooses which of their
+identities to reveal as one, to whom, for which contexts (\S\ref{sec:id}).
+
+\begin{quote}
+\emph{``We cannot expect governments, corporations, or other large, faceless
+organizations to grant us privacy out of their beneficence. \dots We must defend our own
+privacy if we expect to have any.''}
+\end{quote}
+
+That is the reason riverrun is non-custodial and transparent, with no trusted party who
+could grant or revoke the privacy, and no ceremony whose secret could betray it.
+
+\begin{quote}
+\emph{``Cypherpunks write code. We know that someone has to write software to defend
+privacy, and \dots we're going to write it.''}
+\end{quote}
+
+That is the reason this paper ships with an implementation, tests, and reproducible
+numbers rather than a specification alone.
+
+\subsection{The crypto wars, and the lesson that code is speech}
+
+The manifestos were written under siege. Through the 1990s the United States classified
+strong cryptography as a munition and sought to restrict its export and to mandate key
+escrow through the Clipper chip, a hardware backdoor. The cypherpunks fought this in
+code and in court, and the eventual recognition that source code is protected expression
+established the principle that one cannot be forbidden from writing or publishing a
+cryptographic tool \cite{bernstein}. The lesson riverrun inherits is not triumphalism.
+It is that the defense of privacy is adversarial and political, that the pressure to
+insert a trusted party or a backdoor is constant, and that the only durable answer is an
+architecture in which there is no trusted party to coerce. A committee is a compromise,
+and \S\ref{sec:onchain} says so plainly and treats its removal as the roadmap.
+
+\subsection{PGP: privacy put in ordinary hands}
+
+The manifestos would have stayed manifestos without a tool a person could actually run.
+Phil Zimmermann's PGP (1991) was that tool, strong encryption for email, released freely
+and spread worldwide before the export regime could contain it \cite{pgp}. Its
+significance for riverrun is twofold. First, it demonstrated the cypherpunk thesis in
+practice: privacy was not granted by any institution but seized by publishing code that
+individuals could run themselves, and once published it could not be recalled. Second, it
+set the standard that a privacy tool must be usable by non-experts, because a tool only
+cryptographers can operate protects only cryptographers. That standard is the reason this
+paper opens with an ELI5 rather than an abstract, and the reason the design goal
+(\S\ref{sec:philosophy}) is a primitive an ordinary person invokes with one key, not a
+protocol only the technical can wield. Privacy that is a luxury for the skilled is not the
+open society Hughes wrote about.
+
+\subsection{The pre-history of on-chain money: b-money and bit gold}
+
+Between the cypherpunk mailing list and Bitcoin lie two proposals that riverrun inherits
+structurally. Wei Dai's \textbf{b-money} (1998) sketched a currency maintained by a
+distributed set of record-keepers rather than a bank, with pseudonymous participants and
+proof-of-work to make identities costly \cite{bmoney}. Nick Szabo's \textbf{bit gold}
+(around 1998) proposed unforgeable costly bits chained together, anticipating the
+hash-linked structure of a blockchain \cite{bitgold}. Both are ancestors of Bitcoin, and
+both carry the lesson riverrun takes as a constraint: a system meant to resist coercion
+must have no central party whose compromise breaks it, because any such party is a point
+the adversary of \S\ref{sec:cypherpunk} will pressure. It is the same reason riverrun's
+soundness rests on a hash and not a ceremony, its accountability on self-revealing algebra
+(\S\ref{sec:math-rln}) and not a trusted opener, and its committee, where one still exists,
+on a threshold of distinct signers rather than a single authority, with its removal named
+as the goal.
+
+\subsection{On-chain: pseudonymity, Zcash, Tornado, and the law}
+
+Bitcoin gave the tradition a public ledger and, with it, a lesson in the gap between
+pseudonymity and anonymity. A Bitcoin address is a pseudonym, not a mask, and a decade of
+chain-analysis has shown how thoroughly pseudonyms de-anonymize under a permanent public
+record. Zcash answered with shielded transactions, hiding amounts and parties behind
+zero-knowledge proofs, the most complete on-chain privacy deployed at scale. Tornado
+Cash answered for Ethereum with a non-custodial value-mixer, a Merkle set of deposits and
+a zero-knowledge withdrawal, whose shape riverrun borrows and whose payload it changes
+from a coin to a behavior (\S\ref{sec:pool}).
+
+Then came the law, and it is the part of the lineage a responsible paper cannot skip. In
+2022 the United States sanctioned Tornado Cash itself, the first time a piece of
+autonomous code, rather than a person or entity, was placed on a sanctions list. A
+developer, Alexey Pertsev, was convicted in the Netherlands in 2024, and further
+prosecutions followed. The precedent is sobering and directly shapes riverrun's design
+and its business model: a tool that takes a fee to anonymize \emph{value transfer}
+exposes its operators to money-transmission and sanctions liability, whereas a tool that
+hides \emph{who acted} and takes no custody of value sits differently, and an identity
+and measurement layer sits differently still. We state this not as legal advice, which we
+are not qualified to give, but as a design constraint we took seriously: riverrun does
+not custody funds, does not mix value for a fee, and treats the honest disclosure of its
+own limits as a feature, not a vulnerability.
+
+\subsection{The turn riverrun tries to add: from promise to proof}
+
+Every generation in this line added one thing. Chaum added that anonymity can be
+constructed. May and Hughes added that it must be self-defended. Zcash and Tornado added
+that it can run on a public ledger. What the tradition never fully supplied is a way for
+the user to \emph{know}, rather than trust, how much privacy a given tool actually gives
+them. A mixer tells you that you are hidden among your fellow depositors. It does not
+tell you that, once the funding graph is read, your real crowd is a fraction of that, and
+sometimes just you. The cypherpunks wrote code to defend privacy. riverrun's small
+addition is to write code that also \emph{measures} whether the defense worked, on the
+real network, and reports the answer honestly, including when the answer is
+uncomfortable. That is the ruler (\S\ref{sec:ruler}), and it is why the credo on the
+first page ends not with ``trust us'' but with ``check.''
+
+\begin{honest}
+Standing in a tradition is not the same as extending it, and we should not overclaim the
+turn. Measuring anonymity is itself not new: the metric we use is from 2002
+(\S\ref{sec:math-anon}), and measuring advertised-versus-real anonymity is an established
+research programme on Ethereum. What is uncommon is doing it as a shipped, user-facing
+tool, on Solana, on live data, and wiring the same honesty into the identity layer and
+the on-chain claims. The contribution is integration and discipline, not a new
+primitive, and we say which parts are which throughout.
+\end{honest}
+
 % ===================== 2. WHAT RIVERRUN IS =====================
 \section{What riverrun is}
 \label{sec:what}
@@ -950,6 +1308,828 @@ batched-round seam hold, with the negatives tested: another member's nullifier, 
 different action, a cross-member claim. This does not replace an independent formal
 audit, still on the roadmap. But the findings it surfaced are closed, not noted.
 
+% ===================== MATH: ANONYMITY =====================
+\section{The mathematics of anonymity}
+\label{sec:math-anon}
+
+The systems above use the effective anonymity-set size and the repeated-use bound as
+tools. This section derives them from first principles, states them as theorems, and
+gives the arguments. Nothing here is folklore we ask you to accept. It is the formal
+backbone under \S\ref{sec:ruler} and \S\ref{sub:erosion}.
+
+\subsection{Anonymity is uncertainty, measured in bits}
+
+Fix an adversary and a single observed act. Let $\Psi = \{u_1, \dots, u_N\}$ be the
+population of possible actors, and let the adversary's knowledge, after seeing everything
+it can see, be a probability distribution $P = (p_1, \dots, p_N)$ over who performed the
+act, with $\sum_i p_i = 1$. Perfect anonymity is $p_i = 1/N$ for all $i$: the adversary
+learned nothing, and every actor is equally likely. Perfect exposure is $p_j = 1$ for
+some $j$: the adversary is certain. Anonymity is the distance between these, and the
+right way to measure the uncertainty in a distribution is its \textbf{Shannon entropy}
+\cite{shannon},
+\[ H(P) = -\sum_{i=1}^{N} p_i \log_2 p_i, \]
+the expected number of bits an adversary still lacks to name the actor. Serjantov and
+Danezis \cite{serjantov2002}, and independently Diaz et al. \cite{diaz2002}, proposed
+this in 2002 as the honest metric, against the naive count $N$. The
+\textbf{effective anonymity-set size} is the entropy exponentiated,
+\[ \keff = 2^{H(P)}, \]
+the size of the uniform crowd that would give the same uncertainty. If $P$ is uniform on
+a subset of size $m$ and zero elsewhere, then $H = \log_2 m$ and $\keff = m$, so on the
+easy case the metric agrees with counting. On every other case it corrects it.
+
+\begin{intuition}
+Why entropy and not the count. Two pools each advertise $k = 4$. In the first, the
+adversary's posterior is uniform, $(\tfrac14,\tfrac14,\tfrac14,\tfrac14)$, and
+$\keff = 4$. In the second, it is $(\tfrac{7}{10}, \tfrac1{10}, \tfrac1{10}, \tfrac1{10})$,
+one member far more likely than the rest. The count says both are $4$. The entropy says
+the second is $H \approx 1.36$ bits, $\keff \approx 2.6$: the second pool delivers barely
+two-thirds of the anonymity of the first, and the count could never see it. The gap
+between what a pool advertises and what it delivers lives entirely in this difference.
+\end{intuition}
+
+\subsection{Conditioning on provenance: the effective-\texorpdfstring{$k$}{k} formula}
+
+The count assumes members are interchangeable. They are not, because the funding graph is
+public (\S\ref{sec:ruler}). We derive the correction. Partition the $k$ members into
+\textbf{provenance classes} $C_1, \dots, C_t$ by attributable funding origin, with sizes
+$n_1, \dots, n_t$ and $\sum_c n_c = k$. Model the adversary as follows. The true actor is
+uniform over the $k$ members a priori. The adversary observes the acting identity's
+provenance class, which is cheap because a fresh withdrawal wallet must be funded from
+somewhere visible. Conditioned on that observation, the actor is uniform over the
+members of the observed class and impossible elsewhere.
+
+Then the actor lies in class $C_c$ with probability $n_c / k$, and given that, the
+adversary's residual entropy is $\log_2 n_c$, the uncertainty within a uniform class of
+size $n_c$. The expected residual entropy is
+\begin{equation}
+H \;=\; \sum_{c=1}^{t} \frac{n_c}{k}\,\log_2 n_c, \qquad \keff \;=\; 2^{H}.
+\label{eq:effk-derived}
+\end{equation}
+This is Eq.~\ref{eq:effk}, now derived rather than asserted. It is a conditional entropy,
+$H(\text{actor} \mid \text{observed class})$, and it is exactly the average over classes
+of the log of the class size.
+
+\begin{claimx}[Bounds and boundary cases]
+For any partition of $k$ members into classes, $\;0 \le H \le \log_2 k$, so
+$\;1 \le \keff \le k$. The upper bound $\keff = k$ holds iff a single class contains
+everyone (nothing was learned). The lower bound $\keff = 1$ holds iff every class is a
+singleton (every member is identified). If any one class is a singleton, that member has
+$\keff = 1$ regardless of how large the other classes are.
+\end{claimx}
+
+\begin{proof}[Argument]
+$H$ is a nonnegative sum of nonnegative terms, and each term $\tfrac{n_c}{k}\log_2 n_c$
+is zero exactly when $n_c = 1$. So $H = 0$ iff every $n_c = 1$, giving $\keff = 1$. For
+the upper bound, $H$ is the conditional entropy $H(A \mid C)$ of the actor $A$ given the
+class $C$, and conditioning cannot increase entropy above the unconditional
+$H(A) = \log_2 k$ of a uniform actor, with equality iff $C$ is independent of $A$, which
+for this partition means a single class. The singleton remark is immediate: a member
+alone in their class is named the moment their class is observed, and the per-member
+anonymity is a minimum, not the average $\keff$, which is why the ruler reports the worst
+case alongside the mean.
+\end{proof}
+
+The \emph{direction} matters and the first implementation had it backwards
+(\S\ref{sec:ruler}). One is tempted to score concentration by \textbf{min-entropy},
+$H_\infty = -\log_2 \max_i p_i$, which measures the single most likely suspect. But
+min-entropy reports catastrophe precisely when the partition found nothing to split on: a
+single class of seven, the safest case, has one most-likely-class probability of $1$ and
+$H_\infty = 0$, reading as $\keff = 1$ when the honest answer is $7$. Shannon entropy,
+the \emph{average} residual, does not have this failure, and is the quantity Eq.
+\ref{eq:effk-derived} uses. Min-entropy answers a different and also-useful question,
+``how exposed is the worst-off member,'' which the ruler reports as the worst case, but
+it is not the set's anonymity.
+
+\subsection{The repeated-use bound: an intersection attack, formally}
+
+Single-shot $\keff$ scores one act. A riverrun-ID identity is one secret used many times
+(\S\ref{sub:erosion}), and Danezis warned that entropy metrics are ``very poor'' at
+repeated use \cite{danezismeasure}. We formalize why, and give the correct bound.
+
+\textbf{Setup.} A persistent user $u$ acts in contexts $\theta_1, \dots, \theta_n$
+through pseudonyms that are cryptographically unlinkable. The adversary cannot link the
+pseudonyms. But $u$ carries a \emph{persistent quasi-identifier}, most concretely their
+funding origin, which recurs under every use and is public. In context $i$ the adversary
+observes a feature $X_i = \varphi_i(u)$ and forms the candidate set consistent with it,
+$S_i = \{v \in \Psi : \varphi_i(v) = X_i\}$, which always contains the true $u$. Linking
+the acts by the recurring quasi-identifier rather than the pseudonym, the adversary
+intersects:
+\[ T_n \;=\; \bigcap_{i=1}^{n} S_i, \qquad \keff^{(n)} \;=\; |T_n|
+\text{ (uniform posterior on } T_n\text{)}. \]
+
+\begin{property}[Monotone erosion]
+$\keff^{(n)}$ is non-increasing in $n$: $\;\keff^{(n)} \le \keff^{(n-1)} \le \dots \le
+\keff^{(1)}$. More uses never increase anonymity, and $\keff^{(1)}$ is exactly the
+single-shot number of \S\ref{sec:ruler}. The single-shot metric is therefore an
+\emph{over}-estimate of a persistent identity's true anonymity.
+\end{property}
+
+\begin{proof}[Argument]
+$T_n = T_{n-1} \cap S_n \subseteq T_{n-1}$, so $|T_n| \le |T_{n-1}|$. The base case
+$T_1 = S_1$ is the single-shot candidate set. Intersection is monotone decreasing under
+inclusion, which is the whole content.
+\end{proof}
+
+\textbf{The differential-privacy view.} Read each use as a query leaking information
+about $u$. Let $\varepsilon_i = H(u \mid X_{<i}) - H(u \mid X_{\le i}) \ge 0$ be the bits
+that use $i$ removes, its privacy loss. The losses telescope:
+\[ \sum_{i=1}^{n} \varepsilon_i \;=\; H(u \mid \varnothing) - H(u \mid X_{1..n})
+\;=\; \log_2 |\Psi| - \log_2 \keff^{(n)}, \]
+so
+\begin{equation}
+\keff^{(n)} \;=\; |\Psi|\cdot 2^{-\sum_i \varepsilon_i}.
+\label{eq:repeated}
+\end{equation}
+A persistent identity's anonymity \textbf{decays exponentially in its accumulated
+per-use leak}. This is the composition theorem of differential privacy \cite{dwork}
+applied to anonymity: leaks add, and the crowd shrinks by the exponential of the sum.
+Fix an anonymity floor $k_{\min}$. The identity is safe under one secret while
+$\sum_i \varepsilon_i \le \log_2(|\Psi| / k_{\min})$, and the moment the sum crosses that
+budget, $\keff^{(n)} < k_{\min}$.
+
+\begin{claimx}[The rotation trigger]
+When the budget is spent, the correct action is already a power of the primitive: the
+\textbf{turn} (\S\ref{sec:id}) rotates the secret to a fresh lineage whose candidate set
+$S$ is un-intersected, resetting the accumulated crypto-linkage to zero. The metric does
+not merely warn, it fires the defense.
+\end{claimx}
+
+\begin{honest}
+Two honest bounds on this result. First, \textbf{turn} resets the cryptographic lineage,
+not the physical quasi-identifier: if the next lineage is funded from the same rare
+origin, the origin-based intersection survives the rotation, so the two defenses must
+compose, rotate the secret \emph{and} re-fund from a common origin. Second, Eq.
+\ref{eq:repeated} uses basic composition, a worst-case upper bound on leak; correlated
+features can erode faster in the tail, and advanced composition gives a tighter
+typical-case $\sqrt{2n\ln(1/\delta)}\,\varepsilon$ under an independence assumption we do
+not claim holds. The number is a floor under a stated observation model, in keeping with
+the ruler's discipline everywhere else.
+\end{honest}
+
+\subsection{The anonymity trilemma, and where a synchronized round pays}
+
+There is a lower bound on what anonymity costs, and it explains the shape of riverrun's
+pool. Das, Meiser, Mohammadi, and Kate proved an \textbf{anonymity trilemma}
+\cite{trilemma}: a protocol cannot simultaneously provide strong anonymity, low latency,
+and low bandwidth overhead. Strong anonymity against a global observer requires either
+that messages wait (latency, so that many are in flight together and cannot be ordered) or
+that cover traffic is sent (bandwidth, so that real messages hide among decoys). You may
+have any two of the three; the third pays.
+
+riverrun's synchronized round (\S\ref{sec:round}) is a deliberate choice of which corner to
+pay. It spends \textbf{latency}: members wait to act together at one moment, so there is no
+timing or ordering for an observer to separate them, which is exactly the ``many in flight
+together'' the trilemma says buys anonymity. It does not spend bandwidth on cover traffic,
+because the crowd is other real members rather than manufactured decoys, which is why
+forming a genuine same-provenance crowd (the coordinator, \S\ref{sec:coord}) matters more
+here than in a decoy-based design: with no chaff, the anonymity is exactly the real crowd,
+no larger and no smaller, which is precisely what the ruler measures. The trilemma is the
+reason a privacy pool cannot be instant, free, and strong at once, and riverrun's answer is
+to be strong and lean by asking members to synchronize, an honest cost stated rather than
+hidden.
+
+% ===================== MATH: POST-QUANTUM =====================
+\section{The mathematics of post-quantum security}
+\label{sec:math-pq}
+
+\S\ref{sec:pq} argued that a permanent-ledger privacy tool must be post-quantum. This
+section supplies the cryptography under that argument: what a quantum computer breaks,
+what it does not, and why riverrun's hash-only design is on the safe side by a margin
+that is quantified, not hoped.
+
+\subsection{What Shor breaks, and why the curves fall}
+
+The security of elliptic-curve cryptography (ECDSA signatures, ECDH key exchange,
+pairing-based SNARKs) rests on the hardness of the discrete-logarithm problem: given
+$g$ and $g^x$ in a group, recover $x$. Classically the best attacks are exponential in
+the key size, which is why $256$-bit curves are considered safe today. Shor's algorithm
+\cite{shor} solves discrete logarithm, and integer factorization, in \emph{polynomial}
+time on a quantum computer, by reducing each to period-finding and solving that with the
+quantum Fourier transform. The consequence is total, not marginal: a
+cryptographically-relevant quantum computer does not weaken curve-based schemes, it
+breaks them, recovering private keys from public ones. Every construction whose privacy
+or soundness rests on discrete log, including the pseudonym unlinkability of deployed BBS
+credentials (\S\ref{sub:everlasting}), falls at once.
+
+\subsection{What Grover does to a hash, and why it is survivable}
+
+Hash functions rest on different assumptions: preimage resistance (given $y$, find $x$
+with $H(x) = y$) and collision resistance (find $x \ne x'$ with $H(x) = H(x')$). Against
+these the relevant quantum attack is Grover's \cite{grover}, an unstructured search that
+finds a marked item among $2^b$ in $O(2^{b/2})$ steps, a \emph{quadratic} speedup, not an
+exponential one. The effect on security is precise and bounded: Grover halves the
+effective preimage security of a $b$-bit hash from $b$ to $b/2$ bits. A $256$-bit hash
+retains $128$ bits against a quantum adversary, which is the standard target. Collision
+resistance is affected even less in any practical model, and the $128$-bit security
+parameters riverrun's proofs target (\S\ref{sec:onchain}) already absorb the Grover loss.
+
+\begin{claimx}[Why hash-only is post-quantum]
+Every value riverrun commits to a permanent ledger, the commitment $\rescue(s,a)$, the
+nullifier $\rescue(s,r)$, the Merkle root, the pseudonyms of riverrun ID, is the output of
+a collision-resistant hash. Their unlinkability and binding reduce to preimage and
+collision resistance of that hash, for which the only known quantum attack is Grover's
+quadratic speedup, absorbed by the parameters. No value on the permanent record reduces
+to discrete logarithm or factoring. Therefore no value on the permanent record is broken
+by Shor's algorithm, and the anonymity is \emph{everlasting} in the sense of
+\S\ref{sub:everlasting}: unrecoverable from today's transcript by any future quantum
+adversary.
+\end{claimx}
+
+\subsection{The Mosca inequality, and the harvest-now corollary}
+
+The timing argument of \S\ref{sec:pq} deserves a formal statement. Following Mosca
+\cite{mosca}, let $X$ be the required security lifetime of a secret, $Y$ the time to
+migrate a system to quantum-safe cryptography, and $Z$ the time until a
+cryptographically-relevant quantum computer exists.
+
+\begin{claimx}[Mosca's inequality]
+If $X + Y > Z$, the system cannot protect its secrets for their required lifetime: the
+quantum computer arrives before migration completes, and any data recorded before
+migration and still sensitive is exposed retroactively.
+\end{claimx}
+
+\begin{claimx}[The permanent-ledger corollary]
+For data written to a public, permanent ledger, the anonymity requirement has no expiry,
+so $X = \infty$. Then $X + Y > Z$ holds for every finite $Z$, regardless of migration
+speed. Therefore a privacy tool whose protected data lives on a permanent public ledger
+cannot satisfy Mosca's inequality unless its primitive is \emph{already} quantum-safe at
+the moment of writing. Post-quantum security is not a risk to manage for such a tool; it
+is a necessary condition.
+\end{claimx}
+
+\emph{Harvest-now-decrypt-later} is the corollary made operational. The adversary needs
+no quantum computer today. Copying the entire public ledger is free and requires nothing
+but storage. The computation that breaks it is deferred to the day the hardware exists,
+at which point every curve-based guarantee ever written to the chain fails at once,
+including guarantees written in 2026 by tools whose authors reasoned that the hardware
+was still years away. The direction of the argument is the point: for permanent data, the
+arrival date of the quantum computer is irrelevant to whether you are safe, and relevant
+only to \emph{when} you are broken. The standards bodies have drawn the same conclusion
+for data far less permanent than a ledger: NIST finalized FIPS 203, 204, and 205 in
+August 2024, and its hash-based signature SLH-DSA (FIPS 205) rests on the same
+conservative assumption riverrun does.
+
+% ===================== MATH: RLN =====================
+\section{The algebra of accountable anonymity}
+\label{sec:math-rln}
+
+Anonymity without accountability invites abuse: a single actor floods a system while
+hiding in the crowd. riverrun's answer, the nullifier and the rate-limiting construction,
+is algebra, and this section states it. The theme is Chaum's from \S\ref{sec:cypherpunk}:
+prevent misbehavior without naming the honest.
+
+\subsection{The nullifier as a pseudo-random function}
+
+A nullifier is $n = \rescue(s, r)$, a hash of the secret $s$ and the round label $r$.
+Treated as a pseudo-random function keyed by $s$, it has the two properties accountability
+needs. \textbf{Uniqueness}: for fixed $s$ and $r$, $n$ is determined, so a member cannot
+produce two distinct valid nullifiers for one round, which is what enforces one act per
+member per round. \textbf{Unlinkability}: $n$ reveals nothing about $s$ under preimage
+resistance, and $n = \rescue(s, r)$ and $n' = \rescue(s, r')$ for $r \ne r'$ are
+unlinkable under the PRF assumption, so a member's acts across rounds cannot be tied
+together. This is the deterministic-nullifier primitive that PLUME \cite{plume}
+formalizes and proves, and it is why the pool can enforce a rate without a registry of
+identities. The subtle requirement, that the revealed $n$ be bound to the \emph{same} $s$
+that proved membership, is the weld of \S\ref{sec:proof}, enforced inside one proof
+rather than by comparing two.
+
+\subsection{Rate-limiting by Shamir secret sharing}
+
+To allow $N$ anonymous acts per context but unmask the $N{+}1$-th, riverrun uses Shamir
+secret sharing \cite{shamir79} in the RLN construction \cite{rln}. Work over a prime
+field $\mathbb{F}_p$; riverrun uses the Mersenne prime $p = 2^{61} - 1$, small enough that
+products fit a $128$-bit word and large enough that a hash-derived point is effectively
+uniform. For a context $\theta$ with limit $N$, the holder's identity $s$ is the constant
+term of a degree-$N$ polynomial
+\[ P(x) \;=\; s + a_1 x + a_2 x^2 + \dots + a_N x^N, \]
+whose other coefficients $a_i = H(s \,\|\, \theta \,\|\, i)$ are derived deterministically
+from the secret and the context, so the holder commits to one polynomial per context and
+cannot equivocate. Each act publishes one point $(x, P(x))$, where the abscissa $x$ is
+derived from the act itself, $x = H(\theta \,\|\, \text{action})$, and not chosen freely.
+
+\begin{claimx}[The $N{+}1$ threshold]
+A degree-$N$ polynomial is determined by any $N{+}1$ distinct points and under-determined
+by $N$ or fewer. Therefore up to $N$ acts leave $s = P(0)$ information-theoretically
+hidden: infinitely many degree-$N$ polynomials pass through $N$ points, with every field
+element equally possible as the constant term. The $(N{+}1)$-th act supplies the pinning
+point, and anyone can recover $s$ by Lagrange interpolation at zero,
+\[ s \;=\; P(0) \;=\; \sum_{j} y_j \prod_{m \ne j} \frac{-x_m}{x_j - x_m}, \]
+unmasking the over-actor. Spam is priced in the spammer's own de-anonymization.
+\end{claimx}
+
+Two properties of $x$ are load-bearing, and one was an audit finding
+(\S\ref{sub:selfaudit}). The abscissa $x$ must be \textbf{unpredictable and unique per
+act}: if the actor could reuse an $x$, they could act repeatedly while publishing only
+$N$ distinct points and never crossing the threshold, defeating the limit; deriving $x$
+from the action's content forces distinct acts to distinct points. And $x$ must be
+\textbf{nonzero}, since $P(0) = s$, so a share at $x = 0$ would publish the secret
+directly; the derivation is remapped away from zero. Cross-context safety follows from the
+per-context coefficients: points from different $\theta$ lie on different polynomials and
+do not combine, so acting once in each of many contexts is not over-acting.
+
+% ===================== MATH: SEVEN POWERS =====================
+\section{The seven powers, formally}
+\label{sec:math-powers}
+
+\S\ref{sec:id} described riverrun ID's seven powers in words. Each is a precise relation
+over the secret and a public context, and each is a tested function in the core crate. We
+state them as statements and witnesses, in the style of \S\ref{sec:math-game}, so that
+``the user can do $X$'' means ``there is a relation the holder can satisfy and no one else
+can.'' Throughout, $s$ is the secret, $\theta$ a public context, and $H$ a domain-separated
+hash (each power uses its own tag, so a value in one role can never be reinterpreted in
+another).
+
+\begin{description}[leftmargin=1.3em,itemsep=0.28em]
+\item[1. shape.] $\mathsf{shape}(\theta) = H(\text{``shape''} \,\|\, s \,\|\, \theta)$.
+The published per-context identity, a Merkle leaf for that context's set. Unlinkability:
+$\mathsf{shape}(\theta_1)$ and $\mathsf{shape}(\theta_2)$ are independent hash outputs of
+one secret, so linking them reduces to breaking the hash (\S\ref{sec:math-notions},
+everlasting).
+\item[2. fit.] $\mathsf{fit}(\theta) = H(\text{``fit''} \,\|\, s \,\|\, \theta)$. The
+per-context nullifier, revealed once to act, spent-once by the on-chain registry. It is the
+accountability half of \S\ref{sec:math-rln}: unique per context, unlinkable across, and
+tied to the same $s$ that proves membership by the weld.
+\item[3. turn.] $\mathsf{turn}(\theta) = H(\text{``turn''} \,\|\, s \,\|\, \theta \,\|\,
+\theta{+}1)$. Continuity. The relation $\mathsf{CheckTurn}$ has statement
+$\{R_{\text{prev}}, \theta, \tau\}$ and witness $\{s, \text{path}\}$, and holds iff
+$\tau = \mathsf{turn}(\theta)$ and $\mathsf{shape}(\theta)$ is a leaf under $R_{\text{prev}}$.
+It proves ``the same holder who was a member last cycle is rotating forward,'' revealing
+$\tau$ but not which member, and is the primitive the ricorso and the erosion-rotation of
+\S\ref{sub:erosion} spend. It is proven in zero knowledge over the STARK, with its
+negatives (a forged tag, a tag from another angle) rejected in tests.
+\item[4. link.] Relation $\mathsf{CheckLink}$, statement $\{\mathsf{shape}_a, \theta_a,
+\mathsf{shape}_b, \theta_b\}$, witness $\{s\}$, holds iff both shapes derive from the same
+$s$. It lets the holder, and only the holder, prove that two of their identities are one,
+to a chosen verifier, for chosen contexts. This is contextual integrity's ``join two
+contexts when the norm permits'' (\S\ref{sec:philosophy}) made checkable.
+\item[5. grant.] $\mathsf{grant}(\theta, d) = H(\text{``grant''} \,\|\, s \,\|\, \theta
+\,\|\, d)$ for a delegate key $d$. Relation $\mathsf{CheckDelegation}$, statement
+$\{R, \theta, d, g\}$, witness $\{s, \text{path}\}$, holds iff $g = \mathsf{grant}(\theta,d)$
+and the holder is a member. It authorizes $d$ to act as the holder in context $\theta$ and
+only there, bound to $d$ (another key cannot use it) and scoped to $\theta$ (it grants
+nothing elsewhere), without exposing $s$. This is the delegatable-credential power, the
+narrowest safe way to lend an identity to an agent.
+\item[6. rln.] The Shamir share $(x, P(x))$ of \S\ref{sec:math-rln}, with $x$ derived from
+the action. Statement: the published points; witness: the secret polynomial. Below $N$
+points it is perfectly hiding; at $N{+}1$ it recovers $s$. Accountable rate-limiting with
+no trusted party.
+\item[7. credential.] $\mathsf{cred}(\mathsf{attr}) = H(\text{``cred''} \,\|\, s \,\|\,
+\mathsf{attr})$ for an issuer-signed attribute. Relation $\mathsf{CheckAttribute}$,
+statement $\{R_{\text{attr}}, \mathsf{attr}, \theta, \mathsf{shape}\}$, witness $\{s,
+\text{path}\}$, holds iff the holder's credential for $\mathsf{attr}$ is under the issuer's
+attribute root and binds to their context identity. It shows ``verified,'' ``over 18,''
+carried per context without a trail joining the showings.
+\end{description}
+
+\begin{property}[One secret, one control surface]
+All seven relations read the same $s$ and differ only in their domain tag and public
+inputs. Consequently a holder can satisfy any subset of them simultaneously for one
+identity, and no party lacking $s$ can satisfy any, while the domain separation guarantees
+that a value produced for one power (a fit, say) is never a valid value for another (a
+grant). The unlinkability of \textbf{shape} composes with the accountability of
+\textbf{fit} and \textbf{rln} because they are independent hashes of the same secret: the
+adversary sees a fit and a shape and cannot tie them without $s$, yet the holder proves in
+zero knowledge that they share $s$ whenever a power (turn, link, grant, credential) requires
+it. This is the formal content of ``one secret, full control of your own exposure.''
+\end{property}
+
+\begin{honest}
+These are relations, tested in the clear over BLAKE3 in the specification crate ($48$
+tests, the turn additionally proven in zero knowledge over the STARK). What is not yet
+built is the in-circuit proof of the membership-bearing powers (turn, grant, credential)
+over the small field, and its Solana verifier (\S\ref{sec:onchain}). The relations are
+correct and tested; their succinct on-chain proofs are the road ahead, and we do not
+present a specification as a deployment.
+\end{honest}
+
+% ===================== MATH: STARK =====================
+\section{STARK soundness, in full}
+\label{sec:math-stark}
+
+\S\ref{sec:proof} described the proof informally. This section states what a STARK proves,
+why a verifier should believe it, and, with equal care, what riverrun's STARK does
+\emph{not} provide. The honesty about the last point is why we never write
+``zero-knowledge'' without qualification.
+
+\subsection{Arithmetization: a computation as a low-degree object}
+
+A STARK proves that a computation was performed correctly by encoding it as an
+\textbf{algebraic intermediate representation} (AIR). The execution is a table of $w$
+columns (registers) and $T$ rows (time-steps). Correctness is expressed as constraints of
+two kinds: \textbf{boundary} constraints fix specific cells (the first row holds the
+inputs, a designated row holds the public output), and \textbf{transition} constraints
+require that every pair of adjacent rows satisfies a fixed polynomial relation, so ``the
+machine stepped correctly'' becomes ``a set of polynomials vanishes on every transition.''
+Interpolating each column over a domain of size $T$ turns the columns into polynomials of
+degree $< T$, and the constraints become polynomial identities that must hold on the trace
+domain. A correct execution yields constraint polynomials that vanish on the whole domain,
+hence are divisible by the domain's vanishing polynomial; a cheating execution does not.
+The prover's task reduces to convincing the verifier that a certain quotient is a genuine
+low-degree polynomial rather than an arbitrary function faked to look right at a few
+points.
+
+\subsection{Low-degree testing and FRI}
+
+The heart of a STARK is therefore a \textbf{low-degree test}: the verifier must check,
+without reading the whole polynomial, that a committed function is close to a polynomial
+of bounded degree. This is what makes soundness possible, because a \emph{wrong}
+low-degree polynomial that agrees with a right one on the trace domain would have to agree
+almost everywhere, and two distinct polynomials of degree $< d$ agree on at most $d$
+points, a vanishing fraction of a large evaluation domain. So a cheat is caught by a few
+random spot-checks with overwhelming probability. FRI, the Fast Reed-Solomon Interactive
+Oracle Proof of Proximity \cite{fri}, performs the test efficiently: it commits to the
+function's evaluations on a large domain via a Merkle tree, then repeatedly ``folds'' the
+function, halving its degree and domain each round by taking a random linear combination
+of its even and odd parts, until the degree is constant. Consistency between consecutive
+folds is checked at random points, and each opened point is authenticated by its Merkle
+path. A function far from low-degree survives a single folded query with probability
+bounded below one, so repeating the query drives the soundness error down geometrically.
+
+\subsection{From interactive to non-interactive, and the soundness error}
+
+FRI is an interactive protocol: the verifier supplies random folding challenges and query
+positions. The \textbf{Fiat-Shamir transform} makes it non-interactive by deriving those
+challenges from a hash of the transcript so far, so the prover cannot choose its
+commitments after seeing the challenges. Soundness then holds in the random-oracle model,
+the standard heuristic for hash-based proofs, and this is the sense in which a STARK's
+security ``rests on a hash.'' The concrete soundness error is governed by three knobs: the
+code rate (blowup) $\rho$, the number of query repetitions $q$, and proof-of-work grinding
+$g$ bits added to the transcript. Informally the error scales like
+$\rho^{\,q} \cdot 2^{-g}$ up to small-degree factors, so a target of $128$ bits is reached
+by a combination such as a blowup of $8$, on the order of tens of queries, and a modest
+grinding factor. This is why the same relation costs a different number of on-chain
+compute units at $84$-bit and $128$-bit parameters (\S\ref{sec:onchain}): the query count,
+and therefore the proof size and the verifier's work, is set by the soundness target.
+
+\subsection{What a STARK is, and is not}
+
+A STARK is \textbf{succinct} (the verifier does far less work than re-running the
+computation), \textbf{transparent} (no trusted setup, only a public hash), and, because
+its only cryptographic assumption is a collision-resistant hash, \textbf{post-quantum} in
+the sense of \S\ref{sec:math-pq}. These three are exactly why riverrun chose STARKs over
+pairing-based SNARKs, and the price, paid openly, is proof size in kilobytes rather than
+bytes.
+
+What a STARK is \emph{not}, by default, is \textbf{zero-knowledge}. Soundness (a false
+statement is rejected) and zero-knowledge (a true proof leaks nothing about the witness)
+are separate properties, and the base FRI-STARK provides the first without the second.
+Achieving formal zero-knowledge requires randomizing the trace, masking the witness
+polynomials with random ones so that the openings the verifier sees are independent of the
+secret. The Winterfell prover riverrun builds on does not do this. We therefore make the
+weaker, honest claim: the witness is not transmitted on the wire, which we verified
+empirically by testing over many proofs whether the raw secret bytes appear in the proof
+(\S\ref{sub:leak}), and which caught a real leak, a constant witness column whose
+low-degree extension exposed the secret in nearly every opening, that a formal-ZK
+construction would have prevented by design. Closing the gap to formal zero-knowledge is
+named work, not a claim we quietly make.
+
+\begin{honest}
+Soundness of the \emph{scheme} is not soundness of \emph{our AIR}. The arguments above
+establish that a correct STARK verifier rejects false statements about a given set of
+constraints. Whether riverrun's hand-written constraints actually encode the intended
+relation, membership, nullifier binding, and action binding welded through one secret, is
+a separate question, and it is the one mutation testing addresses (\S\ref{sec:proof}): for
+each ``$X$ is bound'' we delete the constraint and confirm a test fails. That discipline
+found three constraints that were decorative and is how they were fixed. It is necessary,
+not sufficient, and an independent audit of the arithmetization remains on the roadmap.
+\end{honest}
+
+% ===================== MATH: MERKLE =====================
+\section{Membership without identity: Merkle accumulators}
+\label{sec:math-merkle}
+
+The pool and riverrun ID both rest on one question: how does a member prove they belong
+to a set without revealing \emph{which} member they are? The answer is a Merkle
+accumulator, and its security is a clean reduction to the hash.
+
+A \textbf{Merkle tree} over leaves $\ell_1, \dots, \ell_m$ builds a binary tree whose
+each internal node is the hash of its two children, up to a single \textbf{root} $R$.
+The root is a short commitment to the entire set: it is $32$ bytes regardless of $m$, and
+changing any leaf changes the root. A member proves that their leaf $\ell$ is in the set
+by exhibiting the \textbf{authentication path}, the sequence of sibling hashes from the
+leaf to the root, which lets a verifier recompute the root from $\ell$ and check it
+against the public $R$. The path has length $\log_2 m$, so membership in a set of
+$16{,}384$ is proved by $14$ sibling hashes.
+
+\begin{claimx}[Soundness of membership]
+Under collision resistance of the hash, no probabilistic polynomial-time prover can
+exhibit a valid authentication path from a leaf $\ell \notin \{\ell_1, \dots, \ell_m\}$
+to the published root $R$, except with negligible probability.
+\end{claimx}
+
+\begin{proof}[Argument]
+Suppose a prover produces a path from a non-member $\ell$ that recomputes to $R$. Walk
+the claimed path and the honest tree from the root downward. Both begin at the same value
+$R$. At the first level where the claimed path's node value differs from the honest tree's
+node in the corresponding position, the two nodes are distinct inputs, yet by construction
+their parent hashes are equal, since both paths recompute to the same value above. That is
+a hash collision. So a successful forgery yields a collision, and by collision resistance
+this happens only with negligible probability. Hence a valid path certifies genuine
+membership.
+\end{proof}
+
+Two properties make this the right primitive for anonymity. It is \textbf{succinct}: the
+root and the path are logarithmic, so a set of millions is committed in $32$ bytes and
+proved in a few hundred. And it is \textbf{identity-hiding when proved in zero knowledge}:
+the authentication path names the leaf's position and its siblings, which would leak which
+member acted, so riverrun does not reveal the path but proves \emph{knowledge} of a valid
+path inside the STARK (\S\ref{sec:math-stark}). The public inputs are the root and the
+nullifier; the leaf, its index, and the path are the private witness. This is the exact
+line between a transparent accumulator, which anyone can update and check, and the
+anonymity that comes from proving membership without exhibiting it.
+
+% ===================== MATH: HASH =====================
+\section{Arithmetization-oriented hashing}
+\label{sec:math-hash}
+
+A STARK proves statements about arithmetic over a finite field, so every hash inside the
+circuit must be expressed as low-degree polynomial constraints. Standard hashes such as
+SHA-256 are built from bit operations, XORs and rotations, which are expensive to write
+algebraically: representing them as field arithmetic inflates the trace enormously.
+\textbf{Arithmetization-oriented} hashes are designed to be cheap in exactly this
+setting, and riverrun uses Rescue-Prime \cite{rescueprime} in the Winterfell path and
+Poseidon2 in the small-field path.
+
+Their structure is a substitution-permutation network over the field. Each round applies
+a nonlinear \textbf{S-box}, the map $x \mapsto x^{\alpha}$ for a small $\alpha$ coprime to
+$p - 1$ (so it is a permutation), a linear mixing layer (multiplication by a fixed MDS
+matrix that diffuses each element across the state), and the addition of round constants.
+Rescue alternates the S-box with its inverse $x \mapsto x^{1/\alpha}$, which is
+high-degree in one direction and low-degree in the other, so that both the forward
+computation and its verification are efficient. The security argument rests on the
+algebraic degree growing fast enough over the rounds to resist interpolation and Groebner
+attacks, and the designers give a round count with a margin. The single knob that matters
+for cost is that a low $\alpha$, typically $3$ or $5$, keeps the per-round constraint
+degree small, which is why the AIR of \S\ref{sec:proof} declares transition constraints of
+degree $5$: that is the Rescue S-box degree, and it is what bounds the blowup the STARK
+needs.
+
+\begin{honest}
+The security of an arithmetization-oriented hash depends on its round count and constants,
+and riverrun uses vetted parameters rather than invented ones: the Poseidon2 instance over
+Mersenne-31 uses Plonky3's canonical parameters (round numbers and Grain-generated
+constants), not hand-picked values. Reduced-round parameters buy speed at the cost of
+security margin, and the Winterfell path's example-grade $\approx 84$-bit setting
+(\S\ref{sec:limits}) is a reduced-round choice we flag rather than hide. A
+production deployment raises the round count to the $128$-bit margin, at the compute cost
+\S\ref{sec:onchain} measures.
+\end{honest}
+
+% ===================== MATH: M31 =====================
+\section{Small fields and Circle STARKs}
+\label{sec:math-m31}
+
+The single measured obstacle to on-chain verification (\S\ref{sec:onchain}) was the field
+size: over a $128$-bit field, one relation costs $3.77$M compute units, above Solana's
+$1.4$M cap, and no amount of query tuning brings it under, because the base cost of field
+arithmetic dominates. The fix is a smaller field, and the mathematics of why deserves a
+statement.
+
+Arithmetic in a field of $b$-bit elements costs, per operation, on the order of $b$ or
+more machine cycles, and a STARK performs a number of field operations that scales with
+the trace and the query count. Shrinking the field from $128$ bits to $31$ multiplies
+neither the trace length nor the query count, but it shrinks the cost of every one of the
+millions of underlying multiplications, and it shrinks the size of every committed field
+element in the proof. The field of choice is the \textbf{Mersenne prime}
+$M31 = 2^{31} - 1$, whose modular reduction is a shift and an add rather than a division,
+making its arithmetic among the fastest available on ordinary hardware and on the Solana
+VM.
+
+The catch a $31$-bit prime field poses, and the reason Circle STARKs exist, is that FRI
+needs a large multiplicative subgroup of smooth (highly two-adic) order to fold over, and
+$M31 - 1 = 2 \cdot 3^2 \cdot 7 \cdot 11 \cdot 31 \cdot 151 \cdot 331$ has only a small
+power of two dividing it, so $\mathbb{F}_{M31}^{\times}$ has no large power-of-two
+subgroup. \textbf{Circle STARKs} \cite{stwo} resolve this by working not in the
+multiplicative group of the field but on the \textbf{circle group}, the set of points
+$(x, y)$ with $x^2 + y^2 = 1$ over $\mathbb{F}_{M31}$, which does have a subgroup of order
+a large power of two. The FRI folding is carried out on this circle, and the low-degree
+test transfers. The payoff is measured, not argued: riverrun's relation, proved over M31
+and verified inside the Solana VM, is accepted at $159{,}849$ compute units, about $11\%$
+of the cap, in a single transaction (\S\ref{sec:onchain}). The move from a $128$-bit field
+to a $31$-bit circle is the whole difference between ``needs chunking across
+transactions'' and ``fits in one.''
+
+% ===================== MATH: COORDINATOR =====================
+\section{The coordinator is optimal}
+\label{sec:math-coord}
+
+The coordinator (\S\ref{sec:coord}) admits members to a round only when their provenance
+class is large enough. We stated its guarantee informally; here it is a theorem with a
+proof, because ``forms a good crowd'' should mean something exact.
+
+\textbf{Setup.} A set $M$ of pending members is partitioned into provenance classes. A
+round is a subset $A \subseteq M$. A member is \textbf{safe} in $A$ if their class,
+restricted to $A$, has size at least $k_{\min}$. The policy \code{coordinate} admits a
+member iff at least $k_{\min}$ pending members share their class, that is, it admits
+exactly the union of all classes whose full size is $\ge k_{\min}$.
+
+\begin{property}[Soundness and maximality]
+Let $A^{\star}$ be the set the policy admits. Then (i) every member of $A^{\star}$ is safe
+in $A^{\star}$, so no admitted member is exposed; and (ii) $A^{\star}$ is the largest set
+with property (i): for any $A$ in which every member is safe, $A \subseteq A^{\star}$.
+\end{property}
+
+\begin{proof}[Argument]
+(i) $A^{\star}$ is a union of whole classes each of full size $\ge k_{\min}$, and admitting
+a whole class does not shrink any member's class within the round, so each admitted member
+sees at least $k_{\min}$ classmates. (ii) Suppose $A$ has every member safe, and take any
+$x \in A$ in class $C$. Safety means $|A \cap C| \ge k_{\min}$, so $C$ has at least
+$k_{\min}$ members among the pending, hence $|C| \ge k_{\min}$, hence $C \subseteq
+A^{\star}$ by definition of the policy, hence $x \in A^{\star}$. So $A \subseteq
+A^{\star}$.
+\end{proof}
+
+The theorem says the greedy policy is not a heuristic that usually helps but the
+\emph{unique} largest safe round: it exposes no one and defers no one it could safely
+admit. The counter-intuitive lesson of \S\ref{sec:coord}, that a smaller round chosen well
+beats admitting everyone, is a corollary, because dropping the exposed singletons raises
+the round's $\keff$ (\S\ref{sec:math-anon}) while keeping every remaining member above the
+floor.
+
+% ===================== MATH: GAME =====================
+\section{A game-based definition of behavioral anonymity}
+\label{sec:math-game}
+
+A privacy claim is only as good as its definition, so we state riverrun's guarantee as a
+game between a challenger and an adversary, in the style cryptography uses for
+indistinguishability. This makes ``the actor is hidden'' falsifiable.
+
+\textbf{The behavioral-anonymity game.} Fix a round with an anonymity set of $k$ members
+whose secrets are $s_1, \dots, s_k$, and a public action $a$.
+\begin{enumerate}[leftmargin=1.5em,itemsep=0.1em]
+\item The challenger picks two members $i_0, i_1$ that the adversary names, computes both
+      of their valid executions of $a$ (commitment, nullifier, proof), and flips a fair
+      coin $b$.
+\item The challenger publishes the execution of member $i_b$: the public transcript
+      $\{R, a, n\}$ and the proof.
+\item The adversary, who sees the entire public ledger, the funding graph, and every
+      other member's public data, outputs a guess $b'$.
+\end{enumerate}
+The adversary's \textbf{advantage} is $\big|\Pr[b' = b] - \tfrac12\big|$. Behavioral
+anonymity holds if this advantage is negligible.
+
+\begin{claimx}[What riverrun proves, and against which adversary]
+Against an adversary restricted to the on-chain transcript and proof, riverrun's advantage
+bound is negligible: the transcript $\{R, a, n\}$ is a root shared by all members, a public
+action identical for both, and a nullifier that is a PRF output unlinkable to any
+commitment (\S\ref{sec:math-rln}), and the proof transmits no witness bits
+(\S\ref{sub:leak}). So on the protocol surface the two executions are indistinguishable.
+Against an adversary that \emph{additionally} reads the funding graph, the advantage is
+bounded by the provenance structure: if $i_0$ and $i_1$ lie in the same provenance class,
+the advantage stays negligible, and if they lie in different classes, the adversary wins,
+which is exactly the statement that the real anonymity is $\keff$, not $k$
+(\S\ref{sec:math-anon}), and exactly why the ruler measures it and the coordinator forms
+same-class rounds.
+\end{claimx}
+
+The definition earns its keep by being honest about the second adversary. A paper that
+proved only the first bound, indistinguishability on the protocol surface, would be true
+and misleading, because the funding-graph adversary is real and cheap. riverrun's claim is
+the conjunction: indistinguishable on-chain, and measured against provenance, with the
+measurement reported rather than assumed. That is the whole thesis in one game.
+
+% ===================== MATH: NOTIONS =====================
+\section{Formal notions of privacy: from computational to everlasting}
+\label{sec:math-notions}
+
+``Post-quantum'' and ``everlasting'' are used loosely in this field, so we fix the ladder
+of definitions and place riverrun on it. Consider a scheme that hides a secret $s$ behind
+a public value $v$ (a pseudonym, a commitment, a proof), and an adversary trying to learn
+$s$ or to link two values to the same $s$. The hiding can be of four strengths.
+
+\begin{description}[leftmargin=1.4em,itemsep=0.25em]
+\item[Computational.] No polynomial-time adversary can distinguish, but an unbounded one,
+or a future faster one, can. Security rests on a problem being hard \emph{now}. Deployed
+discrete-log pseudonyms are here (\S\ref{sub:everlasting}): safe against today's machines,
+broken by a quantum one, retroactively.
+\item[Statistical.] The distributions the adversary sees are statistically close,
+distinguishable only with negligible advantage \emph{even by an unbounded adversary}. No
+amount of computation helps, because the information is nearly absent, not merely
+scrambled.
+\item[Perfect.] The distributions are identical. The adversary's view is independent of
+$s$; there is literally nothing to extract. Shamir's scheme below the threshold
+(\S\ref{sec:math-rln}) is perfect: $N$ shares of a degree-$N$ polynomial are
+distributed identically for every possible secret.
+\item[Everlasting.] A hybrid tuned to the on-chain threat: the transcript recorded today
+leaks nothing about $s$ even to a future unbounded or quantum adversary, though the
+protocol may rely on a computational assumption \emph{during} execution that need only
+hold for the brief moment of the interaction, not forever. This is the right notion for a
+permanent ledger, where the recorded data is what an adversary harvests, and the
+computation to break it happens later.
+\end{description}
+
+\begin{claimx}[Where riverrun sits]
+riverrun ID's per-context unlinkability is everlasting. The recorded values, the
+pseudonym $\rescue(s,\theta)$, the commitment, the nullifier, are hash outputs, and
+linking two of them or inverting one to $s$ reduces to preimage or collision resistance,
+against which the only quantum attack is Grover's bounded speedup (\S\ref{sec:math-pq}).
+No recorded value reduces to a problem Shor breaks, so the transcript on the permanent
+ledger cannot be unwound by a future quantum adversary. The RLN secret below its threshold
+is stronger still, perfectly hidden. What is \emph{not} claimed is formal zero-knowledge of
+the STARK proof (\S\ref{sec:math-stark}): the proof keeps the witness off the wire but is
+not proven to leak nothing, so its hiding is asserted empirically, not by a simulator, and
+that gap is named rather than folded into ``everlasting.''
+\end{claimx}
+
+The ladder clarifies the strong claim and its honest boundary in one place. The
+\emph{unlinkability} of the identities, the property a user relies on for years, is
+everlasting. The \emph{zero-knowledge} of one proof, a property that matters only to
+whoever holds that proof off-chain, is the weaker ``witness not on the wire.'' Confusing
+the two would let a paper claim more than it has; separating them is the discipline the
+whole document runs on.
+
+% ===================== ADVERSARIES =====================
+\section{Adversary models and their costs}
+\label{sec:adversaries}
+
+``Secure'' is meaningless without an adversary, and ``an adversary'' is too coarse. A
+privacy tool faces a spectrum, each rung cheaper for the attacker and stronger against the
+defender, and honesty means saying which rungs riverrun stops and at what cost to whom.
+
+\begin{description}[leftmargin=1.4em,itemsep=0.3em]
+\item[The passive observer.] Reads the public ledger, nothing more. Cost: near zero. Sees
+the transcript $\{R, a, n\}$ and the proof. riverrun defeats this adversary outright: the
+transcript is shared across the set and the proof carries no witness
+(\S\ref{sec:math-game}), so the actor is one of $k$ with equal likelihood.
+\item[The funding-graph analyst.] Additionally traces provenance and keeps a tag database
+of exchange and service addresses. Cost: low, and the going rate of a commercial
+chain-analysis subscription. This is the adversary that collapses $k$ to $\keff$, and the
+one riverrun does not defeat but \emph{measures}: the ruler reports the real crowd against
+exactly this attacker, the coordinator forms same-provenance rounds to shrink its
+advantage, and the preflight warns a user before they act. The honest posture is that this
+adversary is real and cheap, so we quantify its success rather than assume it away.
+\item[The behavioral cluster analyst.] Additionally fingerprints timing, sizing, and
+sequence. Cost: moderate, requiring models and history. The synchronized round
+(\S\ref{sec:round}) is the defense: identical actions at one moment erase timing and
+ordering, driving this adversary's attribution to chance, measured at $12.5\%$ at $k{=}8$
+and $1.5\%$ at $k{=}64$, i.e. $1/k$.
+\item[The colluding committee.] A quorum of the settlement committee, in the pre-M31
+deployment, could attest to a false proof. Cost: corrupting $M$ of $N$ distinct signers.
+riverrun does not eliminate this adversary in the deployed program; it \emph{prices} it at
+$M$ collusions rather than one, and names its elimination, the on-chain M31 verifier, as
+the roadmap (\S\ref{sec:onchain}).
+\item[The future quantum adversary.] Harvests the chain today, breaks it later. Cost: a
+cryptographically-relevant quantum computer, plus free storage now. riverrun defeats this
+adversary by construction on everything recorded (\S\ref{sec:math-pq}), which is the entire
+argument for being hash-only, and the one property no curve-based competitor can retrofit.
+\end{description}
+
+The pattern across the rungs is deliberate. Where an adversary is cheap and unavoidable,
+the funding-graph analyst, riverrun measures it and defends where it can rather than
+pretending it is absent. Where an adversary is expensive or future, the quantum one,
+riverrun defeats it outright because the cost of doing so, at design time, is zero.
+Where an adversary sits on a trusted party we have not yet removed, the committee, riverrun
+prices the trust and publishes the plan to price it to zero. A threat model that claimed to
+stop all five equally would be the dishonest kind. The value is in saying which is which.
+
+% ===================== ECONOMICS =====================
+\section{The economics of the anonymity set}
+\label{sec:economics}
+
+\S\ref{sec:philosophy} argued that anonymity is a collective good made of other people.
+That has consequences an engineer must design for, because a shared resource with the
+wrong incentives is depleted. This section reads the anonymity set as an economic object.
+
+\textbf{The set is a commons with a congestion externality of an unusual sign.} In most
+commons, each additional user degrades the resource (a crowded pasture, a congested road).
+An anonymity set is the opposite: each honest additional member \emph{improves} the good
+for everyone, because a larger crowd hides each of its members better. The externality is
+positive, which means the private incentive to join is weaker than the social value of
+joining, the classic under-provision of a public good. A rational user waits for others to
+build the crowd before entering, and if everyone reasons so, the crowd never forms.
+
+\textbf{Two failures follow, and riverrun addresses each by construction.} The first is
+the \emph{free-rider who depletes}: a member who acts many times consumes anonymity, acting
+a thousand times turns a crowd of a thousand into one person in a thousand masks
+(\S\ref{sec:pool}). The nullifier and the RLN construction (\S\ref{sec:math-rln}) are the
+enclosure that prevents this, capping each member's consumption without a central
+registry. The second is the \emph{coordination failure}: even honest members must act at
+the same time, from the same provenance class, for the crowd to be real, and no individual
+can arrange that alone. The synchronized round and the coordinator (\S\ref{sec:coord},
+\S\ref{sec:math-coord}) supply the missing coordinator, forming the crowd on purpose rather
+than hoping it self-assembles.
+
+\begin{intuition}
+The structural isomorphism, stated and bounded. A privacy pool's participation problem is a
+\textbf{stag hunt}: everyone is better off if all cooperate to form a large crowd, but each
+fears being the lone early mover whose action stands out, so the safe individual choice is
+to defect and wait. \emph{Disanalogy:} in the classic stag hunt the payoff is fixed once
+players choose, whereas here the coordinator changes the game by refusing to fire a round
+until the crowd is safe, converting ``act now and risk exposure'' into ``act when
+$\keff \ge k_{\min}$ is guaranteed.'' It removes the incentive to defect by removing the
+exposure that defection avoided.
+\end{intuition}
+
+\textbf{Anti-Sybil is priced, not solved, and the economics say why that is hard.} An
+adversary can always manufacture more identities by funding more wallets, so the funding
+graph is both the leak the ruler measures and the cost the attacker pays. riverrun's entry
+fee raises the price of inflating a set without claiming to make it infinite
+(\S\ref{sec:limits}), and the honest reference for the stronger construction,
+one-nullifier-per-verifier self-credentials, is named rather than implied. The economic
+point is that behavioral anonymity cannot be bought to perfection at zero cost by either
+side: the defender pays in coordination and fees, the attacker pays in funding and
+identities, and the ruler is the instrument that makes both prices visible.
+
 % ===================== 12. THREAT MODEL =====================
 \section{The threat model, plainly}
 \label{sec:threat}
@@ -1009,6 +2189,103 @@ does not yet do:
 The implementation is Rust, MIT-licensed, with $154$ passing tests across the core, the
 STARK, the pool, the ruler, and the on-chain program, and clean static analysis. Every
 measurement is reproducible from the repository with one command.
+
+% ===================== COMPARISON =====================
+\section{Comparison to prior systems}
+\label{sec:comparison}
+
+riverrun is a synthesis, and the honest way to show it is to place it beside the systems it
+draws from and say, dimension by dimension, where it is behind and where it is different.
+The table below compares along five axes that this paper has argued matter: \emph{what is
+hidden} (value or actor), the \emph{strength} of the unlinkability (computational or
+everlasting), whether it is \emph{post-quantum}, whether it needs a \emph{trusted setup},
+and whether it \emph{measures} the anonymity it delivers.
+
+\begin{center}\small
+\renewcommand{\arraystretch}{1.25}
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+system & hides & unlinkability & post-quantum & trusted setup & measures $\keff$ \\
+\midrule
+Tornado Cash & value & computational & no (curves) & yes (ceremony) & no \\
+Zcash (Sapling) & value + parties & computational & no (curves) & yes (ceremony) & no \\
+Monero & value + parties & computational & no (curves) & no & no \\
+Aztec & value + state & computational & no (curves) & yes & no \\
+Semaphore (Eth) & actor (identity) & computational & no (curves) & yes & no \\
+RLN & actor, rate-limited & computational & no (curves) & yes & no \\
+\textbf{riverrun} & \textbf{actor (behavior)} & \textbf{everlasting} & \textbf{yes (hash)} &
+\textbf{no} & \textbf{yes} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Read the table without triumphalism. On \emph{maturity and proof size}, riverrun is behind
+every deployed system in the list: Zcash and Tornado are battle-tested at scale with years
+of adversarial attention, and pairing-based systems produce proofs two orders of magnitude
+smaller than a STARK. What the last three columns show is not that riverrun is better
+everywhere, but that it occupies a corner none of the others do: it is the only one whose
+unlinkability is everlasting rather than computational, the only one that is post-quantum by
+construction, and the only one that measures the real anonymity it delivers rather than
+advertising a count. The first two properties come from the single design choice of being
+hash-only; the third is the ruler.
+
+The nearest neighbors are instructive. \textbf{Semaphore} is riverrun ID's closest analogue,
+a secret identity with scoped nullifiers giving unlinkable per-context identity and
+one-action-per-person, and riverrun ID does not claim to invent that shape. The differences
+are exactly the table's last three columns: Semaphore's unlinkability rests on a group under
+discrete log and is therefore computational and not post-quantum, it uses a Groth16 backend
+with a trusted setup, and it does not measure anonymity-set quality. riverrun ID is
+Semaphore's shape rebuilt on hashes, on a chain that has no Semaphore, with a ruler attached.
+\textbf{RLN} is the rate-limiting construction riverrun's sixth power adopts wholesale
+(\S\ref{sec:math-rln}), with the same discrete-log-to-hash substitution. And \textbf{Tornado}
+is the pool's structural template, a Merkle set with a zero-knowledge withdrawal, with the
+payload changed from a coin to a behavior and the proof system changed from a ceremony-bound
+SNARK to a transparent STARK. The synthesis is real, and so is the debt.
+
+% ===================== OPEN PROBLEMS =====================
+\section{Open problems and directions}
+\label{sec:open}
+
+The honest list of what does not hold (\S\ref{sec:limits}) is about the current
+implementation. This section is about the harder questions the design opens, stated as
+problems rather than promises, because a research contribution is measured partly by the
+questions it makes precise.
+
+\textbf{In-circuit membership over a small field.} The identity-bearing powers (turn, grant,
+credential) and the pool's membership proof need a Poseidon2 Merkle path arithmetized as an
+AIR over M31 and verified on-chain (\S\ref{sec:math-merkle}, \S\ref{sec:math-m31}). The hash
+foundation on vetted parameters is built; the arithmetization and its no\_std verifier are the
+concrete next milestone, and their completion is what turns riverrun ID from a tested
+primitive into a deployed layer.
+
+\textbf{A repeated-use bound that is tight, not just sound.} The erosion bound of
+\S\ref{sec:math-anon} uses basic composition, a worst-case floor. A tight bound would model
+the correlation structure of real persistent quasi-identifiers, funding origin, timing,
+device, and give a per-identity privacy budget that is accurate rather than conservative.
+This is the ``measured toward provable'' direction: the metric exists, its optimality does
+not, and closing that gap is a paper in its own right.
+
+\textbf{Formal zero-knowledge without abandoning transparency.} The witness is off the wire
+but not proven to leak nothing (\S\ref{sec:math-stark}). A transparent, post-quantum,
+formally zero-knowledge STARK for riverrun's relation, via witness masking that survives the
+small-field setting, would remove the one asterisk on the proof's privacy. The reference
+lines exist; a drop-in does not.
+
+\textbf{Provable-privacy anchors.} Beyond measurement lies the goal of a privacy guarantee
+reducible to a worst-case hardness assumption, for instance a cover construction whose
+indistinguishability is as hard as a lattice problem, turning ``measured $\keff$'' into
+``provably $\keff$ against any polynomial adversary.'' This is speculative and named as such,
+the most distant item on the list.
+
+\textbf{Distributed proving for crowds of strangers.} The batched round assumes one prover
+holding all secrets (\S\ref{sec:round}), which fits an operator running many identities but
+not a crowd of mutually distrustful users. A multi-party proving protocol would let strangers
+form a batched round without a custodian, extending the efficiency gain from fleets to
+genuine crowds.
+
+Each of these is a place where riverrun is honestly incomplete, and naming them precisely is
+the point. A tool that measures the gap between advertised and delivered privacy owes the same
+honesty about the gap between what it is and what it could be.
 
 % ===================== 14. RELATED WORK =====================
 \section{Related work}
@@ -1135,6 +2412,53 @@ Standard Specification (SoK).} IACR ePrint 2020/1143.
 \url{https://github.com/exidz/murkl}
 \bibitem{mosaic} Wiener Labs. \emph{Mosaic: on-chain verifier library for Solana
 (chunked FRI-STARK).} \url{https://github.com/wienerlabs/mosaic}
+\bibitem{shannon} C.~E.~Shannon. \emph{A Mathematical Theory of Communication.} Bell
+System Technical Journal, 1948.
+\bibitem{diaz2002} C.~Diaz, S.~Seys, J.~Claessens, B.~Preneel. \emph{Towards Measuring
+Anonymity.} PET 2002.
+\bibitem{dwork} C.~Dwork, A.~Roth. \emph{The Algorithmic Foundations of Differential
+Privacy.} Found. and Trends in Theoretical Computer Science, 2014.
+\bibitem{warrenbrandeis} S.~Warren, L.~Brandeis. \emph{The Right to Privacy.} Harvard Law
+Review, 1890.
+\bibitem{westin} A.~Westin. \emph{Privacy and Freedom.} Atheneum, 1967.
+\bibitem{gavison} R.~Gavison. \emph{Privacy and the Limits of Law.} Yale Law Journal,
+1980.
+\bibitem{bentham} J.~Bentham. \emph{Panopticon; or, the Inspection-House.} 1791.
+\bibitem{foucault} M.~Foucault. \emph{Discipline and Punish: The Birth of the Prison.}
+1975 (Eng. trans. 1977).
+\bibitem{chaum81} D.~Chaum. \emph{Untraceable Electronic Mail, Return Addresses, and
+Digital Pseudonyms.} Communications of the ACM, 1981.
+\bibitem{chaum85} D.~Chaum. \emph{Security without Identification: Transaction Systems to
+Make Big Brother Obsolete.} Communications of the ACM, 1985.
+\bibitem{may88} T.~May. \emph{The Crypto Anarchist Manifesto.} 1988.
+\bibitem{hughes93} E.~Hughes. \emph{A Cypherpunk's Manifesto.} 1993.
+\url{https://www.activism.net/cypherpunk/manifesto.html}
+\bibitem{bernstein} \emph{Bernstein v. United States} (9th Cir.), establishing source
+code as protected expression, 1990s.
+\bibitem{shor} P.~W.~Shor. \emph{Polynomial-Time Algorithms for Prime Factorization and
+Discrete Logarithms on a Quantum Computer.} SIAM J. Computing, 1997 (FOCS 1994).
+\bibitem{grover} L.~K.~Grover. \emph{A Fast Quantum Mechanical Algorithm for Database
+Search.} STOC 1996.
+\bibitem{mosca} M.~Mosca. \emph{Cybersecurity in an Era with Quantum Computers: Will We
+Be Ready?} IEEE Security \& Privacy, 2018.
+\bibitem{shamir79} A.~Shamir. \emph{How to Share a Secret.} Communications of the ACM,
+1979.
+\bibitem{fri} E.~Ben-Sasson, I.~Bentov, Y.~Horesh, M.~Riabzev. \emph{Fast Reed-Solomon
+Interactive Oracle Proofs of Proximity (FRI).} ICALP 2018. And: \emph{Scalable,
+transparent, and post-quantum secure computational integrity (STARK).} IACR ePrint
+2018/046.
+\bibitem{rln} Rate-Limiting Nullifier (RLN). Logos Research.
+\url{https://research.logos.co/rln}
+\bibitem{solove} D.~J.~Solove. \emph{`I've Got Nothing to Hide' and Other
+Misunderstandings of Privacy.} San Diego Law Review, 2007.
+\bibitem{nissenbaum} H.~Nissenbaum. \emph{Privacy as Contextual Integrity.} Washington
+Law Review, 2004; and \emph{Privacy in Context}, Stanford University Press, 2010.
+\bibitem{zuboff} S.~Zuboff. \emph{The Age of Surveillance Capitalism.} PublicAffairs,
+2019.
+\bibitem{pgp} P.~Zimmermann. \emph{PGP (Pretty Good Privacy).} 1991.
+\bibitem{bmoney} W.~Dai. \emph{b-money.} 1998. \url{http://www.weidai.com/bmoney.txt}
+\bibitem{bitgold} N.~Szabo. \emph{Bit Gold.} c.~1998.
+\bibitem{trilemma} D.~Das, S.~Meiser, E.~Mohammadi, A.~Kate. \emph{Anonymity Trilemma: Strong Anonymity, Low Bandwidth Overhead, Low Latency, Choose Two.} IEEE S\&P 2018.
 \end{thebibliography}
 
 \end{document}
