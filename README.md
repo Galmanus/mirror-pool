@@ -670,6 +670,17 @@ collapses them into the flattering half.
 
 Where each piece stands, located precisely:
 
+- **Self-audited, with every fix carried by a test.** A security pass of the settlement
+  and identity code closed three findings, each with a regression test: the
+  STARK-verified path did **not** bind the payout recipient (the settling relayer could
+  redirect the denomination — now a verified public input); the RLN action point was
+  caller-chosen (rate-limit-evadable, and `x=0` published the secret — now derived from
+  the action and never zero); and RLN recovery panicked on an adversarial transcript
+  (now returns an error). A read-audit of the STARK confirmed the membership/nullifier/
+  action **weld**, the action binding, and the batched-round **seam** hold (the negatives
+  are tested: a member presenting another's nullifier, a different action, a cross-member
+  claim). This does **not** replace an independent formal audit — still on the roadmap —
+  but the findings it surfaced are *closed*, not noted.
 - **Post-quantum by construction.** Every value the pool commits is a hash — no
   curves, no pairings — so the permanent ledger is quantum-safe from the first
   transaction. This is the one property a pairing-based design cannot retrofit.
