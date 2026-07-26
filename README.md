@@ -99,7 +99,7 @@ verify you vanished. No commands to memorize, no hashes to paste, and riverrun n
 touches your keys or moves your funds. It measures, picks the move, and proves you
 arrived.
 
-<img src="scripts/demo.svg" alt="riverrun guided mode: a status panel, the step-by-step to become anonymous on Solana, and one secret becoming two unlinkable identities" width="820">
+<img src="scripts/demo.gif" alt="riverrun guided mode: a status panel, the step-by-step to become anonymous on Solana, and one secret becoming two unlinkable identities" width="820">
 
 *Anyone can use it. `riverrun` opens the guide; the power verbs (`preflight`, `audit`,
 `id`) are still there for scripts and CI. Honest by design: riverrun makes you

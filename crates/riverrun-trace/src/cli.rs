@@ -257,10 +257,17 @@ fn label(s: &str) -> String {
     dim(&format!("{s:<13}"))
 }
 
+/// An elegant framed wordmark, top and bottom rules only, so it never misaligns.
+fn header() {
+    println!();
+    println!("  {}", cyan("▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁"));
+    println!("   {}   {}", bold(&cyan("riverrun")), dim("anonymity on Solana, post-quantum"));
+    println!("  {}", cyan("▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔"));
+}
+
 fn cmd_status() {
     let active = load_session();
-    println!();
-    println!("  {}   {}", bold(&cyan("riverrun")), dim("privacy on Solana, in plain words"));
+    header();
     println!();
     match &active {
         Some(hex) => println!(
