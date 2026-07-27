@@ -132,7 +132,15 @@ the hard part, and it is honest to state it plainly.
   fund inventory, plus wiring the real effective-k (the ruler) into `await_round`
   instead of the optimistic devnet placeholder.
 - **Phase E** a reference integration: a bot that enters and exits a position
-  unlinkably, as the fund-facing proof that the primitive is real.
+  unlinkably, as the fund-facing proof that the primitive is real. **Done**
+  (`crates/riverrun-sdk/examples/position_bot.rs`): one secret, two `act()` calls in
+  two contexts, an observer sees two unrelated settlements, and the entry and exit
+  identities are proven to be independent PRF outputs. Runs offline; the same calls
+  settle for real through the Phase D devnet backend.
+
+All five phases are done. What remains are the refinements noted in Phase D: a
+continuous-round coordinator, a per-pool configurable denomination for fund-sized
+inventory, and wiring the real effective-k ruler into `await_round`.
 
 ## 7. Falsifiable check
 
