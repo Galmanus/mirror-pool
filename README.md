@@ -642,6 +642,17 @@ The nullifier + event footprint keeps a private action on the order of **$0.0002
 plus the denomination itself. Reproduce: `cargo run --manifest-path
 programs/mirror-pool/Cargo.toml --example devnet_demo`.
 
+**And the whole crowd, not one actor.** A full **`k = 8` round** ran live on the
+same devnet program: eight distinct members each committed (each signing only their
+own commit), then a single relayer settled all eight actions alone with eight
+distinct nullifiers, and no member's key appears in any execution. The anonymity
+floor is enforced by the program, not promised: with `k_min = 8`, an execution
+attempted at one member was **refused on-chain** (`0x1777`, `AnonymitySetTooSmall`),
+and a reused nullifier was **rejected** (`0x0`, `NullifierSpent`). All sixteen
+signatures plus the two rejections are checkable in
+[`docs/DEVNET_ROUND.md`](docs/DEVNET_ROUND.md). Reproduce: `cargo run
+--manifest-path programs/mirror-pool/Cargo.toml --example devnet_round 8`.
+
 ## Workspace
 
 | crate | what it is | status |
