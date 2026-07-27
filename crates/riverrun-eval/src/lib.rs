@@ -99,9 +99,120 @@ pub fn self_fill_degradation(advertised_k: usize) -> Vec<SelfFillRow> {
         .collect()
 }
 
+/// Measure the effective anonymity an honest user actually gets from a single
+/// round, composing two real erosions end to end: a **leaky coordinator** (a
+/// fraction `leak` of each member's behavioral habit survives imperfect
+/// synchronization) and **self-fill** (the adversary owns `adversary_owned` of
+/// the `k` slots and subtracts them). The target is one honest member; the
+/// adversary forms its posterior over the honest slots from the observed round
+/// and the effective-k is `2^{H}` of that posterior.
+///
+/// `leak = 0` with `adversary_owned = 0` is the fully-protected round and returns
+/// close to `k`; raising either erodes the number. This is the ruler of
+/// \S self-fill and the behavioral harness, run as one measurement.
+pub fn measure_leaky_round(
+    k: usize,
+    adversary_owned: usize,
+    leak: f64,
+    seed: u64,
+) -> composition::RoundAnonymity {
+    let mut rng = rng::SplitMix64::new(seed);
+    let population = Population::sample(k, &mut rng);
+    let attacker = NearestProfileAttacker::from_population(&population);
+    let intent = RoundIntent::sample(&mut rng);
+    let trace = population.leaky_protected_trace(&intent, leak, &mut rng);
+
+    // self-fill: the adversary owns the last `adversary_owned` slots and subtracts
+    // them, leaving the first h = k - a honest. The target is honest slot 0.
+    let h = k.saturating_sub(adversary_owned);
+    if h == 0 {
+        return composition::RoundAnonymity { advertised_k: k, honest_count: 0, effective_k: 0.0 };
+    }
+    let honest_ids: Vec<usize> = population.members[..h].iter().map(|m| m.id).collect();
+    let target_id = population.members[0].id;
+    let target_action = trace
+        .iter()
+        .find(|a| a.true_id == target_id)
+        .expect("the target's action is in the trace");
+    // Timing reference: the earliest honest action. The adversary knows its own
+    // self-filled slots, so it anchors on the honest ones it is trying to separate.
+    let t_ref = trace
+        .iter()
+        .filter(|a| a.true_id < h)
+        .map(|a| a.time)
+        .fold(f64::INFINITY, f64::min);
+
+    let posterior = attacker.posterior_for_action(target_action, t_ref, &honest_ids);
+    composition::RoundAnonymity {
+        advertised_k: k,
+        honest_count: h,
+        effective_k: composition::effective_k(&posterior),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_fully_protected_leaky_round_realizes_near_full_k() {
+        // leak = 0, no adversary: the observable is identity-independent, so the
+        // posterior is near uniform over all k and effective-k is close to k.
+        let r = measure_leaky_round(8, 0, 0.0, 12_345);
+        assert_eq!(r.honest_count, 8);
+        assert!(
+            r.effective_k > 6.0,
+            "a fully protected round of 8 should deliver near 8, got {}",
+            r.effective_k
+        );
+    }
+
+    #[test]
+    fn self_fill_caps_the_leaky_round_at_the_honest_set() {
+        // The adversary owns 5 of 8 slots; the honest user cannot exceed the 3 that
+        // remain, whatever the coordinator does.
+        let r = measure_leaky_round(8, 5, 0.0, 12_345);
+        assert_eq!(r.honest_count, 3);
+        assert!(r.effective_k <= 3.0 + 1e-9, "effective-k {} exceeds the honest set", r.effective_k);
+    }
+
+    #[test]
+    fn self_fill_dominates_behavioral_leak_in_this_model() {
+        // The honest, robust finding over many seeds (one seed is too noisy given
+        // how small the leak effect is): an imperfect coordinator that leaks the
+        // full habit barely moves the single-target posterior, while self-fill
+        // erodes it strongly. Structural exposure dominates residual behavioral
+        // signal here, which is why riverrun leads with the self-fill and
+        // funding-graph floors rather than with behavioral noise.
+        let n = 300u64;
+        let mean = |a: usize, leak: f64| -> f64 {
+            (0..n)
+                .map(|s| measure_leaky_round(8, a, leak, 4_000 + s).effective_k)
+                .sum::<f64>()
+                / n as f64
+        };
+        let clean = mean(0, 0.0);
+        let full_leak = mean(0, 1.0);
+        let self_filled = mean(4, 0.0);
+        // leak erodes anonymity, but only weakly (a few percent), not a collapse
+        assert!(full_leak <= clean + 1e-9, "full leak must not raise anonymity: {full_leak} vs {clean}");
+        assert!(full_leak > 0.8 * clean, "leak's effect is weak here, not a collapse: {full_leak} vs {clean}");
+        // self-fill is the dominant axis: owning half the slots roughly halves it
+        assert!(self_filled < 0.6 * clean, "self-fill must dominate: {self_filled} vs {clean}");
+    }
+
+    #[test]
+    fn effective_k_stays_within_one_and_the_honest_set() {
+        for leak in [0.0, 0.25, 0.5, 0.75, 1.0] {
+            let r = measure_leaky_round(8, 2, leak, 77);
+            assert!(
+                r.effective_k >= 1.0 - 1e-9 && r.effective_k <= r.honest_count as f64 + 1e-9,
+                "effective-k {} left [1, {}] at leak {leak}",
+                r.effective_k,
+                r.honest_count
+            );
+        }
+    }
 
     #[test]
     fn self_fill_degradation_runs_from_full_k_down_to_one() {

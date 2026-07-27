@@ -124,6 +124,32 @@ impl Population {
             .collect()
     }
 
+    /// A partially-protected round: the coordinator's synchronization is
+    /// imperfect, so a fraction `leak` in `[0, 1]` of each member's behavioral
+    /// habit survives into the observable. `leak = 0` is the fully-protected round
+    /// (identity-independent, same as `protected_trace`); `leak = 1` is the
+    /// unprotected trace. The interpolation is in the observable itself, so `leak`
+    /// is a physical "fraction of habit that leaked", not an abstract knob.
+    pub fn leaky_protected_trace(
+        &self,
+        intent: &RoundIntent,
+        leak: f64,
+        rng: &mut SplitMix64,
+    ) -> Vec<Action> {
+        let leak = leak.clamp(0.0, 1.0);
+        self.members
+            .iter()
+            .map(|m| {
+                let habit_time = m.timing_offset + m.timing_jitter * rng.next_normal();
+                let pool_time = rng.range(0.0, POOL_WINDOW_SECS);
+                let time = intent.t0 + leak * habit_time + (1.0 - leak) * pool_time;
+                let habit_size = m.position_size * (1.0 + m.size_jitter_frac * rng.next_normal());
+                let size = leak * habit_size + (1.0 - leak) * ROUND_SIZE;
+                Action { time, size, true_id: m.id }
+            })
+            .collect()
+    }
+
     /// Protected trace: `riverrun`. Every action has the identical round size
     /// and a coordinator-scheduled time drawn from one tight, identity-independent
     /// window. Nothing about `(time, size)` correlates with the participant.

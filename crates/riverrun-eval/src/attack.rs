@@ -64,6 +64,34 @@ impl NearestProfileAttacker {
         dt + ds
     }
 
+    /// The adversary's posterior belief (unnormalized `exp(-cost)` weights) that
+    /// `action` was produced by each candidate identity in `candidate_ids`, given
+    /// the round's timing reference `t_ref`.
+    ///
+    /// The weight uses the *same* normalized cost as attribution, so the scale is
+    /// the population's measured habit span (`TIME_SCALE`, `SIZE_SCALE`), not a
+    /// free temperature: this is the maximum-entropy posterior consistent with the
+    /// expected normalized distance. The qualitative result (a leaky coordinator
+    /// erodes anonymity, self-fill caps it) does not depend on the scale.
+    pub fn posterior_for_action(
+        &self,
+        action: &Action,
+        t_ref: f64,
+        candidate_ids: &[usize],
+    ) -> Vec<f64> {
+        candidate_ids
+            .iter()
+            .map(|id| {
+                let profile = self
+                    .profiles
+                    .iter()
+                    .find(|p| p.id == *id)
+                    .expect("candidate id must be a member of the population");
+                (-self.cost(action, t_ref, profile)).exp()
+            })
+            .collect()
+    }
+
     /// Recover the action→identity assignment for one round and return how many
     /// actions were attributed to their true initiator.
     ///
