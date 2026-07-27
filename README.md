@@ -11,7 +11,12 @@
 **The anonymity layer for Solana. Post-quantum.**
 
 [![tests](https://img.shields.io/badge/tests-179%20green-4c1)](#use-it)
+[![Rust](https://img.shields.io/badge/Rust-end%20to%20end-000000?logo=rust)](https://www.rust-lang.org)
+[![Solana](https://img.shields.io/badge/Solana-SBF%20program-14F195?logo=solana&logoColor=black)](#use-it)
+[![batch](https://img.shields.io/badge/batch-18%20in%20one%20tx%2C%20live%20on%20devnet-14F195)](docs/DEVNET_ROUND.md)
+[![measured](https://img.shields.io/badge/anonymity-measured%2C%20not%20advertised-1f6feb)](#how-riverrun-compares)
 [![post-quantum](https://img.shields.io/badge/STARK-post--quantum%2C%20no%20setup-8A2BE2)](#why-post-quantum)
+[![whitepaper](https://img.shields.io/badge/whitepaper-48%20pages-8A2BE2)](paper/riverrun.pdf)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 > The name is the first word of *Finnegans Wake*, lowercase and mid-sentence, a river
