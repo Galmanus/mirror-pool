@@ -14,6 +14,10 @@
 [![post-quantum](https://img.shields.io/badge/STARK-post--quantum%2C%20no%20setup-8A2BE2)](#why-post-quantum)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
+> The name is the first word of *Finnegans Wake*, lowercase and mid-sentence, a river
+> already running. Joyce's book loops back into its own beginning, a *ricorso*, and so
+> does a riverrun round: a private action returns you to the crowd you came from.
+
 Our goal is to empower people and to make knowledge accessible. Privacy is not
 secrecy. It is the right to act without being profiled for it.
 
@@ -369,6 +373,44 @@ hand-waved: [`docs/M31_CIRCLE_STARK.md`](docs/M31_CIRCLE_STARK.md).
 Nothing here is faked. Every claim has a test, a signature, or a measured number
 beside it, and every limitation is named where the claim is made.
 
+## Design originality, and what Finnegans Wake gave it
+
+A few of riverrun's choices are deliberately against the grain.
+
+- **Measure, do not promise.** Every other privacy tool advertises a crowd size and
+  asks you to trust it. riverrun ships a ruler that measures its own delivery, reports
+  how far short of its promise a pool falls, and scores other pools too. A privacy
+  tool that publishes its own shortfall is unusual on purpose.
+- **Hide who, not how much.** The inversion is deliberate: amounts stay public and
+  auditable, only the actor is hidden. It is what keeps the tool on the
+  compliance-friendly side of the line, where a regulated desk can use it.
+- **Post-quantum by construction, not by patch.** Hashes from the first line, so the
+  post-quantum property is not bolted on; the construction cannot avoid having it.
+- **Identity as a rotatable piece.** One secret is a single object that presents a
+  different, unlinkable face at every angle, not a keyring of separate identities.
+
+The name and the shape came from *Finnegans Wake*.
+
+- **"riverrun"** is the book's first word: lowercase, mid-sentence, a river already
+  running. You do not start a riverrun round, you join a flow already in motion, which
+  is exactly what a crowd is.
+- **The ricorso.** Joyce built the book on Vico's cycles, and its last sentence flows
+  back into its first, so it has no fixed beginning or end. riverrun's *ricorso* is
+  that made cryptographic: the round closes and starts over, an identity rotates to a
+  fresh angle, and a private action returns you to the crowd you came from. There is a
+  `ricorso` in the code and a section on it in the whitepaper.
+- **Fluid identity.** The book's characters are never one fixed person; they shift and
+  recombine. riverrun ID is that made precise: one secret, a different unlinkable
+  identity in every context.
+- **Circular flow.** Tracing money backward is tracing a river to its source, and a
+  funding graph that loops has no single source, which the tracer handles as
+  circularity. A book that ends where it begins is the right namesake for a tool about
+  where flows come from.
+
+Honest disanalogy: the novel gave the name, the cyclical frame, and the intuition, not
+the cryptography. The STARK, the hashes, and the ruler are engineering; Joyce gets the
+credit for the shape of the idea, not the math.
+
 ## Read more
 
 - **[Whitepaper (PDF)](paper/riverrun.pdf)**: the philosophy, the cryptography, and
@@ -384,6 +426,3 @@ beside it, and every limitation is named where the claim is made.
 MIT. **179 tests green** across the repo (117 in the default workspace, incl. the
 unified act derivation and the act() SDK, plus the excluded heavy crates: STARK 31,
 mirror-pool 24 e2e incl. the batch settlement, pool-zk 7).
-
-The name is the first word of *Finnegans Wake*: a river that flows back into its own
-beginning. A private action returns you to the crowd you came from.
