@@ -7,16 +7,25 @@ a **Circle STARK over the Mersenne-31 field (M31)** whose proof is **verified
 directly on-chain in a single Solana transaction (~31k CU)** — removing the
 committee entirely.
 
-> **Verified live (checked on-chain 2026-07-27).** The M31 Circle-STARK verifier of
-> the murkl class this migration targets is deployed and live on Solana devnet:
-> program `StArKSLbAn43UCcujFMc5gKc8rY2BVfSbguMfyLTMtw` (272 KB, full verification,
-> not demo mode), with a live pool holding real deposits. So a post-quantum
-> Circle-STARK verifier already runs on a live cluster. What remains for riverrun is
-> to wire riverrun's own relation (Poseidon2 Merkle membership + nullifier + action)
-> into that verifier, which is the milestone breakdown below. The M31 prover and
-> verifier foundation (M31/QM31, circle group, FRI, Merkle) is implemented and
-> passes 201 tests off-chain today; the in-circuit membership AIR is the next step,
-> not yet done, and is not claimed as done anywhere in this repo.
+> **Verified live (checked on-chain 2026-07-27).** A Circle-STARK verifier of the
+> murkl class this migration targets is deployed and live on Solana devnet: program
+> `StArKSLbAn43UCcujFMc5gKc8rY2BVfSbguMfyLTMtw` (272 KB, full verification, not demo
+> mode), with a live pool holding real deposits. So a post-quantum Circle-STARK
+> verifier already runs on a live cluster. That specific verifier is third-party
+> code (`github.com/exidz/murkl`) whose repository ships an empty `LICENSE` file, so
+> it is not redistributable and is not vendored anywhere in this repo; it is cited
+> only as evidence of feasibility, the same way the rest of this document cites it.
+>
+> **`crates/riverrun-m31`, real and in-repo (2026-07-27).** riverrun now has its
+> own Circle-STARK code, built without vendoring or copying any unlicensed source:
+> it depends on the official Plonky3 crates (`p3-mersenne-31`, `p3-poseidon2`,
+> `p3-poseidon2-air`, `p3-circle`, `p3-fri`, `p3-uni-stark`), published on
+> crates.io under MIT OR Apache-2.0. It proves and verifies, end to end with a
+> genuine Circle-STARK proof, knowledge of a Poseidon2-M31 permutation preimage
+> (canonical Plonky3 round constants, not invented ones), which validates the whole
+> pipeline the harder relation below needs. It is not yet the Merkle-membership
+> relation (§1) or on-chain (SBF) verification: `cargo test --manifest-path
+> crates/riverrun-m31/Cargo.toml`.
 
 Why this is the decisive move: it is the one change that makes riverrun
 simultaneously **(a) post-quantum, (b) transparent / no trusted setup, and (c)
@@ -198,11 +207,18 @@ that needs a machine with real RAM/disk headroom; this laptop (3.9 GB free disk,
 1. **[this session] On-chain seam.** `execute_verified` + buffer parser + tests
    against a mock verifier buffer. Kills the committee *in the program structure*;
    ready to point at a real verifier.
-2. **M31 AIR (Stwo).** Implement §1's AIR over M31/Poseidon2; prove membership +
-   nullifier + action binding; native tests. (Capable machine.)
-3. **On-chain Circle-STARK verifier.** Deploy an M31 verifier (fork/adapt murkl's,
-   MIT, or build on Stwo's verifier) that writes the §2 buffer. Wire
-   `STARK_VERIFIER_ID`.
+2. **M31 AIR.** Implement §1's AIR over M31/Poseidon2; prove membership + nullifier
+   + action binding; native tests. **In progress**: `crates/riverrun-m31` proves and
+   verifies a Poseidon2-M31 permutation preimage today, on the official, licensed
+   Plonky3 stack (`p3-circle` + `p3-fri` + `p3-poseidon2-air`). Still ahead: chaining
+   permutation rows into a Merkle authentication path with index-bit routing
+   (mirroring `riverrun-stark`'s `bound_air.rs`, adapted to Plonky3's AIR trait),
+   then the nullifier and action binding on top.
+3. **On-chain Circle-STARK verifier.** Deploy an M31 verifier that writes the §2
+   buffer. `murkl`'s verifier is cited as feasibility evidence only, not a source
+   to fork: its repository ships no license, so nothing from it is redistributable.
+   The verifier here must be riverrun's own, built on the same licensed Plonky3
+   primitives `riverrun-m31` already depends on. Wire `STARK_VERIFIER_ID`.
 4. **Ricorso AIR (§1d).**
 5. **Mainnet.** Deploy pool + verifier; settle a real action whose membership proof
    is verified on-chain, no committee. This is the headline: *the only submission
