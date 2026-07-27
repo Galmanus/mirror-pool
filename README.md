@@ -47,7 +47,7 @@ the anonymity you actually get, and it is built from hashes, so what it hides to
 stays hidden after quantum computers arrive.
 
 <p align="center">
-<img src="scripts/demo.gif" alt="riverrun guided mode: a status panel, the step-by-step to become anonymous on Solana, and one secret becoming two unlinkable identities" width="820">
+<img src="scripts/demo.gif" alt="riverrun in the terminal: the post-quantum posture (hash vs curve, Mosca's inequality), the self-fill floor a whale leaves you, and one secret becoming two unlinkable identities" width="820">
 </p>
 
 ## What riverrun does
