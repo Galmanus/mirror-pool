@@ -10,7 +10,7 @@
 
 **The anonymity layer for Solana. Post-quantum.**
 
-[![tests](https://img.shields.io/badge/tests-176%20green-4c1)](#use-it)
+[![tests](https://img.shields.io/badge/tests-179%20green-4c1)](#use-it)
 [![post-quantum](https://img.shields.io/badge/STARK-post--quantum%2C%20no%20setup-8A2BE2)](#why-post-quantum)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -41,7 +41,7 @@ that is). Five facts you can check in minutes:
 - **One round, one proof.** 16 memberships settle in a single **45 KB** STARK,
   about **8x** smaller than 16 separate, verified once.
 - **More than a pool.** riverrun ID (seven unlinkable powers), a 47-page whitepaper
-  with proofs, and **176 tests** green.
+  with proofs, and **179 tests** green.
 
 ## In one breath
 
@@ -214,6 +214,15 @@ attempted before the crowd was complete was refused on-chain
 in a single **45 KB** post-quantum STARK, about **8x** smaller than 16 separate
 proofs, verified once.
 
+**One round, one transaction.** The program's `execute_batch` settles a whole round
+in a single transaction: one relayer signature, one committee attestation over the
+batch, the vault pays every recipient, no member key signs. The batch digest binds
+every action, nullifier, and recipient, so a relayer can neither add, drop, nor
+redirect one. This is the same one-transaction consolidation a curve-based pool gets
+from an Address Lookup Table, but post-quantum and with no trusted setup. Proven with
+three on-chain tests in the Solana VM (a whole round in one transaction, anti-replay,
+and no redirect); the live devnet redeploy is pending a devnet SOL top-up.
+
 **The floor is honest.** k is a ceiling, not a guarantee. If an adversary
 self-fills the round (a Sybil, or a whale funding many notes), every slot they own
 is one they subtract, and owning all but one leaves you alone at effective-k 1.
@@ -327,9 +336,9 @@ beside it, and every limitation is named where the claim is made.
 - [`docs/EFFECTIVE_K.md`](docs/EFFECTIVE_K.md): the ruler and the arithmetic behind
   it.
 
-MIT. **176 tests green** across the repo (117 in the default workspace, incl. the
+MIT. **179 tests green** across the repo (117 in the default workspace, incl. the
 unified act derivation and the act() SDK, plus the excluded heavy crates: STARK 31,
-mirror-pool 21 e2e, pool-zk 7).
+mirror-pool 24 e2e incl. the batch settlement, pool-zk 7).
 
 The name is the first word of *Finnegans Wake*: a river that flows back into its own
 beginning. A private action returns you to the crowd you came from.
