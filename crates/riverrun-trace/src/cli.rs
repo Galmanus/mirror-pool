@@ -1394,6 +1394,23 @@ fn short_class(c: &str) -> String {
 
 /// Distinct non-hub fee payers who moved SOL into the pool recently.
 fn pool_depositors(rpc: &mut Rpc, pool: &str, want: usize, budget: &mut usize) -> Vec<String> {
+    pool_depositors_min(rpc, pool, want, budget, MIN_DEPOSIT)
+}
+
+/// Like `pool_depositors`, but with an explicit deposit floor instead of the
+/// default `MIN_DEPOSIT`. Pools have different entry-fee denominations (a live
+/// mixer's SOL floor is not a fresh test pool's much smaller entry fee), so a
+/// caller measuring a specific pool's own commitment size passes it here rather
+/// than tuning the shared `MIN_DEPOSIT` constant, which stays as the general
+/// noise floor for `audit`/`preflight`/`scan`/`watch` against pools of unknown
+/// denomination.
+fn pool_depositors_min(
+    rpc: &mut Rpc,
+    pool: &str,
+    want: usize,
+    budget: &mut usize,
+    min_deposit: u64,
+) -> Vec<String> {
     let mut seen: HashSet<String> = HashSet::new();
     let mut out = Vec::new();
     for sig in rpc.signatures(pool, POOL_SIG_SCAN) {
@@ -1408,7 +1425,7 @@ fn pool_depositors(rpc: &mut Rpc, pool: &str, want: usize, budget: &mut usize) -
         }
         let deposits = system_transfers(&tx)
             .into_iter()
-            .any(|(src, dst, l)| src == payer && dst != payer && l >= MIN_DEPOSIT);
+            .any(|(src, dst, l)| src == payer && dst != payer && l >= min_deposit);
         if !deposits {
             continue;
         }
@@ -1419,6 +1436,39 @@ fn pool_depositors(rpc: &mut Rpc, pool: &str, want: usize, budget: &mut usize) -
         out.push(payer);
     }
     out
+}
+
+/// Measure a pool's real effective-k, for a caller (like the `act()` SDK
+/// backend) that knows the pool's own deposit denomination rather than relying
+/// on the general-purpose `MIN_DEPOSIT` noise floor. `None` when no depositors
+/// were recovered (empty pool, wrong denomination, or the RPC could not be
+/// reached). The caller must not treat that as "anonymous", only as
+/// "unmeasured".
+pub fn measure_pool_ruler(
+    rpc: &mut Rpc,
+    pool: &str,
+    n: usize,
+    budget: &mut usize,
+    min_deposit: u64,
+) -> Option<EffectiveK> {
+    let depositors = pool_depositors_min(rpc, pool, n, budget, min_deposit);
+    if depositors.is_empty() {
+        return None;
+    }
+    let classes: Vec<String> = depositors
+        .iter()
+        .map(|d| provenance_class(rpc, d, budget, DEPTH, NODES, FUNDERS, SCAN_TX))
+        .collect();
+    let mut seen: Vec<(&String, usize)> = Vec::new();
+    for c in &classes {
+        if let Some(e) = seen.iter_mut().find(|(k, _)| *k == c) {
+            e.1 += 1;
+        } else {
+            seen.push((c, 1));
+        }
+    }
+    let sizes: Vec<usize> = seen.iter().map(|(_, n)| *n).collect();
+    Some(effective_k(&sizes))
 }
 
 #[cfg(test)]
