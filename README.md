@@ -77,6 +77,45 @@ the line Solana itself draws. And across that whole spectrum, riverrun is the on
 point that is **post-quantum with no trusted setup**. Anonymous DAO voting, one of
 Solana's own named use cases, is exactly what riverrun ID is for.
 
+## Why this is a paradigm shift, not an improvement
+
+Three problems every other privacy pool leaves open, and riverrun closes.
+
+**1. The trusted setup was a single point of failure.** Every Groth16 pool needs a
+ceremony where someone generates a secret. If that secret leaks, everyone is
+de-anonymized retroactively. It is a central server for privacy: if it falls,
+everyone falls. riverrun has no secret and no ceremony. Nobody has to trust anybody.
+It is pure math.
+
+**2. The privacy has an expiry date, and nobody mentions it.** You vote anonymously
+in a DAO in 2026. In 2035 someone with a quantum computer copies the whole chain,
+runs Shor's algorithm, and learns it was you. Your nine-year-old privacy becomes
+public. This is retroactive, and it is computation, not science fiction. riverrun is
+built on hashes, which a quantum computer cannot break.
+
+**3. Nobody measures the real privacy.** Every pool says "k = 30, you are hidden
+among 30." Not true. If 20 came from Kraken, 5 from Coinbase, and you from OKX, your
+real crowd is 1. You are alone. riverrun measures the funding graph and shows you the
+number that matters. On a live mainnet pool, advertised 30 was worth an effective 6.5.
+
+| before | riverrun |
+|---|---|
+| privacy that expires around 2035 | privacy that lasts |
+| depends on a trusted ceremony | pure, verifiable math |
+| "trust that it is 30" | "it is 6.5, measured, checkable" |
+| works only today | proven to survive quantum |
+| a commodity | infrastructure |
+
+Solana is the most transparent chain in the world: everything is public. Great for
+compliance, hard for privacy. riverrun is the first tool here to combine real
+unlinkability (not just confidentiality), a proof of it instead of a promise,
+survival of quantum computers, no trusted setup, and a full round settled on-chain
+on devnet today. Verifying the post-quantum proof on-chain in one transaction, with
+no committee, is the next milestone, named honestly in [Honest status](#honest-status).
+
+The shift: before, "trust that you are private." Now, "see the proof that you are
+private, and that you will stay private."
+
 ## How riverrun compares
 
 riverrun does not hide *how much* you move. Confidential Token Extensions, FHE, and
