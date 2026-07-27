@@ -66,6 +66,23 @@ Three things, in plain terms:
 Your identity is one secret with a different unlinkable face in every context
 (riverrun ID), so acting twice, one vote, one claim, never links back to you.
 
+## Who this is for
+
+Anyone who does not want to be an open book on-chain, and the ones with the most to
+lose come first.
+
+- **Algotraders** who do not want their strategies reverse-engineered.
+- **Whales** who do not want every move shadowed and front-run.
+- **Market makers** protecting flow and inventory.
+- **Protocols and agents** that need to operate without broadcasting their entire
+  playbook.
+- **Everyday users** who simply do not want to be clustered, profiled, and tracked.
+
+The order is also the order of value at risk: transparency costs a market maker or a
+whale real money to front-running, and it costs everyone their privacy. riverrun
+hides who acted, not how much, so the amounts stay public and auditable, which is
+what lets a regulated desk use it where it could never touch a mixer.
+
 ## Where it sits on Solana's privacy spectrum
 
 Solana frames [privacy as a spectrum](https://solana.com/privacy), from pseudonymity
