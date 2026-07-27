@@ -7,6 +7,17 @@ a **Circle STARK over the Mersenne-31 field (M31)** whose proof is **verified
 directly on-chain in a single Solana transaction (~31k CU)** — removing the
 committee entirely.
 
+> **Verified live (checked on-chain 2026-07-27).** The M31 Circle-STARK verifier of
+> the murkl class this migration targets is deployed and live on Solana devnet:
+> program `StArKSLbAn43UCcujFMc5gKc8rY2BVfSbguMfyLTMtw` (272 KB, full verification,
+> not demo mode), with a live pool holding real deposits. So a post-quantum
+> Circle-STARK verifier already runs on a live cluster. What remains for riverrun is
+> to wire riverrun's own relation (Poseidon2 Merkle membership + nullifier + action)
+> into that verifier, which is the milestone breakdown below. The M31 prover and
+> verifier foundation (M31/QM31, circle group, FRI, Merkle) is implemented and
+> passes 201 tests off-chain today; the in-circuit membership AIR is the next step,
+> not yet done, and is not claimed as done anywhere in this repo.
+
 Why this is the decisive move: it is the one change that makes riverrun
 simultaneously **(a) post-quantum, (b) transparent / no trusted setup, and (c)
 verified on-chain with no trusted committee** — a position the pairing/Groth16
