@@ -1400,6 +1400,55 @@ the \emph{average} residual, does not have this failure, and is the quantity Eq.
 ``how exposed is the worst-off member,'' which the ruler reports as the worst case, but
 it is not the set's anonymity.
 
+\subsection{Conditioning on round composition: the self-fill floor}
+\label{sub:selffill}
+
+The provenance formula conditions on where the money came from. There is a second,
+cheaper channel an honest tool must also score: the adversary can \emph{join the round}.
+Nothing stops them from submitting their own members into the same synchronized round, a
+Sybil, or a single whale funding many notes. Every slot they own is one they can subtract,
+because they know it is theirs.
+
+\textbf{Setup.} A round advertises $k$ slots. The adversary controls $a$ of them by
+self-filling; the remaining $h = k - a$ are honest, one of which is the target. Since the
+adversary knows its own $a$ slots, its posterior places zero mass there and is supported
+on the $h$ honest slots. For a perfectly synchronized round of identical actions the
+observable carries no per-slot signal, so the posterior is uniform on the honest set and
+\[ \keff^{\mathrm{fill}} \;=\; h \;=\; k - a. \]
+Composing with provenance: the honest slots still carry funding origins, so within them
+Eq.~\ref{eq:effk-derived} applies, partitioning the $h$ honest members into provenance
+classes of sizes $m_1, \dots, m_s$ with $\sum_j m_j = h$. Then
+\[ \keff \;=\; 2^{H}, \qquad H \;=\; \sum_{j=1}^{s} \frac{m_j}{h}\,\log_2 m_j
+\;\le\; \log_2 h. \]
+The two channels compose in one direction only: self-fill caps the set at $h$, and
+provenance can only erode it further.
+
+\begin{claimx}[The self-fill floor]
+$\keff \le h = k - a \le k$. In particular, if the adversary owns all but the target
+($a = k-1$, so $h = 1$), then $\keff = 1$: the honest user is alone, whatever $k$ was
+advertised. This is the floor of every mix, riverrun's included, and no larger headline
+$k$ removes it.
+\end{claimx}
+
+\begin{proof}[Argument]
+The posterior is supported on the $h$ honest slots, so by the entropy bound of the
+previous claim $\keff = 2^{H} \le 2^{\log_2 h} = h$, and $h = k - a \le k$. At $h = 1$ the
+support is a single slot, $H = 0$, and $\keff = 1$.
+\end{proof}
+
+\begin{intuition}
+The number to distrust is the advertised $k$. A round of $17$ with $16$ adversary-owned
+slots is not a crowd of $17$; it is one honest user watched by an adversary who knows the
+other sixteen are theirs. \river\ measures this instead of advertising the gross count:
+\texttt{riverrun-eval} prints the whole degradation curve, $\keff = k - a$ as $a$ climbs
+from $0$ to $k-1$.
+\end{intuition}
+
+The defense is not cryptographic, it is economic: a \textbf{per-participant deposit cap}
+bounds the fraction $a/k$ any single funder can occupy, and the coordinator's provenance
+floor (\S\ref{sec:coord}) refuses a round whose honest classes are too small. Composition
+names the exposure; the cap and the floor bound it.
+
 \subsection{The repeated-use bound: an intersection attack, formally}
 
 Single-shot $\keff$ scores one act. A riverrun-ID identity is one secret used many times
