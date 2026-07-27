@@ -471,6 +471,9 @@ pub fn main() {
         "trace" => cmd_trace(rest, json),
         "exhibit" => cmd_exhibit(json),
         "id" => cmd_id(rest, json),
+        "pq" | "quantum" => cmd_pq(rest),
+        "floor" | "selffill" => cmd_floor(rest, json),
+        "explain" | "learn" => cmd_explain(rest),
         "help" | "-h" | "--help" => help(),
         "version" | "-V" | "--version" => version(),
         other => {
@@ -494,6 +497,175 @@ fn take_flag(args: &mut Vec<String>, flag: &str) -> bool {
 
 fn version() {
     println!("riverrun {}", env!("CARGO_PKG_VERSION"));
+}
+
+// --- pq: post-quantum posture + Mosca inequality ----------------------------
+
+/// Expert-survey midpoint for a cryptographically-relevant quantum computer, in
+/// years from now. An estimate, not a fact (Mosca's own framing): used only to
+/// make the inequality concrete. Overridable as the second argument.
+const QUANTUM_ETA_YEARS: u32 = 10;
+/// Years to migrate a deployed system to quantum-safe crypto (the `Y` in Mosca).
+const MIGRATION_YEARS: u32 = 2;
+
+/// Mosca's inequality: you are safe iff the secret's required lifetime plus the
+/// migration time fits inside the window before a quantum computer arrives.
+/// `X + Y <= Z`. For a permanent ledger `X` is effectively infinite, so no
+/// curve-based scheme can satisfy it.
+fn mosca_safe(x_years: u32, y_years: u32, z_years: u32) -> bool {
+    x_years.saturating_add(y_years) <= z_years
+}
+
+fn cmd_pq(args: &[String]) {
+    // Optional: `riverrun pq <X> [Z]`, X = years your secret must stay secret,
+    // Z = years until a quantum computer. Default X models a permanent ledger.
+    let x_arg = args.first().and_then(|s| s.parse::<u32>().ok());
+    let z = args.get(1).and_then(|s| s.parse::<u32>().ok()).unwrap_or(QUANTUM_ETA_YEARS);
+    let y = MIGRATION_YEARS;
+
+    println!("{}\n", cyan("riverrun: post-quantum posture"));
+    println!("  {:<18}{:<22}{}", "primitive", "riverrun", "curve-based tools");
+    println!("  {}", dim(&"-".repeat(58)));
+    // pad the plain text to width first, then colorize, so ANSI codes do not
+    // count toward the column width and the table stays aligned.
+    let row = |k: &str, a: &str, b: &str|
+        println!("  {:<18}{}{}", k, green(&format!("{a:<22}")), red(b));
+    row("commitment", "BLAKE3 hash", "curve point");
+    row("membership proof", "Rescue / FRI STARK", "Groth16 / BN254");
+    row("trusted setup", "none", "ceremony (toxic waste)");
+    row("under Shor", "nothing to break", "keys recovered");
+    row("under Grover", "halved, absorbed", "n/a");
+
+    println!("\n  {}  X + Y > Z  =>  you have already lost", yellow("Mosca's inequality:"));
+    println!("    X = years your secret must stay secret");
+    println!("    Y = years to migrate to quantum-safe crypto  (~{y})");
+    println!("    Z = years until a quantum computer breaks today's curves  (~{z})");
+
+    match x_arg {
+        Some(x) => {
+            let curve_safe = mosca_safe(x, y, z);
+            println!(
+                "\n  a curve-based tool, secret needed {x}y:  {}",
+                if curve_safe { green("within the window") } else { red("EXPOSED (X+Y>Z)") }
+            );
+        }
+        None => {
+            println!(
+                "\n  On a {}, X is effectively infinite: the chain is copied",
+                yellow("permanent ledger")
+            );
+            println!("  forever, so any curve-based scheme fails the inequality.");
+        }
+    }
+    println!(
+        "\n  riverrun is hash-based: there is no curve for Shor to attack.\n  verdict: {}  what you hide today stays hidden after quantum.",
+        green("POST-QUANTUM")
+    );
+}
+
+// --- floor: the self-fill degradation ruler ---------------------------------
+
+fn cmd_floor(args: &[String], json: bool) {
+    let k: usize = args.first().and_then(|s| s.parse().ok()).unwrap_or(30);
+    if k == 0 {
+        eprintln!("usage: riverrun floor <k> [adversary_owned]");
+        std::process::exit(2);
+    }
+    // If an adversary is named, report that one point; else print the curve.
+    if let Some(a) = args.get(1).and_then(|s| s.parse::<usize>().ok()) {
+        let h = k.saturating_sub(a);
+        let ek = if h == 0 { 0.0 } else { effective_k(&[h]).effective };
+        if json {
+            println!(
+                "{{\"advertised_k\":{k},\"adversary_owned\":{a},\"honest\":{h},\"effective_k\":{ek:.4}}}"
+            );
+        } else {
+            println!(
+                "advertised k {k}, adversary self-fills {a}  ->  honest {h}, effective-k {}",
+                paint_by_sev(severity(ek, k, h), &format!("{ek:.1}"))
+            );
+        }
+        return;
+    }
+
+    println!("{}\n", cyan("riverrun: the self-fill floor"));
+    println!("  Advertised k is a ceiling, not a guarantee. If an adversary self-fills");
+    println!("  `a` of the slots (a Sybil, or a whale funding many notes), the honest");
+    println!("  set is k - a, and effective-k falls with it.\n");
+    println!("  {:>14}   {:>12}   {:>12}", "adversary owns", "honest slots", "effective-k");
+    println!("  {}", dim(&"-".repeat(44)));
+    let picks: Vec<usize> = {
+        let mut v: Vec<usize> = (0..k).filter(|a| a % (k / 5).max(1) == 0).collect();
+        if *v.last().unwrap_or(&0) != k - 1 { v.push(k - 1); }
+        v
+    };
+    for a in picks {
+        let h = k - a;
+        let ek = effective_k(&[h]).effective;
+        let sev = severity(ek, k, h);
+        println!(
+            "  {:>14}   {:>12}   {}",
+            a,
+            h,
+            paint_by_sev(sev, &format!("{:>12}", format!("{ek:.1}")))
+        );
+    }
+    println!(
+        "\n  Owning all but one leaves you {}. The defense is a per-participant\n  deposit cap and the funding-graph ruler, not a larger headline k.",
+        red("alone")
+    );
+}
+
+// --- explain: plain-language, because knowledge should be accessible --------
+
+fn cmd_explain(args: &[String]) {
+    let topic = args.first().map(|s| s.to_ascii_lowercase()).unwrap_or_default();
+    let body = match topic.as_str() {
+        "effective-k" | "effective_k" | "k" =>
+            "effective-k is your REAL anonymity, not the advertised crowd. A pool says\n\
+             you are hidden among 30. But everyone's funding source is public, so an\n\
+             adversary sorts the 30 by where their money came from. If your source is\n\
+             yours alone, your real crowd is 1. effective-k = 2^(entropy of that\n\
+             sorting): the size of the uniform crowd that would give the same doubt.",
+        "self-fill" | "selffill" | "floor" =>
+            "self-fill is how a whale or a Sybil shrinks your crowd. They submit their\n\
+             own members into your round, and every slot they own is one they can\n\
+             subtract, because they know it is theirs. Advertised k = 17 with 16\n\
+             adversary slots is a crowd of 1. riverrun measures this floor. Try:\n\
+             riverrun floor 30",
+        "post-quantum" | "pq" | "quantum" =>
+            "post-quantum means your privacy survives a quantum computer. Curve-based\n\
+             tools (Groth16, ElGamal) are broken by Shor's algorithm, and a permanent\n\
+             ledger lets an attacker copy your data today and crack it later. riverrun\n\
+             stores only hashes, which Shor cannot break. Try: riverrun pq",
+        "nullifier" =>
+            "a nullifier is a one-time tag that lets you act exactly once without\n\
+             revealing who you are. It is a hash of your secret and the round, so it\n\
+             is unlinkable to you but unique, one vote or one claim per round, no\n\
+             double-spend, no identity.",
+        "provenance" | "trace" =>
+            "provenance is where your money came from, traced backward on the public\n\
+             chain. It is the quasi-identifier that survives a mixer: fresh wallet,\n\
+             same funding source, same you. riverrun traces it so you can see your\n\
+             exposure before you act. Try: riverrun trace <WALLET>",
+        "riverrun-id" | "id" | "identity" =>
+            "riverrun ID is one secret that becomes a different, unlinkable identity in\n\
+             every context. One vote at the DAO, one claim at the airdrop, and nobody\n\
+             can piece them back into you. It is Solana's missing Semaphore, and it is\n\
+             post-quantum. Try: riverrun id new",
+        _ => {
+            println!("{}\n", cyan("riverrun explain: plain answers"));
+            println!("  usage: riverrun explain <topic>\n\n  topics:");
+            for t in ["effective-k", "self-fill", "post-quantum", "nullifier", "provenance", "riverrun-id"] {
+                println!("    {}", green(t));
+            }
+            return;
+        }
+    };
+    println!("{}\n", cyan(&format!("riverrun explain: {topic}")));
+    for line in body.lines() {
+        println!("  {line}");
+    }
 }
 
 /// Reject a malformed address before spending any RPC calls: a typo would
@@ -613,6 +785,9 @@ fn help() {
          \x20                                 constructions (offline, no RPC)\n\
          \x20 id <new|show|erosion>          riverrun ID: one secret, a different\n\
          \x20                                 unlinkable identity per context, offline\n\
+         \x20 pq [X] [Z]                      post-quantum posture + Mosca inequality\n\
+         \x20 floor <k> [adversary]          the self-fill floor: advertised k vs real\n\
+         \x20 explain <topic>                plain answers (effective-k, post-quantum, ...)\n\
          \x20 version                         print the version and exit\n\
          \n\
          OPTIONS\n\
@@ -1238,4 +1413,27 @@ fn pool_depositors(rpc: &mut Rpc, pool: &str, want: usize, budget: &mut usize) -
         out.push(payer);
     }
     out
+}
+
+#[cfg(test)]
+mod cli_tests {
+    use super::*;
+
+    #[test]
+    fn mosca_safe_only_when_lifetime_plus_migration_fits_before_quantum() {
+        assert!(mosca_safe(3, 2, 10), "3+2=5 <= 10 is safe");
+        assert!(mosca_safe(8, 2, 10), "8+2=10 <= 10 is exactly safe");
+        assert!(!mosca_safe(9, 2, 10), "9+2=11 > 10 is exposed");
+        // a permanent ledger: X is effectively infinite, so never safe for a
+        // scheme that has to migrate. This is why hash-based must be the default.
+        assert!(!mosca_safe(u32::MAX, 2, 10));
+    }
+
+    #[test]
+    fn the_self_fill_floor_collapses_to_one_and_tops_out_at_the_crowd() {
+        // one honest slot left is effective-k 1 (fully exposed)
+        assert!((effective_k(&[1]).effective - 1.0).abs() < 1e-9);
+        // the full untouched crowd is worth its size
+        assert!((effective_k(&[30]).effective - 30.0).abs() < 1e-9);
+    }
 }
