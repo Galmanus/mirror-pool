@@ -274,6 +274,105 @@ pub mod riverrun_program {
         Ok(())
     }
 
+    /// Settle a whole round in ONE transaction: one relayer signs, one committee
+    /// attestation covers the entire batch, and the pool vault pays every recipient.
+    /// No member key signs. This is the consolidation an Address Lookup Table makes
+    /// possible: a client packs all the round's accounts into a single transaction,
+    /// so `k` memberships settle at once, and every on-chain value is a hash.
+    ///
+    /// `remaining_accounts` are pairs, one per action: the nullifier PDA (created
+    /// here, which is the anti-replay) then the recipient. The batch digest the
+    /// committee signs binds every action, nullifier, and recipient together, so a
+    /// relayer can neither add, drop, nor redirect an action.
+    pub fn execute_batch<'info>(
+        ctx: Context<'info, ExecuteBatch<'info>>,
+        actions: Vec<[u8; 32]>,
+        nullifiers: Vec<[u8; 32]>,
+        round: u64,
+        root: [u8; 32],
+    ) -> Result<()> {
+        let pool = &ctx.accounts.pool;
+        let k = actions.len();
+        require!(k > 0, PoolError::EmptyBatch);
+        require!(nullifiers.len() == k, PoolError::BatchLengthMismatch);
+        require!(ctx.remaining_accounts.len() == 2 * k, PoolError::BatchLengthMismatch);
+        require!(round == pool.round, PoolError::RoundMismatch);
+        require!(pool.member_count >= pool.k_min, PoolError::AnonymitySetTooSmall);
+        require!(pool.membership_root != [0u8; 32], PoolError::RootNotPublished);
+        require!(root == pool.membership_root, PoolError::RootMismatch);
+
+        // One attestation over the whole batch: bind every action, nullifier, and
+        // recipient into a single digest the committee signed once.
+        let recipients: Vec<Pubkey> =
+            (0..k).map(|i| *ctx.remaining_accounts[2 * i + 1].key).collect();
+        let digest = batch_digest(&actions, &nullifiers, &recipients);
+        verify_quorum(
+            &ctx.accounts.instructions,
+            &pool.verifiers,
+            pool.threshold,
+            &batch_attestation_message(&pool.key(), &root, round, &digest),
+        )?;
+
+        let pool_key = ctx.accounts.pool.key();
+        let space = NullifierRecord::SPACE;
+        let rent = Rent::get()?.minimum_balance(space);
+        let vault_seeds: &[&[u8]] = &[b"vault", pool_key.as_ref(), &[ctx.bumps.vault]];
+
+        for i in 0..k {
+            let nf_ai = &ctx.remaining_accounts[2 * i];
+            let recipient_ai = &ctx.remaining_accounts[2 * i + 1];
+
+            // Anti-replay: create the nullifier PDA. A repeat nullifier already
+            // exists, so create_account fails and the double action is rejected.
+            let (expected, bump) = Pubkey::find_program_address(
+                &[b"nullifier", pool_key.as_ref(), &nullifiers[i]],
+                &crate::ID,
+            );
+            require_keys_eq!(*nf_ai.key, expected, PoolError::AttestationMismatch);
+            require!(nf_ai.data_is_empty() && nf_ai.lamports() == 0, PoolError::NullifierSpent);
+
+            let create = anchor_lang::solana_program::system_instruction::create_account(
+                &ctx.accounts.relayer.key(),
+                nf_ai.key,
+                rent,
+                space as u64,
+                &crate::ID,
+            );
+            anchor_lang::solana_program::program::invoke_signed(
+                &create,
+                &[
+                    ctx.accounts.relayer.to_account_info(),
+                    nf_ai.clone(),
+                    ctx.accounts.system_program.to_account_info(),
+                ],
+                &[&[b"nullifier", pool_key.as_ref(), &nullifiers[i], &[bump]]],
+            )?;
+
+            let transfer_ix = anchor_lang::solana_program::system_instruction::transfer(
+                &ctx.accounts.vault.key(),
+                recipient_ai.key,
+                PAYOUT_LAMPORTS,
+            );
+            anchor_lang::solana_program::program::invoke_signed(
+                &transfer_ix,
+                &[
+                    ctx.accounts.vault.to_account_info(),
+                    recipient_ai.clone(),
+                    ctx.accounts.system_program.to_account_info(),
+                ],
+                &[vault_seeds],
+            )?;
+
+            emit!(Executed {
+                pool: pool_key,
+                action_hash: actions[i],
+                nullifier: nullifiers[i],
+                round,
+            });
+        }
+        Ok(())
+    }
+
     /// Execute an action settled by an **on-chain STARK proof instead of a
     /// committee**. Identical to `execute` in every check except the membership
     /// gate: rather than requiring M-of-N Ed25519 attestations, it requires a
@@ -365,6 +464,35 @@ fn attestation_message(
     m[112..144].copy_from_slice(nullifier);
     m[144..152].copy_from_slice(&round.to_le_bytes());
     m[152..184].copy_from_slice(recipient.as_ref());
+    m
+}
+
+/// Domain for a *batch* attestation, distinct so a single-action attestation can
+/// never be replayed as a batch or vice versa.
+const BATCH_ATTESTATION_DOMAIN: &[u8; 16] = b"riverrun-batch-1";
+
+/// A 32-byte digest over a whole batch of `(action, nullifier, recipient)` tuples.
+/// The committee signs this once, so one signature settles the entire round.
+fn batch_digest(actions: &[[u8; 32]], nullifiers: &[[u8; 32]], recipients: &[Pubkey]) -> [u8; 32] {
+    let mut parts: Vec<&[u8]> = Vec::with_capacity(actions.len() * 3);
+    for i in 0..actions.len() {
+        parts.push(&actions[i]);
+        parts.push(&nullifiers[i]);
+        parts.push(recipients[i].as_ref());
+    }
+    hashv(&parts).to_bytes()
+}
+
+/// The 184-byte message the committee signs for a batch: the pool, the root, the
+/// round, and the batch digest folded into the action slot. Reuses the fixed
+/// attestation layout so `verify_quorum` checks it unchanged.
+fn batch_attestation_message(pool: &Pubkey, root: &[u8; 32], round: u64, digest: &[u8; 32]) -> [u8; ATTESTATION_LEN] {
+    let mut m = [0u8; ATTESTATION_LEN];
+    m[..16].copy_from_slice(BATCH_ATTESTATION_DOMAIN);
+    m[16..48].copy_from_slice(pool.as_ref());
+    m[48..80].copy_from_slice(root);
+    m[80..112].copy_from_slice(digest);
+    m[144..152].copy_from_slice(&round.to_le_bytes());
     m
 }
 
@@ -622,6 +750,26 @@ pub struct Execute<'info> {
     pub instructions: UncheckedAccount<'info>,
 }
 
+/// Accounts for `execute_batch`: one relayer, the vault, and the instructions
+/// sysvar. The nullifier PDAs and recipients are passed as `remaining_accounts`,
+/// in pairs, so an Address Lookup Table can pack a whole round into one
+/// transaction. The nullifier PDAs are created inside the instruction, so they are
+/// not fixed fields here.
+#[derive(Accounts)]
+pub struct ExecuteBatch<'info> {
+    #[account(seeds = [b"pool", pool.authority.as_ref()], bump = pool.bump)]
+    pub pool: Account<'info, Pool>,
+    #[account(mut)]
+    pub relayer: Signer<'info>,
+    #[account(mut, seeds = [b"vault", pool.key().as_ref()], bump)]
+    pub vault: SystemAccount<'info>,
+    pub system_program: Program<'info, System>,
+    /// CHECK: address-checked; read only through the instructions-sysvar helpers to
+    /// find the committee's Ed25519 batch attestation in this transaction.
+    #[account(address = solana_sdk_ids::sysvar::instructions::ID)]
+    pub instructions: UncheckedAccount<'info>,
+}
+
 #[derive(Accounts)]
 #[instruction(action_hash: [u8; 32], nullifier: [u8; 32], round: u64, root: [u8; 32])]
 pub struct ExecuteVerified<'info> {
@@ -707,6 +855,12 @@ pub enum PoolError {
     RootMismatch,
     #[msg("the anonymity set is below the pool's floor: an execution here would not be private")]
     AnonymitySetTooSmall,
+    #[msg("a batch must settle at least one action")]
+    EmptyBatch,
+    #[msg("the batch's actions, nullifiers, and accounts do not line up")]
+    BatchLengthMismatch,
+    #[msg("this nullifier was already spent: no second action for it this round")]
+    NullifierSpent,
     #[msg("the commitment set is full")]
     PoolFull,
     #[msg("round counter overflow")]
