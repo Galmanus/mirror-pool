@@ -105,6 +105,27 @@ the line Solana itself draws. And across that whole spectrum, riverrun is the on
 point that is **post-quantum with no trusted setup**. Anonymous DAO voting, one of
 Solana's own named use cases, is exactly what riverrun ID is for.
 
+## Why this matters for Solana
+
+Solana is the highest-performance and most transparent chain, and that transparency
+has a standing cost: MEV, front-running, copy-trading, leaked strategy. It falls
+hardest on the actors who move the most value. A layer that hides *who* acted, not
+*how much*, is what lets a fund or a market maker operate on Solana without
+broadcasting its playbook, and it stays on the compliance-friendly side of the line
+because the amounts remain public and auditable. That is flow, and capital, a
+transparent chain otherwise pushes away.
+
+It is also a piece the ecosystem does not yet have. Solana's privacy stack is mostly
+confidentiality, hiding amounts and state; riverrun adds the other axis, behavioral
+unlinkability, and it adds it **post-quantum**, when every other privacy tool on the
+chain is curve-based and breaks retroactively once a quantum computer exists. riverrun
+ID is the Semaphore-class identity primitive Solana lacks, so an anonymous DAO vote or
+a sybil-resistant airdrop needs no trusted opener. And the ruler is a public good: a
+protocol-agnostic meter that scores any pool's real anonymity, riverrun's own
+included, so no privacy claim on Solana gets taken on faith. Settling a post-quantum
+crowd of 18 in one native transaction shows this is not a paper design; it is
+infrastructure the chain can run today.
+
 ## Why this is a paradigm shift, not an improvement
 
 Three problems every other privacy pool leaves open, and riverrun closes.
