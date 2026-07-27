@@ -23,9 +23,6 @@
 > already running. Joyce's book loops back into its own beginning, a *ricorso*, and so
 > does a riverrun round: a private action returns you to the crowd you came from.
 
-Our goal is to empower people and to make knowledge accessible. Privacy is not
-secrecy. It is the right to act without being profiled for it.
-
 riverrun resolves the core dilemma of an open ledger: reconciling the public
 transparency that compliance needs with real, lasting privacy. It does this through
 **behavioral unlinkability**. Instead of hiding transaction amounts, which tends to
