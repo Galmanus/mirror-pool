@@ -1,4 +1,12 @@
-# riverrun
+```
+              ██
+              ▀▀
+  ██▄████   ████     ██▄  ▄██   ▄████▄    ██▄████   ██▄████  ██    ██  ██▄████▄
+  ██▀         ██      ██  ██   ██▄▄▄▄██   ██▀       ██▀      ██    ██  ██▀   ██
+  ██          ██      ▀█▄▄█▀   ██▀▀▀▀▀▀   ██        ██       ██    ██  ██    ██
+  ██       ▄▄▄██▄▄▄    ████    ▀██▄▄▄▄█   ██        ██       ██▄▄▄███  ██    ██
+  ▀▀       ▀▀▀▀▀▀▀▀     ▀▀       ▀▀▀▀▀    ▀▀        ▀▀        ▀▀▀▀ ▀▀  ▀▀    ▀▀
+```
 
 **The anonymity layer for Solana. Post-quantum.**
 
@@ -18,6 +26,10 @@ the same action from keys that are not yours, so an observer sees the action hap
 but cannot say it was you. And riverrun does not just claim this. It **measures**
 the anonymity you actually get, and it is built from hashes, so what it hides today
 stays hidden after quantum computers arrive.
+
+<p align="center">
+<img src="scripts/demo.gif" alt="riverrun guided mode: a status panel, the step-by-step to become anonymous on Solana, and one secret becoming two unlinkable identities" width="820">
+</p>
 
 ## Where it sits on Solana's privacy spectrum
 
@@ -64,6 +76,15 @@ real number. On a live mainnet pool an advertised **k = 30** was worth an effect
 **6.5**, and one depositor, alone in their funding class, was worth exactly **1**.
 The ruler scores any pool, including the other submissions in this bounty.
 
+```mermaid
+flowchart LR
+    P["The pool says:<br/><b>hidden among 30</b>"] --> S{"Group everyone by<br/>where their money<br/>came from (public!)"}
+    S --> G1["funded from<br/>exchange A<br/><b>18 people</b>"]
+    S --> G2["funded from<br/>exchange B<br/><b>6 people</b>"]
+    S --> G3["you, a source<br/>no one else shares<br/><b>1 person</b>"]
+    G3 --> R["Your REAL crowd = <b>1</b><br/>advertised 30, effective ~6.5"]
+```
+
 **A full round, live on devnet.** Eight distinct members each committed (each
 signing only their own commit), then a single relayer settled all eight actions
 alone, with eight distinct nullifiers, and no member's key touched an execution.
@@ -86,6 +107,19 @@ and defends it with a per-participant deposit cap and the funding-graph ruler.
 **riverrun ID.** One secret, seven unlinkable powers (a different identity per
 context, plus rate-limiting and rotation). Solana's missing Semaphore, post-quantum.
 
+```mermaid
+flowchart TD
+    K["Your ONE secret<br/>(the puzzle piece)"]
+    K --> D1["disguise<br/>@ the DAO"]
+    K --> D2["disguise<br/>@ the airdrop"]
+    K --> D3["disguise<br/>@ the vote"]
+    D1 -. "unlinkable" .- D2
+    D2 -. "unlinkable" .- D3
+    D1 --> A1["one vote"]
+    D2 --> A2["one claim"]
+    D3 --> A3["one action"]
+```
+
 ## Why post-quantum
 
 Every value riverrun writes on chain is a hash: the commitment `H(secret‖action)`,
@@ -94,6 +128,24 @@ pairings, and no trusted setup anywhere. An adversary can copy the whole chain t
 and wait for a quantum computer; when it arrives, Shor's algorithm breaks the
 curve-based privacy of a Groth16 pool retroactively, but finds nothing in riverrun
 to break.
+
+```mermaid
+flowchart TD
+    D["<b>The design choice</b><br/>every on-chain value is a hash<br/>commitment H(s‖a) · nullifier H(s‖r) · root<br/><i>no elliptic curves, no pairings, no trusted setup</i>"]
+    D --> H["attacker harvests the whole<br/>public chain <b>today</b>, waits for<br/>a quantum computer"]
+    H --> SHOR{"<b>Shor's algorithm</b><br/>breaks discrete-log and factoring"}
+    H --> GROV{"<b>Grover's algorithm</b><br/>speeds up brute force"}
+    SHOR --> S1["curve-based privacy<br/>(Groth16/BN254, ElGamal)<br/>keys recovered, <b>cracked ✗</b>"]
+    SHOR --> S2["riverrun: no curve anywhere<br/>on chain, <b>nothing for Shor<br/>to attack ✓</b>"]
+    GROV --> G1["halves a hash's security:<br/>256-bit → 128-bit effective<br/><b>parameters already absorb it ✓</b>"]
+    S2 --> OK(["<b>post-quantum by construction</b><br/>what you hide today stays hidden<br/>after quantum arrives"])
+    G1 --> OK
+    style S1 fill:#fde0e0,stroke:#c0392b,color:#611
+    style S2 fill:#e0f5e9,stroke:#1e7a46,color:#052
+    style G1 fill:#e0f5e9,stroke:#1e7a46,color:#052
+    style OK fill:#e6ecff,stroke:#3a5bd9,color:#123
+    style D fill:#f3f0ff,stroke:#8A2BE2,color:#213
+```
 
 On a ledger that never forgets, this is the difference between privacy that lasts
 and privacy with an expiry date. By Mosca's inequality, if what you hide must stay
