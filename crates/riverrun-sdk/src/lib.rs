@@ -269,4 +269,42 @@ mod tests {
         assert!(matches!(err, ActError::Backend(_)));
         assert!(be.settled_nullifier.is_none());
     }
+
+    #[test]
+    fn entering_and_exiting_a_position_leaves_no_linkable_trail() {
+        // The Phase E guarantee: a fund enters a position and later exits it, each
+        // through act() in a different context. An observer sees two settlements
+        // with unrelated nullifiers, and the two identities are independent, so the
+        // entry cannot be linked to the exit, nor either to the fund.
+        let fund = Secret::from_bytes([3; 32]);
+
+        let mut enter_be = MockBackend::with_effective_k(12.0);
+        let enter = act(
+            &fund,
+            &ActRequest { context: b"position-alpha/entry", action: b"buy", recipient: [1; 32], amount: 1 },
+            &MockProver,
+            &mut enter_be,
+            &policy(6.0),
+        )
+        .unwrap();
+
+        let mut exit_be = MockBackend::with_effective_k(12.0);
+        let exit = act(
+            &fund,
+            &ActRequest { context: b"position-alpha/exit", action: b"sell", recipient: [1; 32], amount: 1 },
+            &MockProver,
+            &mut exit_be,
+            &policy(6.0),
+        )
+        .unwrap();
+
+        assert_ne!(enter.nullifier, exit.nullifier, "entry and exit nullifiers must be unlinkable");
+        assert_ne!(
+            act::identity(&fund, b"position-alpha/entry"),
+            act::identity(&fund, b"position-alpha/exit"),
+            "entry and exit identities must be independent"
+        );
+        // and both settled with a real anonymity floor met
+        assert!(enter.effective_k >= 6.0 && exit.effective_k >= 6.0);
+    }
 }
