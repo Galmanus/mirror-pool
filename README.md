@@ -17,6 +17,13 @@
 Our goal is to empower people and to make knowledge accessible. Privacy is not
 secrecy. It is the right to act without being profiled for it.
 
+riverrun resolves the core dilemma of an open ledger: reconciling the public
+transparency that compliance needs with real, lasting privacy. It does this through
+**behavioral unlinkability**. Instead of hiding transaction amounts, which tends to
+attract regulatory scrutiny, it hides strictly *who* performed an action and keeps
+volumes public and auditable. And it is post-quantum, so what is hidden today stays
+hidden permanently.
+
 ## In short
 
 The submission that is **post-quantum, needs no trusted setup, and measures the
