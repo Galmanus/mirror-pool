@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/riverrun-core",
     "crates/riverrun-eval",
+    "crates/riverrun-sdk",
     "crates/riverrun-trace",
 ]
 # `crates/riverrun-stark` (post-quantum STARK membership, research/paper track) is

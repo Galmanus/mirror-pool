@@ -18,7 +18,7 @@
 //! and a leak in one context does not cascade to the rest.
 
 use crate::commitment::{commit, Commitment, Secret};
-use crate::nullifier::{nullifier, Nullifier, RoundId};
+use crate::nullifier::{nullifier as core_nullifier, Nullifier, RoundId};
 use crate::{tagged_hash, Hash};
 
 // Domain-separated so a context+action handle can never be reinterpreted as a
@@ -49,23 +49,31 @@ pub fn identity(secret: &Secret, context: &[u8]) -> Hash {
     tagged_hash(ACT_IDENTITY, &[secret.as_bytes(), context])
 }
 
+/// The commitment (Merkle leaf) you publish to join a round in `context` for
+/// `action`. Depends on the secret, context, and action, but not the round, so
+/// it can be computed and published *before* the round forms. It is the same leaf
+/// the membership relation and the STARK prove; this only pins how context and
+/// action enter it.
+pub fn commitment(secret: &Secret, context: &[u8], action: &[u8]) -> Commitment {
+    let handle = tagged_hash(ACT_COMMIT, &[context, action]);
+    commit(secret, &handle)
+}
+
+/// The nullifier that spends your one action in `context` at `round`. Known only
+/// once the round is fixed, so anti-replay is exactly per (secret, context,
+/// round). Folded into the existing nullifier scheme.
+pub fn nullifier(secret: &Secret, context: &[u8], round: &[u8]) -> Nullifier {
+    let handle = tagged_hash(ACT_NULL, &[context, round]);
+    core_nullifier(secret, &RoundId::from_bytes(handle))
+}
+
 /// Derive the full binding for `secret` acting with `action` in `context` at
 /// `round`. All three fields come from the one secret.
 pub fn bind(secret: &Secret, context: &[u8], action: &[u8], round: &[u8]) -> ActBinding {
-    // The leaf binds context+action, folded into the existing commitment scheme,
-    // so it is the same leaf the membership relation and the STARK prove.
-    let commit_handle = tagged_hash(ACT_COMMIT, &[context, action]);
-    let commitment = commit(secret, &commit_handle);
-
-    // The nullifier binds context+round, folded into the existing nullifier
-    // scheme, so anti-replay is exactly per (secret, context, round).
-    let null_handle = tagged_hash(ACT_NULL, &[context, round]);
-    let nullifier = nullifier(secret, &RoundId::from_bytes(null_handle));
-
     ActBinding {
         identity: identity(secret, context),
-        commitment,
-        nullifier,
+        commitment: commitment(secret, context, action),
+        nullifier: nullifier(secret, context, round),
     }
 }
 
@@ -132,6 +140,6 @@ mod tests {
         let commit_handle = tagged_hash(ACT_COMMIT, &[b"amm", b"buy"]);
         let null_handle = tagged_hash(ACT_NULL, &[b"amm", b"round-7"]);
         assert_eq!(b.commitment, commit(&sec, &commit_handle));
-        assert_eq!(b.nullifier, nullifier(&sec, &RoundId::from_bytes(null_handle)));
+        assert_eq!(b.nullifier, core_nullifier(&sec, &RoundId::from_bytes(null_handle)));
     }
 }

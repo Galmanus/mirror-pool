@@ -1,0 +1,10 @@
+[package]
+name = "riverrun-sdk"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The act() flow a fund integrates: one secret, one call, one unlinkable and measured action on Solana."
+
+[dependencies]
+riverrun-core = { path = "../riverrun-core" }

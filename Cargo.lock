@@ -340,6 +340,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "riverrun-sdk"
+version = "0.1.0"
+dependencies = [
+ "riverrun-core",
+]
+
+[[package]]
 name = "riverrun-trace"
 version = "0.1.0"
 dependencies = [
