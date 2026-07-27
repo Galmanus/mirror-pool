@@ -243,7 +243,8 @@ recipient, so a relayer can neither add, drop, nor redirect one, and an Address 
 Table packs the accounts. The same one-transaction consolidation a curve-based pool
 gets, but post-quantum and with no trusted setup. Honest limit: the committee
 attestation is larger than a compact SNARK, so it caps the count per transaction (7
-here); raising it is what the on-chain STARK is for.
+actions fit, 8 overflows Solana's 1232-byte transaction limit, mapped exactly);
+raising it is what the on-chain STARK is for.
 
 **The floor is honest.** k is a ceiling, not a guarantee. If an adversary
 self-fills the round (a Sybil, or a whale funding many notes), every slot they own
