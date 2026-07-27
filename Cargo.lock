@@ -344,6 +344,7 @@ name = "riverrun-trace"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "riverrun-core",
  "serde_json",
  "ureq",
 ]

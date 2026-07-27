@@ -5,7 +5,7 @@
 //! alongside the chance baseline `1/k`. The story is the two columns: unprotected
 //! stays high, protected sits on chance.
 
-use riverrun_eval::run_experiment;
+use riverrun_eval::{run_experiment, self_fill_degradation};
 
 fn main() {
     const SEED: u64 = 0x000C_0FFE_ED15_EA5E; // fixed seed → reproducible
@@ -31,6 +31,36 @@ fn main() {
     }
     println!(
         "\nRead: the clustering attacker deanonymizes the unprotected trace, but\n\
-         riverrun drives it to chance — attribution is no better than guessing."
+         riverrun drives it to chance, attribution is no better than guessing."
+    );
+
+    // The second exhibit: the advertised k is not what the honest user gets if the
+    // adversary self-fills the round. An honest mix measures this floor.
+    const ADVERTISED_K: usize = 17;
+    println!("\n\nriverrun — self-fill degradation (a fully protected round of k = {ADVERTISED_K})");
+    println!("what the honest user actually gets as the adversary owns more slots\n");
+    println!(
+        "{:>14}  {:>12}  {:>12}",
+        "adversary owns", "honest slots", "effective-k"
+    );
+    println!("{}", "-".repeat(42));
+    for row in self_fill_degradation(ADVERTISED_K) {
+        // print the endpoints and a few interior points, not all 17 rows
+        let a = row.adversary_owned;
+        if a == 0 || a == 4 || a == 8 || a == 12 || a == ADVERTISED_K - 1 {
+            println!(
+                "{:>14}  {:>12}  {:>12.1}",
+                a,
+                ADVERTISED_K - a,
+                row.effective_k
+            );
+        }
+    }
+    println!(
+        "\nRead: k = {ADVERTISED_K} is a ceiling, not a guarantee. Every slot the adversary\n\
+         self-fills is one they subtract; owning all but one leaves the honest user\n\
+         alone (effective-k 1). riverrun reports this floor instead of advertising\n\
+         the gross count. The defense is a per-participant deposit cap and a funding\n\
+         graph the tracer measures, not a larger headline number."
     );
 }

@@ -18,6 +18,7 @@
 //! are reproducible and the numbers in the README can be regenerated exactly.
 
 pub mod attack;
+pub mod composition;
 pub mod model;
 pub mod rng;
 
@@ -67,5 +68,54 @@ pub fn run_experiment(k: usize, rounds: usize, seed: u64) -> ExperimentResult {
         unprotected_accuracy: unprotected_hits as f64 / total as f64,
         protected_accuracy: protected_hits as f64 / total as f64,
         chance: 1.0 / k as f64,
+    }
+}
+
+/// One row of the self-fill degradation exhibit: for an advertised pool of
+/// `advertised_k`, how much anonymity survives when the adversary self-fills
+/// `adversary_owned` of the slots.
+#[derive(Clone, Copy, Debug)]
+pub struct SelfFillRow {
+    pub advertised_k: usize,
+    pub adversary_owned: usize,
+    pub effective_k: f64,
+}
+
+/// The honest degradation curve for a fully-protected round: sweep the adversary
+/// share from owning none of the round to owning all but the target, and report
+/// the effective anonymity the honest user actually gets at each share.
+///
+/// A perfectly synchronized identical round hides the honest user among the other
+/// honest slots and no further, so effective-k is exactly the honest count
+/// `advertised_k - adversary_owned`. The first row is the advertised `k`; the
+/// last (`adversary_owned = advertised_k - 1`) is the floor every mix shares: 1.
+pub fn self_fill_degradation(advertised_k: usize) -> Vec<SelfFillRow> {
+    (0..advertised_k)
+        .map(|adversary_owned| SelfFillRow {
+            advertised_k,
+            adversary_owned,
+            effective_k: composition::effective_k_selffill(advertised_k, adversary_owned),
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn self_fill_degradation_runs_from_full_k_down_to_one() {
+        let curve = self_fill_degradation(17);
+        assert_eq!(curve.len(), 17);
+        assert_eq!(curve[0].effective_k, 17.0, "no self-fill: the full advertised set");
+        assert_eq!(
+            curve.last().unwrap().effective_k,
+            1.0,
+            "adversary owns all but the target: the floor every mix shares"
+        );
+        // monotone non-increasing: more adversary slots never help the honest user
+        for pair in curve.windows(2) {
+            assert!(pair[1].effective_k <= pair[0].effective_k);
+        }
     }
 }
