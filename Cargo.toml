@@ -12,6 +12,7 @@ members = [
 # builds on its own when needed.
 exclude = [
     "crates/riverrun-stark",
+    "crates/riverrun-m31",
     "crates/riverrun-pool-zk",
     "programs/mirror-pool",
     "programs/stark-verifier",

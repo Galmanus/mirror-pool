@@ -1,0 +1,23 @@
+[package]
+name = "riverrun-m31"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "The post-quantum M31 Circle-STARK path for riverrun. Built on the official, MIT/Apache-2.0-licensed Plonky3 crates (field, Poseidon2 permutation, FRI, Circle PCS) — no vendored or unlicensed code."
+
+[dependencies]
+p3-air = "0.6.2"
+p3-field = "0.6.2"
+p3-matrix = "0.6.2"
+p3-mersenne-31 = "0.6.2"
+p3-poseidon2 = "0.6.2"
+p3-poseidon2-air = "0.6.2"
+p3-symmetric = "0.6.2"
+p3-uni-stark = "0.6.2"
+p3-circle = "0.6.2"
+p3-commit = "0.6.2"
+p3-fri = "0.6.2"
+p3-challenger = "0.6.2"
+p3-keccak = "0.6.2"
+p3-merkle-tree = "0.6.2"
+rand = "0.9"
