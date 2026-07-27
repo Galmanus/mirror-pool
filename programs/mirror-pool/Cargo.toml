@@ -28,3 +28,5 @@ litesvm = "0.6"
 solana-sdk = "2"
 solana-client = "2"
 sha2 = "0.10"
+riverrun-sdk = { path = "../../crates/riverrun-sdk" }
+riverrun-core = { path = "../../crates/riverrun-core" }

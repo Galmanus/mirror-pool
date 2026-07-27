@@ -3264,17 +3264,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "riverrun-core"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "getrandom 0.2.17",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "riverrun-program"
 version = "0.1.0"
 dependencies = [
  "anchor-lang",
  "litesvm",
+ "riverrun-core",
+ "riverrun-sdk",
  "sha2 0.10.9",
  "solana-client",
  "solana-instructions-sysvar 3.0.1",
  "solana-sdk",
  "solana-sdk-ids 3.1.0",
  "solana-sha256-hasher 3.1.0",
+]
+
+[[package]]
+name = "riverrun-sdk"
+version = "0.1.0"
+dependencies = [
+ "riverrun-core",
 ]
 
 [[package]]
