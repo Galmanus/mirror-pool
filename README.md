@@ -29,8 +29,8 @@ hidden permanently.
 The only submission that is **post-quantum, needs no trusted setup, and measures the
 anonymity it delivers**, all at once (the only row in the [scorecard](#how-riverrun-compares)
 that is), and it runs **live and native on Solana** today: whole rounds settle on
-devnet, including a 7-action round in a single transaction, every on-chain value a
-hash. The one piece still committee-gated is the membership proof's on-chain
+devnet, including an **18-action round in a single transaction** (more than the
+strongest curve-based submission's 17), every on-chain value a hash. The one piece still committee-gated is the membership proof's on-chain
 verification, the named roadmap to fully native post-quantum settlement. Five facts
 you can check in minutes:
 
@@ -177,13 +177,12 @@ a whale self-filling its round collapses the anonymity to one; that collapse is
 exactly what riverrun's effective-k and self-fill rulers measure and its coordinator
 defends against, and no curve-based pool can measure it. riverrun is not behind on
 execution either: `execute_batch` settles a whole round in one transaction, one
-relayer signature, one attestation, no member key, the same one-transaction
-consolidation a curve pool gets from an Address Lookup Table (live on devnet: 7
-actions in one transaction). It just does all of it post-quantum, with no ceremony.
-The one axis a competitor still leads, a single-transaction on-chain membership
-proof, is riverrun's next milestone, and even without it riverrun already settles
-full rounds live on devnet, and it is the only submission that is post-quantum, needs
-no trusted setup, and measures the anonymity it delivers.
+relayer signature, one attestation, no member key (live on devnet: **18 actions in
+one transaction, more than the strongest curve-based submission's 17**), and it does
+it post-quantum, with no ceremony. The only axis a competitor still leads is a
+single-transaction on-chain membership *proof* (trustless, no committee), which is
+riverrun's named next milestone; on everything else, post-quantum, no trusted setup,
+measured anonymity, batch density, and live settlement, riverrun already leads.
 
 ## Why riverrun, not another tool
 
@@ -234,17 +233,17 @@ attempted before the crowd was complete was refused on-chain
 in a single **45 KB** post-quantum STARK, about **8x** smaller than 16 separate
 proofs, verified once.
 
-**One round, one transaction, live on devnet.** The program's `execute_batch`
-settles a whole round in a single transaction: **7 actions in one transaction**
-([`2TqTQHMx…`](https://explorer.solana.com/tx/2TqTQHMxC5CsTRicE8SaY5erjotvaNGs54Pv4NG4jc63PkJMknSfYAsUYqVxEKatH14MgSedwobnGVdVj99WBiq5?cluster=devnet)),
-one relayer signature, one committee attestation over the batch, the vault pays every
-recipient, no member key signs. The batch digest binds every action, nullifier, and
-recipient, so a relayer can neither add, drop, nor redirect one, and an Address Lookup
-Table packs the accounts. The same one-transaction consolidation a curve-based pool
-gets, but post-quantum and with no trusted setup. Honest limit: the committee
-attestation is larger than a compact SNARK, so it caps the count per transaction (7
-actions fit, 8 overflows Solana's 1232-byte transaction limit, mapped exactly);
-raising it is what the on-chain STARK is for.
+**One round, one transaction, live on devnet.** `execute_batch` settles **18 actions
+in a single transaction**
+([`3SageKBif…`](https://explorer.solana.com/tx/3SageKBifChN4t1iBnUX13riYDF1zN9UmGqp8cnfi4Pf3tzJJEnsWpiHVG9BJhdVRS4f9QvYTh5s6QAkTgSKQfCQ?cluster=devnet)):
+one relayer signature, one committee attestation over a compact digest, an Address
+Lookup Table packs the accounts, no member key signs. A synchronized round performs
+one shared action, so the digest binds that action and every nullifier and recipient,
+and a relayer can neither add, drop, nor redirect one. That is **more than the
+strongest curve-based submission fits in one transaction (17)**, and it is
+post-quantum with no trusted setup. The count is bounded only by the per-nullifier
+data under Solana's 1232-byte transaction limit (18 fits, 19 overflows); the on-chain
+STARK carries one small proof instead of the per-nullifier data and removes even that.
 
 **The floor is honest.** k is a ceiling, not a guarantee. If an adversary
 self-fills the round (a Sybil, or a whale funding many notes), every slot they own

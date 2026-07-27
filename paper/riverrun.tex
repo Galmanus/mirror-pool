@@ -1289,26 +1289,28 @@ trust goes to zero.
 The committee path settles one action per execution. A synchronized round is many
 actions at once, so the natural on-chain form is a batch: \code{execute\_batch} settles a
 whole round in a single transaction. One relayer signs it, one committee attestation
-covers the entire batch (over a digest that binds every action, nullifier, and
-recipient, so a relayer can neither add, drop, nor redirect one), the vault pays each
-recipient, and no member key appears. An Address Lookup Table packs the round's accounts
-into the transaction, the same consolidation a curve-based pool uses. Every value it
-touches is a hash, so the batch is post-quantum.
+covers the entire batch, the vault pays each recipient, and no member key appears. A
+synchronized round is one \emph{shared} action performed by every member, so the batch
+carries a single action and the committee signs the $32$-byte batch digest directly
+(not a $184$-byte message); the digest binds that action and every nullifier and
+recipient, so a relayer can neither add, drop, nor redirect one. An Address Lookup Table
+packs the round's accounts into the transaction, the same consolidation a curve-based
+pool uses. Every value it touches is a hash, so the batch is post-quantum.
 
-This runs live on devnet: \textbf{seven actions settled in a single transaction}
-(signature \code{2TqTQHMx\ldots}, checkable on the devnet explorer), one relayer
-signature, one attestation. Three on-chain tests pin the behaviour: a whole round
-settles in one transaction, a replayed nullifier is rejected, and a relayer cannot
-redirect a payout.
+This runs live on devnet: \textbf{eighteen actions settled in a single transaction}
+(signature \code{3SageKBif\ldots}, checkable on the devnet explorer), one relayer
+signature, one attestation, eighteen recipients paid. Three on-chain tests pin the
+behaviour: a whole round settles in one transaction, a replayed nullifier is rejected,
+and a relayer cannot redirect a payout.
 
 \begin{honest}
-The count per transaction is bounded, and by an honest cause. The committee's Ed25519
-attestation is larger than a compact SNARK proof, so under the $1232$-byte transaction
-limit a batch fits about seven actions where a curve pool that carries one small proof
-fits more. This is not a flaw in the batching, it is the size of the committee
-attestation, and it is exactly what the on-chain M31 verifier removes: it replaces the
-$M$ signatures with one small post-quantum proof, so higher batch density is one more
-thing the M31 path buys.
+The count is bounded, and by an honest cause. Eighteen actions fit under the
+$1232$-byte transaction limit and nineteen overflow it, already past the seventeen a
+compact-proof curve pool fits. The remaining bound is the per-nullifier data ($k$ times
+$32$ bytes), which the on-chain M31 verifier removes by carrying one small
+post-quantum proof instead of per-nullifier bytes. The single axis a curve-based
+competitor still leads is a single-transaction on-chain membership \emph{proof} with no
+committee, and that is exactly what the M31 path buys.
 \end{honest}
 
 \subsection{One secret, one call: acting unlinkably}

@@ -100,15 +100,16 @@ recipient, no member key signs. An Address Lookup Table packs the accounts. The 
 digest binds every action, nullifier, and recipient, so a relayer can neither add,
 drop, nor redirect one.
 
-**7 actions in one transaction:**
-[`2TqTQHMxC5CsTRicE8SaY5erjotvaNGs54Pv4NG4jc63PkJMknSfYAsUYqVxEKatH14MgSedwobnGVdVj99WBiq5`](https://explorer.solana.com/tx/2TqTQHMxC5CsTRicE8SaY5erjotvaNGs54Pv4NG4jc63PkJMknSfYAsUYqVxEKatH14MgSedwobnGVdVj99WBiq5?cluster=devnet)
+**18 actions in one transaction** (more than a curve-based pool's 17):
+[`3SageKBifChN4t1iBnUX13riYDF1zN9UmGqp8cnfi4Pf3tzJJEnsWpiHVG9BJhdVRS4f9QvYTh5s6QAkTgSKQfCQ`](https://explorer.solana.com/tx/3SageKBifChN4t1iBnUX13riYDF1zN9UmGqp8cnfi4Pf3tzJJEnsWpiHVG9BJhdVRS4f9QvYTh5s6QAkTgSKQfCQ?cluster=devnet)
 
-Reproduce: `cargo run --manifest-path programs/mirror-pool/Cargo.toml --example batch_alt_devnet 7`
+Reproduce: `cargo run --manifest-path programs/mirror-pool/Cargo.toml --example batch_alt_devnet 18`
 
-**Honest limit.** The committee's Ed25519 attestation is larger than a compact SNARK
-proof, so it caps the count per transaction (7 here, the transaction size limit is
-1232 bytes). A curve pool fits more because its proof is tiny. Raising riverrun's
-count per transaction is exactly what the on-chain M31 STARK verifier is for: it
-replaces the committee attestation with a single small proof. This is the one axis a
-curve-based competitor still leads, and it is riverrun's named next milestone. Every
-value settled here is a hash, so the batch is post-quantum.
+**How the count gets there, and its limit.** A synchronized round performs one shared
+action, so `execute_batch` carries a single action, and the committee signs the
+32-byte batch digest directly rather than a 184-byte message. Both shrink the
+transaction, and the count per transaction rose from 7 to **18** (18 fits, 19 overflows
+Solana's 1232-byte limit). That is already past the 17 a leading curve-based
+submission fits. The remaining bound is the per-nullifier data (`k` times 32 bytes),
+which the on-chain M31 STARK verifier removes by carrying one small proof instead of
+per-nullifier bytes. Every value settled here is a hash, so the batch is post-quantum.
