@@ -378,7 +378,13 @@ fn status_rows() {
             dim(&format!("· run {}", cyan("riverrun connect")))
         ),
     }
-    println!("    {}  {}  {}", green("●"), label("post-quantum"), "on, everlasting");
+    println!(
+        "    {}  {}  {}  {}",
+        green("●"),
+        label("post-quantum"),
+        "on, everlasting",
+        dim(&format!("· {}", cyan("riverrun pq")))
+    );
     println!("    {}  {}  {}", cyan("●"), label("identity"), dim("a different, unlinkable face in every app"));
     println!();
     println!("    {}  {}", label("measure yours"), cyan("riverrun preflight <wallet>"));
