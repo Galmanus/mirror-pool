@@ -1283,6 +1283,50 @@ signing twice counts once, an outsider does not count). The M31 path above is ho
 trust goes to zero.
 \end{honest}
 
+\subsection{One round, one transaction}
+\label{sub:batch}
+
+The committee path settles one action per execution. A synchronized round is many
+actions at once, so the natural on-chain form is a batch: \code{execute\_batch} settles a
+whole round in a single transaction. One relayer signs it, one committee attestation
+covers the entire batch (over a digest that binds every action, nullifier, and
+recipient, so a relayer can neither add, drop, nor redirect one), the vault pays each
+recipient, and no member key appears. An Address Lookup Table packs the round's accounts
+into the transaction, the same consolidation a curve-based pool uses. Every value it
+touches is a hash, so the batch is post-quantum.
+
+This runs live on devnet: \textbf{seven actions settled in a single transaction}
+(signature \code{2TqTQHMx\ldots}, checkable on the devnet explorer), one relayer
+signature, one attestation. Three on-chain tests pin the behaviour: a whole round
+settles in one transaction, a replayed nullifier is rejected, and a relayer cannot
+redirect a payout.
+
+\begin{honest}
+The count per transaction is bounded, and by an honest cause. The committee's Ed25519
+attestation is larger than a compact SNARK proof, so under the $1232$-byte transaction
+limit a batch fits about seven actions where a curve pool that carries one small proof
+fits more. This is not a flaw in the batching, it is the size of the committee
+attestation, and it is exactly what the on-chain M31 verifier removes: it replaces the
+$M$ signatures with one small post-quantum proof, so higher batch density is one more
+thing the M31 path buys.
+\end{honest}
+
+\subsection{One secret, one call: acting unlinkably}
+\label{sub:act}
+
+For an institution the pieces above must become one operation. \code{act} is that
+operation: from a single secret it derives the per-context identity, the pool
+commitment, and the nullifier (all domain-separated, so acting in one venue is
+unlinkable to another), commits to join the round, waits for the crowd, \emph{refuses to
+settle if the round's measured effective-$k$ is below the caller's floor}, and settles
+through the relayer, returning a receipt that carries the anonymity actually delivered
+rather than the advertised count. The floor check is the point: a fund does not act into
+a crowd that would not hide it, and the code enforces that, it does not promise it. A
+reference run enters and exits a position across two contexts and shows, as independent
+pseudo-random outputs of the one secret, that the two legs cannot be linked to each other
+or to the fund. This runs end to end on devnet through the same committee path, with a
+real settlement signature and a live refusal when the crowd was too small.
+
 \subsection{A self-audit, with every fix carried by a test}
 \label{sub:selfaudit}
 
