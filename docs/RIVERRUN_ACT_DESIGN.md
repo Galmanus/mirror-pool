@@ -116,14 +116,21 @@ the hard part, and it is honest to state it plainly.
 
 ## 6. What to build, phased (each phase its own gate)
 
-- **Phase A** design (this document).
-- **Phase B** the unified derivation in `riverrun-core`: `id_ctx`, `C`, `n` from one
-  `s` with domain separation, plus tests that a wrong context or action yields a
-  different, non-verifying leaf. Small, because the proving already exists.
-- **Phase C** the `act()` orchestration and SDK (Rust first, a thin TS wrapper after)
-  that runs commit, round, prove, settle and returns the receipt with effective-k.
-- **Phase D** the continuous-round coordinator and a per-pool configurable
-  denomination sized for fund inventory.
+- **Phase A** design (this document). **Done.**
+- **Phase B** the unified derivation in `riverrun-core` (`riverrun_core::act`):
+  `identity`, `commitment`, `nullifier` from one `s` with domain separation, plus
+  tests that a wrong context or action yields a different leaf. **Done, 6 tests.**
+- **Phase C** the `act()` orchestration and SDK (`riverrun-sdk`) that runs commit,
+  round, prove, settle behind traits and returns a receipt with the measured
+  effective-k, refusing to settle below the caller's floor. **Done, 5 tests.**
+- **Phase D** the real devnet backend (committee path): `act()` running end to end
+  on-chain. **Done and verified on devnet**: settlement
+  `3XR8951sXTnHyNN9SrngfJWvVJ3XDJtf3gwPaBgmxsW4XYnKaPBSxLHHcbo2Ub5WJhQiyPnMvex2C7t2fHbejFJH`,
+  and a second call with a floor of 104 above a crowd of 4 was refused on-chain,
+  nothing settled (`programs/mirror-pool/examples/act_devnet.rs`). Still ahead here:
+  a continuous-round coordinator and a per-pool configurable denomination sized for
+  fund inventory, plus wiring the real effective-k (the ruler) into `await_round`
+  instead of the optimistic devnet placeholder.
 - **Phase E** a reference integration: a bot that enters and exits a position
   unlinkably, as the fund-facing proof that the primitive is real.
 
