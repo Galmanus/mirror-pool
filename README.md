@@ -50,6 +50,22 @@ stays hidden after quantum computers arrive.
 <img src="scripts/demo.gif" alt="riverrun guided mode: a status panel, the step-by-step to become anonymous on Solana, and one secret becoming two unlinkable identities" width="820">
 </p>
 
+## What riverrun does
+
+Three things, in plain terms:
+
+1. **Join a crowd.** You commit an intent to a pool. Your key appears once here,
+   joining the crowd, and never again.
+2. **Act unlinkably.** A synchronized round performs your action from a key that is
+   not yours, at the same moment and the same shape as everyone else's, so the
+   action on the permanent record cannot be traced back to you.
+3. **Measure it.** Before you act, `preflight` tells you the real anonymity you
+   would get. After, the ruler scores the pool. You never trust the number, you
+   check it.
+
+Your identity is one secret with a different unlinkable face in every context
+(riverrun ID), so acting twice, one vote, one claim, never links back to you.
+
 ## Where it sits on Solana's privacy spectrum
 
 Solana frames [privacy as a spectrum](https://solana.com/privacy), from pseudonymity
@@ -85,6 +101,24 @@ ruler that scores live mainnet pools. That combination is the frontier. Where ot
 lead today, mainnet maturity and single-transaction on-chain verification, is named
 honestly in [Honest status](#honest-status), because a comparison that hid it would
 not be worth trusting.
+
+## Why riverrun, not another tool
+
+Every alternative gives up at least one of these. riverrun gives up none.
+
+- **It lasts.** Curve-based pools (Groth16, ElGamal) are broken retroactively by a
+  quantum computer, so on a permanent ledger their privacy has an expiry date.
+  riverrun is hash-based, so it does not.
+- **Nothing to trust.** SNARK pools need a trusted-setup ceremony whose leaked
+  secret can forge proofs and drain the pool. riverrun has no ceremony and no secret
+  to leak.
+- **You measure, you do not hope.** Other pools advertise a member count. riverrun
+  reports the anonymity you actually get once an adversary sorts members by funding
+  provenance, and it shows the floor when a whale self-fills the round.
+- **It is a layer, not one pool.** riverrun ID gives you a different unlinkable
+  identity at every door, the Semaphore-class primitive Solana lacks.
+- **It runs on mainnet today.** The measurement ruler scores live mainnet pools
+  right now, not only inside a demo.
 
 ## What is real, with numbers
 
