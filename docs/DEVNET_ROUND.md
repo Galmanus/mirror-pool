@@ -91,3 +91,24 @@ post-quantum STARK membership proof is verified in the Solana VM (LiteSVM,
 ~160k CU) and is not yet the settlement path on a live cluster; bringing it there
 is the next milestone. What is live here is the round structure, the floor, the
 anti-replay, and the actor-action unlinkability, all on devnet, all checkable.
+
+## A whole round in ONE transaction (execute_batch, live on devnet)
+
+`execute_batch` settles multiple actions in a single transaction: one relayer
+signature, one committee attestation over the whole batch, the vault pays every
+recipient, no member key signs. An Address Lookup Table packs the accounts. The batch
+digest binds every action, nullifier, and recipient, so a relayer can neither add,
+drop, nor redirect one.
+
+**7 actions in one transaction:**
+[`2TqTQHMxC5CsTRicE8SaY5erjotvaNGs54Pv4NG4jc63PkJMknSfYAsUYqVxEKatH14MgSedwobnGVdVj99WBiq5`](https://explorer.solana.com/tx/2TqTQHMxC5CsTRicE8SaY5erjotvaNGs54Pv4NG4jc63PkJMknSfYAsUYqVxEKatH14MgSedwobnGVdVj99WBiq5?cluster=devnet)
+
+Reproduce: `cargo run --manifest-path programs/mirror-pool/Cargo.toml --example batch_alt_devnet 7`
+
+**Honest limit.** The committee's Ed25519 attestation is larger than a compact SNARK
+proof, so it caps the count per transaction (7 here, the transaction size limit is
+1232 bytes). A curve pool fits more because its proof is tiny. Raising riverrun's
+count per transaction is exactly what the on-chain M31 STARK verifier is for: it
+replaces the committee attestation with a single small proof. This is the one axis a
+curve-based competitor still leads, and it is riverrun's named next milestone. Every
+value settled here is a hash, so the batch is post-quantum.

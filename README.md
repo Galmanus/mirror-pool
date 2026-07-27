@@ -26,9 +26,13 @@ hidden permanently.
 
 ## In short
 
-The submission that is **post-quantum, needs no trusted setup, and measures the
+The only submission that is **post-quantum, needs no trusted setup, and measures the
 anonymity it delivers**, all at once (the only row in the [scorecard](#how-riverrun-compares)
-that is). Five facts you can check in minutes:
+that is), and it runs **live and native on Solana** today: whole rounds settle on
+devnet, including a 7-action round in a single transaction, every on-chain value a
+hash. The one piece still committee-gated is the membership proof's on-chain
+verification, the named roadmap to fully native post-quantum settlement. Five facts
+you can check in minutes:
 
 - **Live on devnet.** A full 8-member round settled, the anonymity floor and
   anti-replay enforced by the program, every signature clickable in
@@ -174,11 +178,12 @@ exactly what riverrun's effective-k and self-fill rulers measure and its coordin
 defends against, and no curve-based pool can measure it. riverrun is not behind on
 execution either: `execute_batch` settles a whole round in one transaction, one
 relayer signature, one attestation, no member key, the same one-transaction
-consolidation a curve pool gets from an Address Lookup Table (proven with three
-on-chain tests in the Solana VM). It just does all of it post-quantum, with no
-ceremony. The one axis a competitor still leads, a single-transaction on-chain
-membership proof, is riverrun's next milestone, and even without it riverrun already
-settles full rounds live on devnet.
+consolidation a curve pool gets from an Address Lookup Table (live on devnet: 7
+actions in one transaction). It just does all of it post-quantum, with no ceremony.
+The one axis a competitor still leads, a single-transaction on-chain membership
+proof, is riverrun's next milestone, and even without it riverrun already settles
+full rounds live on devnet, and it is the only submission that is post-quantum, needs
+no trusted setup, and measures the anonymity it delivers.
 
 ## Why riverrun, not another tool
 
@@ -229,14 +234,16 @@ attempted before the crowd was complete was refused on-chain
 in a single **45 KB** post-quantum STARK, about **8x** smaller than 16 separate
 proofs, verified once.
 
-**One round, one transaction.** The program's `execute_batch` settles a whole round
-in a single transaction: one relayer signature, one committee attestation over the
-batch, the vault pays every recipient, no member key signs. The batch digest binds
-every action, nullifier, and recipient, so a relayer can neither add, drop, nor
-redirect one. This is the same one-transaction consolidation a curve-based pool gets
-from an Address Lookup Table, but post-quantum and with no trusted setup. Proven with
-three on-chain tests in the Solana VM (a whole round in one transaction, anti-replay,
-and no redirect); the live devnet redeploy is pending a devnet SOL top-up.
+**One round, one transaction, live on devnet.** The program's `execute_batch`
+settles a whole round in a single transaction: **7 actions in one transaction**
+([`2TqTQHMx…`](https://explorer.solana.com/tx/2TqTQHMxC5CsTRicE8SaY5erjotvaNGs54Pv4NG4jc63PkJMknSfYAsUYqVxEKatH14MgSedwobnGVdVj99WBiq5?cluster=devnet)),
+one relayer signature, one committee attestation over the batch, the vault pays every
+recipient, no member key signs. The batch digest binds every action, nullifier, and
+recipient, so a relayer can neither add, drop, nor redirect one, and an Address Lookup
+Table packs the accounts. The same one-transaction consolidation a curve-based pool
+gets, but post-quantum and with no trusted setup. Honest limit: the committee
+attestation is larger than a compact SNARK, so it caps the count per transaction (7
+here); raising it is what the on-chain STARK is for.
 
 **The floor is honest.** k is a ceiling, not a guarantee. If an adversary
 self-fills the round (a Sybil, or a whale funding many notes), every slot they own
