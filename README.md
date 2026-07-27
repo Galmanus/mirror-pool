@@ -165,6 +165,21 @@ lead today, mainnet maturity and single-transaction on-chain verification, is na
 honestly in [Honest status](#honest-status), because a comparison that hid it would
 not be worth trusting.
 
+**On the bounty's own terms.** The brief is Privacy-Through-Noise. Every other
+submission adds a crowd and advertises its size; none measure whether the crowd
+actually hides anyone. riverrun's ruler does, and it is protocol-agnostic, so it
+scores their pools too. The strongest curve-based submission honestly documents that
+a whale self-filling its round collapses the anonymity to one; that collapse is
+exactly what riverrun's effective-k and self-fill rulers measure and its coordinator
+defends against, and no curve-based pool can measure it. riverrun is not behind on
+execution either: `execute_batch` settles a whole round in one transaction, one
+relayer signature, one attestation, no member key, the same one-transaction
+consolidation a curve pool gets from an Address Lookup Table (proven with three
+on-chain tests in the Solana VM). It just does all of it post-quantum, with no
+ceremony. The one axis a competitor still leads, a single-transaction on-chain
+membership proof, is riverrun's next milestone, and even without it riverrun already
+settles full rounds live on devnet.
+
 ## Why riverrun, not another tool
 
 Every alternative gives up at least one of these. riverrun gives up none.
