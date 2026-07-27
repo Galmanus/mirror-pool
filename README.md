@@ -14,7 +14,7 @@
 
 [![Rust](https://img.shields.io/badge/Rust-end%20to%20end-000000?logo=rust)](https://www.rust-lang.org)
 [![Solana](https://img.shields.io/badge/Solana-SBF%20program-14F195?logo=solana&logoColor=black)](https://solana.com/privacy)
-[![tests](https://img.shields.io/badge/tests-160%20green-4c1)](#workspace)
+[![tests](https://img.shields.io/badge/tests-164%20green-4c1)](#workspace)
 [![CLI](https://img.shields.io/badge/CLI-preflight%20%C2%B7%20audit%20%C2%B7%20--json-14F195)](#run-it)
 [![post-quantum](https://img.shields.io/badge/STARK-post--quantum%2C%20no%20setup-8A2BE2)](#innovations-and-why-they-matter)
 [![license](https://img.shields.io/badge/license-MIT-blue)](#license)
@@ -373,7 +373,7 @@ deliverable.* Behind it is a **research** pool, a post-quantum STARK that severs
 the actor↔action link, that is implemented and tested but hand-rolled and
 unaudited: a prototype, not for production, and marked as such wherever it appears.
 Collapsing the two would be dishonest in both directions, so the repo never does.
-Everything is Rust, MIT, **160 tests green**. See all of it in one command, 
+Everything is Rust, MIT, **164 tests green**. See all of it in one command, 
 `./demo.sh`, or read the **[whitepaper (PDF)](paper/riverrun.pdf)**.
 
 ---
@@ -658,7 +658,7 @@ signatures plus the two rejections are checkable in
 | crate | what it is | status |
 |---|---|---|
 | `riverrun-core` | the post-quantum primitives, the membership *relation*, and the **rotatable-piece identity suite** (shape/fit/turn/link/grant/rln/credential, the 7 powers of riverrun ID) | 48 tests |
-| `riverrun-eval` | adversarial harness for the behavioral channel: clustering attacker → chance, plus the self-fill degradation ruler (advertised k vs the effective-k a whale/Sybil leaves the honest user) | 16 tests + 2 exhibits |
+| `riverrun-eval` | adversarial harness for the behavioral channel: clustering attacker → chance, the self-fill degradation ruler (advertised k vs the effective-k a whale/Sybil leaves the honest user), and the leaky-coordinator + self-fill measurement | 20 tests + 3 exhibits |
 | `riverrun-trace` | the `provenance-tracer`: backward funding-graph adversary + circularity defense + live-mainnet adapter + the repeated-use erosion ruler | 37 tests + 2 exhibits |
 | `programs/mirror-pool` | the on-chain Solana program: commitment accumulator, per-round nullifier registry (PDA-per-nullifier anti-replay), published root, verifier-attested settlement, entry fee + anonymity-set floor | builds to `.so`; 21 e2e tests green (10 committee-of-one + 5 M-of-N quorum + 2 vault payout + 4 STARK-verified path); **the current committee code is deployed and exercised live on devnet** (full commit + relayer-execute lifecycle, [signatures](#the-action-made-real--money-moves-the-actor-does-not)) |
 | `crates/riverrun-stark` | the post-quantum, transparent **STARK proving the whole relation**, membership, nullifier and action in one proof (Rescue-Prime + FRI, no trusted setup), plus the ricorso primitives and the **batched round** (16 memberships settle in one 45 KB proof, 8x smaller than 16 separate, one verification) | 31 tests green (excluded, pulls Winterfell) |
@@ -679,7 +679,7 @@ says so.
 Or piece by piece:
 
 ```bash
-cargo test --workspace                                            # 101 tests green
+cargo test --workspace                                            # 105 tests green
 cargo run --manifest-path crates/riverrun-pool-zk/Cargo.toml \
   --example behavior_pool --release                                # the mechanism
 cargo run -p riverrun-eval                                        # behavioral deanon → chance
@@ -697,7 +697,7 @@ cargo test --manifest-path crates/riverrun-stark/Cargo.toml                # STA
 cargo test --manifest-path crates/riverrun-pool-zk/Cargo.toml              # the pool driven by the STARK
 ```
 
-**160 tests green** across the repo: 101 in the default workspace (riverrun-core 48 incl. the 7-power identity suite, riverrun-trace 37, riverrun-eval 16), plus the excluded heavy crates (STARK 31 incl. the batched round and the rotation-in-ZK proof, mirror-pool 21 e2e, pool-zk 7).
+**164 tests green** across the repo: 105 in the default workspace (riverrun-core 48 incl. the 7-power identity suite, riverrun-trace 37, riverrun-eval 20), plus the excluded heavy crates (STARK 31 incl. the batched round and the rotation-in-ZK proof, mirror-pool 21 e2e, pool-zk 7).
 
 ## Security status & honest limitations
 
