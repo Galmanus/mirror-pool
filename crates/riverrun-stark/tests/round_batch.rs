@@ -67,6 +67,53 @@ fn one_proof_is_far_smaller_than_one_proof_per_member() {
 }
 
 #[test]
+fn a_sixteen_member_round_settles_in_one_post_quantum_proof() {
+    // The scale exhibit: a full round of 16 members, all committing the same
+    // action, settles with a single hash-based proof and a single verification.
+    // A curve-based pool can put many recipients in one transaction, but each
+    // membership is its own proof or a recursion step; here 16 memberships are
+    // one longer trace. The round size is a power of two because the trace is
+    // (depth + 2) * 8 rows per member; a coordinator pads a short round with
+    // cover members to the next power of two.
+    let act = action(0);
+    let k = 16usize;
+    // A 64-leaf set (tree depth 6, a valid bound-scheme depth); the first k
+    // leaves are the round's members, each with a distinct secret.
+    let set = MembershipSet::new((0..64u128).map(|i| leaf_of(secret(i), act)).collect());
+    let round = BaseElement::new(7);
+    let members: Vec<(usize, [BaseElement; 2])> =
+        (0..k).map(|i| (i, secret(i as u128))).collect();
+
+    let proof = prove_round(&set, &members, round, act);
+
+    let claim = RoundClaim {
+        root: set.root(),
+        round,
+        action: act,
+        nullifiers: (0..k).map(|i| nullifier(secret(i as u128), round)).collect(),
+    };
+    assert!(verify_round(&claim, &proof), "a 16-member round verifies at once");
+
+    let separate: usize = members
+        .iter()
+        .map(|(i, s)| set.prove_bound(*s, *i, round, act).len())
+        .sum();
+    println!(
+        "ROUND k=16: one proof {} B vs {} separate proofs {} B ({:.1}x)",
+        proof.len(),
+        k,
+        separate,
+        separate as f64 / proof.len() as f64
+    );
+    assert!(
+        proof.len() < separate,
+        "batching a 16-member round must beat 16 separate proofs: {} vs {}",
+        proof.len(),
+        separate
+    );
+}
+
+#[test]
 fn a_round_claiming_a_nullifier_no_member_produced_is_rejected() {
     // The soundness gate. If the batched proof did not bind each sub-trace to its
     // own announced nullifier, a round could smuggle in an extra actor.
