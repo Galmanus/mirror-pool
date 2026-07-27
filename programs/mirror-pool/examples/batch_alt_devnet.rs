@@ -93,34 +93,32 @@ fn main() {
             AccountMeta::new_readonly(system_program::ID, false)], data: c }], &m, &[&m]);
     }
 
-    // build the batch: k (action, nullifier, recipient)
-    let actions: Vec<[u8; 32]> = (0..k).map(|i| [0xA0 + i as u8; 32]).collect();
+    // build the batch: one shared action (a synchronized round), k nullifiers + recipients
+    let action = [0xAC_u8; 32];
     let nullifiers: Vec<[u8; 32]> = (0..k).map(|i| { let mut n=[0u8;32]; n[0]=0xB0+i as u8; n[31]=i as u8; n }).collect();
     let recipients: Vec<Keypair> = (0..k).map(|_| Keypair::new()).collect();
 
-    // one committee attestation over the whole batch
+    // one committee attestation over a compact 32-byte digest of the whole batch
     let mut hdig = Sha256::new();
-    for i in 0..k { hdig.update(actions[i]); hdig.update(nullifiers[i]); hdig.update(recipients[i].pubkey().as_ref()); }
+    hdig.update(b"riverrun-batch-2");
+    hdig.update(pool.as_ref());
+    hdig.update(root);
+    hdig.update(0u64.to_le_bytes());
+    hdig.update(action);
+    for i in 0..k { hdig.update(nullifiers[i]); hdig.update(recipients[i].pubkey().as_ref()); }
     let digest: [u8; 32] = hdig.finalize().into();
-    let mut msg = vec![0u8; 184];
-    msg[..16].copy_from_slice(b"riverrun-batch-1");
-    msg[16..48].copy_from_slice(pool.as_ref());
-    msg[48..80].copy_from_slice(&root);
-    msg[80..112].copy_from_slice(&digest);
-    // round = 0 at m[144..152] stays zero
-    let sig = verifier.sign_message(&msg);
+    let sig = verifier.sign_message(&digest);
     let mut edata = Vec::new();
     edata.push(1); edata.push(0);
-    for v in [48u16, u16::MAX, 16u16, u16::MAX, 112u16, msg.len() as u16, u16::MAX] { edata.extend_from_slice(&v.to_le_bytes()); }
+    for v in [48u16, u16::MAX, 16u16, u16::MAX, 112u16, 32u16, u16::MAX] { edata.extend_from_slice(&v.to_le_bytes()); }
     edata.extend_from_slice(&verifier.pubkey().to_bytes());
     edata.extend_from_slice(sig.as_ref());
-    edata.extend_from_slice(&msg);
+    edata.extend_from_slice(&digest);
     let att_ix = Instruction { program_id: solana_sdk::ed25519_program::ID, accounts: vec![], data: edata };
 
-    // the execute_batch instruction
+    // the execute_batch instruction (one shared action)
     let mut xdata = disc("execute_batch").to_vec();
-    xdata.extend_from_slice(&(k as u32).to_le_bytes());
-    for a in &actions { xdata.extend_from_slice(a); }
+    xdata.extend_from_slice(&action);
     xdata.extend_from_slice(&(k as u32).to_le_bytes());
     for n in &nullifiers { xdata.extend_from_slice(n); }
     xdata.extend_from_slice(&0u64.to_le_bytes());

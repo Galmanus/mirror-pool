@@ -730,52 +730,50 @@ mod payout {
     }
 }
 
-/// execute_batch: a whole round settled in one transaction, one relayer signature,
-/// one committee attestation over the batch. The answer to "17 actions, one tx".
+/// execute_batch (v2): a whole round in one transaction, one shared action, one
+/// committee attestation over a compact 32-byte digest, so more actions fit.
 mod batch {
     use super::*;
     use sha2::{Digest, Sha256};
 
-    fn batch_digest(actions: &[[u8; 32]], nullifiers: &[[u8; 32]], recipients: &[Pubkey]) -> [u8; 32] {
+    fn batch_commit_digest(
+        pool: &Pubkey,
+        root: &[u8; 32],
+        round: u64,
+        action: &[u8; 32],
+        nullifiers: &[[u8; 32]],
+        recipients: &[Pubkey],
+    ) -> [u8; 32] {
         let mut h = Sha256::new();
-        for i in 0..actions.len() {
-            h.update(actions[i]);
+        h.update(b"riverrun-batch-2");
+        h.update(pool.as_ref());
+        h.update(root);
+        h.update(round.to_le_bytes());
+        h.update(action);
+        for i in 0..nullifiers.len() {
             h.update(nullifiers[i]);
             h.update(recipients[i].as_ref());
         }
-        let mut out = [0u8; 32];
-        out.copy_from_slice(&h.finalize());
-        out
-    }
-
-    fn batch_msg(pool: &Pubkey, root: &[u8; 32], round: u64, digest: &[u8; 32]) -> Vec<u8> {
-        let mut m = vec![0u8; 184];
-        m[..16].copy_from_slice(b"riverrun-batch-1");
-        m[16..48].copy_from_slice(pool.as_ref());
-        m[48..80].copy_from_slice(root);
-        m[80..112].copy_from_slice(digest);
-        m[144..152].copy_from_slice(&round.to_le_bytes());
-        m
+        let mut o = [0u8; 32];
+        o.copy_from_slice(&h.finalize());
+        o
     }
 
     fn execute_batch_ix(
         pool: Pubkey,
         relayer: &Keypair,
-        actions: &[[u8; 32]],
+        action: &[u8; 32],
         nullifiers: &[[u8; 32]],
         recipients: &[Pubkey],
         root: [u8; 32],
     ) -> Instruction {
         let mut data = disc("execute_batch").to_vec();
-        data.extend_from_slice(&(actions.len() as u32).to_le_bytes());
-        for a in actions {
-            data.extend_from_slice(a);
-        }
+        data.extend_from_slice(action);
         data.extend_from_slice(&(nullifiers.len() as u32).to_le_bytes());
         for n in nullifiers {
             data.extend_from_slice(n);
         }
-        data.extend_from_slice(&0u64.to_le_bytes()); // round 0
+        data.extend_from_slice(&0u64.to_le_bytes());
         data.extend_from_slice(&root);
 
         let mut accounts = vec![
@@ -785,7 +783,7 @@ mod batch {
             AccountMeta::new_readonly(system_program::ID, false),
             AccountMeta::new_readonly(solana_sdk::sysvar::instructions::ID, false),
         ];
-        for i in 0..actions.len() {
+        for i in 0..nullifiers.len() {
             accounts.push(AccountMeta::new(nullifier_pda(&pool, &nullifiers[i]).0, false));
             accounts.push(AccountMeta::new(recipients[i], false));
         }
@@ -796,16 +794,14 @@ mod batch {
     fn a_whole_round_settles_in_one_transaction_with_one_attestation() {
         let (mut svm, _a, verifier, pool, root) = pool_ready();
         let relayer = relayer(&mut svm);
+        let action = [0xAC; 32];
         let k = 4usize;
-        let actions: Vec<[u8; 32]> = (0..k).map(|i| [0xA0 + i as u8; 32]).collect();
         let nullifiers: Vec<[u8; 32]> = (0..k).map(|i| [0xB0 + i as u8; 32]).collect();
         let recipients: Vec<Pubkey> =
             (0..k).map(|i| Pubkey::new_from_array([0xC0 + i as u8; 32])).collect();
-
-        let digest = batch_digest(&actions, &nullifiers, &recipients);
-        let att = ed25519_ix(&verifier, &batch_msg(&pool, &root, 0, &digest), false);
-        let exec = execute_batch_ix(pool, &relayer, &actions, &nullifiers, &recipients, root);
-
+        let digest = batch_commit_digest(&pool, &root, 0, &action, &nullifiers, &recipients);
+        let att = ed25519_ix(&verifier, &digest, false);
+        let exec = execute_batch_ix(pool, &relayer, &action, &nullifiers, &recipients, root);
         assert!(
             send_many(&mut svm, &[&relayer], &[att, exec]).is_ok(),
             "the whole round settles in one transaction"
@@ -819,23 +815,20 @@ mod batch {
     fn a_replayed_nullifier_in_a_batch_is_rejected() {
         let (mut svm, _a, verifier, pool, root) = pool_ready();
         let relayer = relayer(&mut svm);
-        let actions = [[0xA1; 32], [0xA2; 32]];
+        let action = [0xAC; 32];
         let nullifiers = [[0xB1; 32], [0xB2; 32]];
         let recipients = [Pubkey::new_from_array([0xC1; 32]), Pubkey::new_from_array([0xC2; 32])];
-
-        let d = batch_digest(&actions, &nullifiers, &recipients);
-        let att = ed25519_ix(&verifier, &batch_msg(&pool, &root, 0, &d), false);
-        let exec = execute_batch_ix(pool, &relayer, &actions, &nullifiers, &recipients, root);
+        let d = batch_commit_digest(&pool, &root, 0, &action, &nullifiers, &recipients);
+        let att = ed25519_ix(&verifier, &d, false);
+        let exec = execute_batch_ix(pool, &relayer, &action, &nullifiers, &recipients, root);
         assert!(send_many(&mut svm, &[&relayer], &[att, exec]).is_ok(), "first batch settles");
 
-        // a second batch reusing nullifier B1 must be rejected on-chain
         svm.expire_blockhash();
-        let actions2 = [[0xA3; 32]];
-        let nullifiers2 = [[0xB1; 32]]; // already spent
+        let nullifiers2 = [[0xB1; 32]];
         let recipients2 = [Pubkey::new_from_array([0xC3; 32])];
-        let d2 = batch_digest(&actions2, &nullifiers2, &recipients2);
-        let att2 = ed25519_ix(&verifier, &batch_msg(&pool, &root, 0, &d2), false);
-        let exec2 = execute_batch_ix(pool, &relayer, &actions2, &nullifiers2, &recipients2, root);
+        let d2 = batch_commit_digest(&pool, &root, 0, &action, &nullifiers2, &recipients2);
+        let att2 = ed25519_ix(&verifier, &d2, false);
+        let exec2 = execute_batch_ix(pool, &relayer, &action, &nullifiers2, &recipients2, root);
         assert!(
             send_many(&mut svm, &[&relayer], &[att2, exec2]).is_err(),
             "a spent nullifier cannot be replayed in a later batch"
@@ -846,20 +839,16 @@ mod batch {
     fn a_relayer_cannot_redirect_a_batch_payout() {
         let (mut svm, _a, verifier, pool, root) = pool_ready();
         let relayer = relayer(&mut svm);
-        let actions = [[0xA1; 32], [0xA2; 32]];
+        let action = [0xAC; 32];
         let nullifiers = [[0xB1; 32], [0xB2; 32]];
         let honest = [Pubkey::new_from_array([0xC1; 32]), Pubkey::new_from_array([0xC2; 32])];
         let thief = [Pubkey::new_from_array([0xEE; 32]), Pubkey::new_from_array([0xEF; 32])];
-
-        // The committee attests to the honest recipients...
-        let d = batch_digest(&actions, &nullifiers, &honest);
-        let att = ed25519_ix(&verifier, &batch_msg(&pool, &root, 0, &d), false);
-        // ...but the relayer passes its own recipients. The digest no longer matches
-        // the attestation, so no quorum is found and the batch is rejected.
-        let exec = execute_batch_ix(pool, &relayer, &actions, &nullifiers, &thief, root);
+        let d = batch_commit_digest(&pool, &root, 0, &action, &nullifiers, &honest);
+        let att = ed25519_ix(&verifier, &d, false);
+        let exec = execute_batch_ix(pool, &relayer, &action, &nullifiers, &thief, root);
         assert!(
             send_many(&mut svm, &[&relayer], &[att, exec]).is_err(),
-            "a relayer cannot redirect the payout: the recipients are bound in the batch digest"
+            "a relayer cannot redirect the payout: recipients are bound in the digest"
         );
         assert_eq!(svm.get_balance(&thief[0]).unwrap_or(0), 0, "no value reached the thief");
     }

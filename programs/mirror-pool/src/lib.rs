@@ -286,15 +286,14 @@ pub mod riverrun_program {
     /// relayer can neither add, drop, nor redirect an action.
     pub fn execute_batch<'info>(
         ctx: Context<'info, ExecuteBatch<'info>>,
-        actions: Vec<[u8; 32]>,
+        action: [u8; 32],
         nullifiers: Vec<[u8; 32]>,
         round: u64,
         root: [u8; 32],
     ) -> Result<()> {
         let pool = &ctx.accounts.pool;
-        let k = actions.len();
+        let k = nullifiers.len();
         require!(k > 0, PoolError::EmptyBatch);
-        require!(nullifiers.len() == k, PoolError::BatchLengthMismatch);
         require!(ctx.remaining_accounts.len() == 2 * k, PoolError::BatchLengthMismatch);
         require!(round == pool.round, PoolError::RoundMismatch);
         require!(pool.member_count >= pool.k_min, PoolError::AnonymitySetTooSmall);
@@ -305,13 +304,9 @@ pub mod riverrun_program {
         // recipient into a single digest the committee signed once.
         let recipients: Vec<Pubkey> =
             (0..k).map(|i| *ctx.remaining_accounts[2 * i + 1].key).collect();
-        let digest = batch_digest(&actions, &nullifiers, &recipients);
-        verify_quorum(
-            &ctx.accounts.instructions,
-            &pool.verifiers,
-            pool.threshold,
-            &batch_attestation_message(&pool.key(), &root, round, &digest),
-        )?;
+        let digest =
+            batch_commit_digest(&pool.key(), &root, round, &action, &nullifiers, &recipients);
+        verify_quorum_msg(&ctx.accounts.instructions, &pool.verifiers, pool.threshold, &digest)?;
 
         let pool_key = ctx.accounts.pool.key();
         let space = NullifierRecord::SPACE;
@@ -365,7 +360,7 @@ pub mod riverrun_program {
 
             emit!(Executed {
                 pool: pool_key,
-                action_hash: actions[i],
+                action_hash: action,
                 nullifier: nullifiers[i],
                 round,
             });
@@ -468,32 +463,95 @@ fn attestation_message(
 }
 
 /// Domain for a *batch* attestation, distinct so a single-action attestation can
-/// never be replayed as a batch or vice versa.
-const BATCH_ATTESTATION_DOMAIN: &[u8; 16] = b"riverrun-batch-1";
+/// never be replayed as a batch or vice versa. v2: one shared action, and the
+/// committee signs the 32-byte digest directly (not a 184-byte message), so the
+/// attestation instruction is small and more actions fit in one transaction.
+const BATCH_ATTESTATION_DOMAIN: &[u8; 16] = b"riverrun-batch-2";
 
-/// A 32-byte digest over a whole batch of `(action, nullifier, recipient)` tuples.
-/// The committee signs this once, so one signature settles the entire round.
-fn batch_digest(actions: &[[u8; 32]], nullifiers: &[[u8; 32]], recipients: &[Pubkey]) -> [u8; 32] {
-    let mut parts: Vec<&[u8]> = Vec::with_capacity(actions.len() * 3);
-    for i in 0..actions.len() {
-        parts.push(&actions[i]);
+/// The 32-byte digest the committee signs for a batch. A synchronized round is one
+/// *shared* action performed by every member, so the action appears once; each
+/// member contributes its own `(nullifier, recipient)`. The digest binds the pool,
+/// root, and round too, so it cannot be replayed against another pool or round.
+fn batch_commit_digest(
+    pool: &Pubkey,
+    root: &[u8; 32],
+    round: u64,
+    action: &[u8; 32],
+    nullifiers: &[[u8; 32]],
+    recipients: &[Pubkey],
+) -> [u8; 32] {
+    let round_le = round.to_le_bytes();
+    let mut parts: Vec<&[u8]> =
+        vec![BATCH_ATTESTATION_DOMAIN, pool.as_ref(), root, &round_le, action];
+    for i in 0..nullifiers.len() {
         parts.push(&nullifiers[i]);
         parts.push(recipients[i].as_ref());
     }
     hashv(&parts).to_bytes()
 }
 
-/// The 184-byte message the committee signs for a batch: the pool, the root, the
-/// round, and the batch digest folded into the action slot. Reuses the fixed
-/// attestation layout so `verify_quorum` checks it unchanged.
-fn batch_attestation_message(pool: &Pubkey, root: &[u8; 32], round: u64, digest: &[u8; 32]) -> [u8; ATTESTATION_LEN] {
-    let mut m = [0u8; ATTESTATION_LEN];
-    m[..16].copy_from_slice(BATCH_ATTESTATION_DOMAIN);
-    m[16..48].copy_from_slice(pool.as_ref());
-    m[48..80].copy_from_slice(root);
-    m[80..112].copy_from_slice(digest);
-    m[144..152].copy_from_slice(&round.to_le_bytes());
-    m
+/// Like `attestation_signer`, but for a message of arbitrary length (the batch
+/// path signs a 32-byte digest, not the fixed 184-byte tuple).
+fn attestation_signer_msg(
+    ix: &anchor_lang::solana_program::instruction::Instruction,
+    expected: &[u8],
+) -> Option<[u8; 32]> {
+    if ix.program_id != ed25519_program::ID {
+        return None;
+    }
+    let data = &ix.data;
+    let mlen = expected.len();
+    if data.len() != ED25519_MESSAGE_OFFSET + mlen {
+        return None;
+    }
+    if data[0] != 1 || data[1] != 0 {
+        return None;
+    }
+    let field = |at: usize| u16::from_le_bytes([data[at], data[at + 1]]);
+    let self_contained = field(2) as usize == ED25519_SIGNATURE_OFFSET
+        && field(6) as usize == ED25519_PUBKEY_OFFSET
+        && field(10) as usize == ED25519_MESSAGE_OFFSET
+        && field(12) as usize == mlen
+        && field(4) == u16::MAX
+        && field(8) == u16::MAX
+        && field(14) == u16::MAX;
+    if !self_contained {
+        return None;
+    }
+    if &data[ED25519_MESSAGE_OFFSET..] != expected {
+        return None;
+    }
+    let mut signer = [0u8; 32];
+    signer.copy_from_slice(&data[ED25519_PUBKEY_OFFSET..ED25519_PUBKEY_OFFSET + 32]);
+    Some(signer)
+}
+
+/// Like `verify_quorum`, but over an arbitrary-length message.
+fn verify_quorum_msg(
+    instructions: &UncheckedAccount,
+    verifiers: &[Pubkey],
+    threshold: u8,
+    expected: &[u8],
+) -> Result<()> {
+    let index = load_current_index_checked(instructions)?;
+    let mut counted = [false; MAX_VERIFIERS];
+    let mut have = 0u8;
+    for i in 0..index {
+        let Ok(ix) = load_instruction_at_checked(i as usize, instructions) else {
+            continue;
+        };
+        let Some(signer) = attestation_signer_msg(&ix, expected) else {
+            continue;
+        };
+        if let Some(slot) = verifiers.iter().position(|v| v.as_ref() == signer) {
+            if !counted[slot] {
+                counted[slot] = true;
+                have += 1;
+            }
+        }
+    }
+    require!(have >= threshold, PoolError::NotEnoughAttestations);
+    Ok(())
 }
 
 /// Validate a committee declaration: at least one verifier, no more than the cap,
