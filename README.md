@@ -221,6 +221,15 @@ cargo run -p riverrun-trace --features onchain --bin riverrun -- preflight <WALL
 # any pool's real effective-k vs the k it advertises
 cargo run -p riverrun-trace --features onchain --bin riverrun -- audit <POOL> 30
 
+# the post-quantum posture and the Mosca inequality, in the terminal
+cargo run -p riverrun-trace --features onchain --bin riverrun -- pq
+
+# the self-fill floor: advertised k vs the real anonymity a whale leaves you
+cargo run -p riverrun-trace --features onchain --bin riverrun -- floor 30
+
+# plain answers, because knowledge should be accessible
+cargo run -p riverrun-trace --features onchain --bin riverrun -- explain post-quantum
+
 # the whole workspace
 cargo test --workspace                                   # 105 tests green
 
