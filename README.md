@@ -378,6 +378,8 @@ beside it, and every limitation is named where the claim is made.
   vs curve, honestly.
 - [`docs/EFFECTIVE_K.md`](docs/EFFECTIVE_K.md): the ruler and the arithmetic behind
   it.
+- [`docs/DEFENSE.md`](docs/DEFENSE.md): honest answers to the hardest questions,
+  including the one axis a curve-based submission still leads.
 
 MIT. **179 tests green** across the repo (117 in the default workspace, incl. the
 unified act derivation and the act() SDK, plus the excluded heavy crates: STARK 31,
