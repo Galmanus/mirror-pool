@@ -121,7 +121,12 @@ public ledger is public. riverrun traces each wallet's funding graph and reports
 the anonymity a pool *actually* delivers. On a live mainnet SOL pool an advertised
 **k=30** was worth an effective **6.5**, and one depositor, alone in their funding
 class, was worth exactly **1**. It is protocol-agnostic: it scores any pool,
-including the other submissions in this bounty.
+including the other submissions in this bounty. The same ruler also reports the
+**self-fill floor**: if an adversary submits their own members into a round (a
+Sybil, or a whale funding many notes), every slot they own is one they subtract,
+and owning all but one leaves the honest user alone at effective-k **1**. That is
+the floor of every mix, and `riverrun-eval` prints the whole degradation curve
+instead of advertising the gross count (`cargo run -p riverrun-eval`).
 
 **2. preflight: forensic analysis turned into self-defense.** The same graph
 analysis firms use to de-anonymize users is, here, an open-source CLI a user runs
@@ -172,6 +177,12 @@ flowchart TD
 > resists quantum attack, weakened only by Grover's quadratic speedup, which the
 > 128-bit parameters already absorb. riverrun shares that quantum-resistance
 > rationale, not NIST's specific KEM/signature algorithms (ML-KEM, ML-DSA).
+
+An honest, balanced comparison of this hash-based foundation against curve-based
+Groth16 pools, including where curve-based pools are genuinely ahead today (proof
+size, mature on-chain verification) and where hashes are permanently ahead (no
+trusted setup, post-quantum), is in
+[`docs/POST_QUANTUM_VS_CURVE_POOLS.md`](docs/POST_QUANTUM_VS_CURVE_POOLS.md).
 
 ### Why a tool like this must be post-quantum in 2026, not *may*, *must*
 
