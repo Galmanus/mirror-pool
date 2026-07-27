@@ -11,10 +11,13 @@
 //!
 //! Run: `cargo run --manifest-path programs/mirror-pool/Cargo.toml --example act_devnet [k]`
 //!
-//! Honest scope: on devnet the members are funded synthetically, so the effective-k
-//! reported here is optimistic (every member counted as distinct and honest). A real
-//! effective-k needs mainnet funding data through the ruler. What is real here is the
-//! end-to-end flow, the floor enforcement, and the on-chain settlement.
+//! Honest scope: `await_round` now measures the round with the same protocol-agnostic
+//! ruler `riverrun audit` uses, against the pool's own entry fee, instead of assuming
+//! the advertised count. On devnet this tends to report a LOW effective-k, honestly:
+//! every member here is funded from the same CLI wallet, a shared funding origin the
+//! ruler is built to catch, exactly the self-fill/common-funder failure mode the
+//! whitepaper's self-fill floor describes. A higher number needs an organic, diverse
+//! population, which is a mainnet property, not something this demo fakes.
 
 use riverrun_core::commitment::{Commitment, Secret};
 use riverrun_core::nullifier::Nullifier;
@@ -32,6 +35,7 @@ use solana_sdk::{
 
 const PROGRAM_ID: Pubkey = solana_sdk::pubkey!("BFy2ehVxpBrtwMCWwufpfbbsoWtZVYVaZBzDE2eAG7az");
 const PAYOUT_LAMPORTS: u64 = 1_000_000; // the pool's fixed denomination
+const ENTRY_FEE_LAMPORTS: u64 = 5_000_000; // must match the `initialize` call below
 
 fn disc(name: &str) -> [u8; 8] {
     let mut h = Sha256::new();
@@ -168,13 +172,38 @@ impl Backend for DevnetBackend {
             let cover = Keypair::new().pubkey().to_bytes(); // a fresh cover commitment
             self.commit_member(&format!("cover {i}/{}", self.k_min - 1), cover)?;
         }
-        // Honest: on devnet the members are synthetic, so effective-k is optimistic
-        // (each counted as distinct and honest). A real number needs mainnet funding
-        // through the ruler. The floor mechanism below is real regardless.
+
+        // Measure, do not assume. Ask the same protocol-agnostic ruler `riverrun
+        // audit` uses, against this pool's own entry fee, so the receipt's
+        // effective-k is a real number, not an optimistic placeholder.
+        println!("\nmeasuring the round's real anonymity (the ruler, not a guess):");
+        let mut trace_rpc = riverrun_trace::rpc::Rpc::new();
+        let mut budget = 200usize;
+        let measured = riverrun_trace::cli::measure_pool_ruler(
+            &mut trace_rpc,
+            &self.pool.to_string(),
+            self.k_min,
+            &mut budget,
+            ENTRY_FEE_LAMPORTS,
+        );
+        let effective_k = match measured {
+            Some(ek) => {
+                println!("  measured effective-k: {:.2} (advertised {})", ek.effective, self.k_min);
+                ek.effective
+            }
+            None => {
+                // Could not measure (RPC trouble, or nothing recovered yet at this
+                // block height). Report the worst case rather than assume the best:
+                // an unmeasured round must not be mistaken for an anonymous one.
+                println!("  could not measure ({} RPC calls, {} failed): reporting the worst case, 1.0", trace_rpc.calls, trace_rpc.failures);
+                1.0
+            }
+        };
+
         Ok(RoundInfo {
             round: self.round.to_le_bytes().to_vec(),
             advertised_k: self.k_min,
-            effective_k: self.k_min as f64,
+            effective_k,
         })
     }
 
@@ -209,6 +238,11 @@ impl Prover for CommitteeProver {
 }
 
 fn main() {
+    // The ruler defaults to mainnet-beta; point it at devnet to match everything
+    // else this example does, unless the caller already set SOLANA_RPC.
+    if std::env::var_os("SOLANA_RPC").is_none() {
+        std::env::set_var("SOLANA_RPC", "https://api.devnet.solana.com");
+    }
     let k: usize = std::env::args().nth(1).and_then(|s| s.parse().ok()).unwrap_or(4).max(2);
 
     let authority = Keypair::new();
@@ -250,7 +284,7 @@ fn main() {
     init.extend_from_slice(&1u32.to_le_bytes());
     init.extend_from_slice(verifier.pubkey().as_ref());
     init.push(1);
-    init.extend_from_slice(&5_000_000u64.to_le_bytes());
+    init.extend_from_slice(&ENTRY_FEE_LAMPORTS.to_le_bytes());
     init.extend_from_slice(&(k as u32).to_le_bytes());
     let init_ix = Instruction {
         program_id: PROGRAM_ID,
