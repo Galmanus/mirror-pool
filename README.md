@@ -378,6 +378,27 @@ hand-waved: [`docs/M31_CIRCLE_STARK.md`](docs/M31_CIRCLE_STARK.md).
 Nothing here is faked. Every claim has a test, a signature, or a measured number
 beside it, and every limitation is named where the claim is made.
 
+## Why the ruler is not optional: a formal result from AI-safety research
+
+The self-fill floor (advertised $k$ is a ceiling, not a guarantee) is not just an
+observation about riverrun. It is one instance of a general result proved in a companion
+paper on securing language models,
+[**Metacognitive Engineering as a Security Surface**](paper/metacognitive-security-surface.pdf),
+also by riverrun's author. That paper's Theorem 1 shows that any system built from a
+*checked surface* over an *uninspected interpretive layer*, a language model's
+token-level output over its opaque internal construal, or a privacy pool's on-chain
+rules over its off-chain funding provenance, has a vulnerability floor that no amount of
+tightening the surface's rules can close, because the exploit lives in a layer those rules
+never observe. riverrun's whitepaper states and proves the on-chain instance of this
+result directly ([the whitepaper](paper/riverrun.pdf), "Surface enforcement is incomplete,
+and why the ruler is not optional"), and it is the formal reason the coordinator and
+`act()` gate on a *measurement* (the ruler) instead of accumulating more protocol rules:
+the theorem says more rules cannot close the gap, only an independent signal can. Where an
+LLM's internal state can only be monitored
+probabilistically, riverrun's funding-provenance layer is public and can be measured
+exactly, which is the one place the on-chain instance of the theorem is strictly kinder
+than the language-model one.
+
 ## Design originality, and what Finnegans Wake gave it
 
 A few of riverrun's choices are deliberately against the grain.

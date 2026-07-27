@@ -1189,6 +1189,50 @@ same-origin crowd is ready, holding the rest until they are safe, or forever, if
 origin stays rare. Refusing to act, when acting would expose you, is the
 privacy-preserving choice, and an autonomous agent acting on-chain should make it.
 
+\subsection{A metacognitive reading: monitor, gate, recalibrate}
+\label{sub:metacog}
+
+Name the shape of what the last several sections built, because it is a shape, not a
+list of unrelated features. Metacognition, in the cognitive-science sense, is a system
+that (i) \emph{monitors} its own state rather than assuming it, and (ii) \emph{regulates}
+its behavior on the evidence that monitoring returns, rather than on a fixed plan. riverrun
+has exactly that loop, run on a cryptographic protocol instead of a mind:
+
+\begin{itemize}
+\item \textbf{Monitor.} The ruler (\S\ref{sec:ruler}) does not assume the advertised
+crowd; it measures the delivered one, $\keff$ against the funding graph, on live data.
+\item \textbf{Gate.} The coordinator (\S\ref{sec:coord}) and \code{act} (\S\ref{sub:act})
+act on that measurement, not on the advertisement: admit a member only into a class of
+size $\geq k_{\min}$, refuse to settle a round whose measured $\keff$ is below the
+caller's floor. The system's belief about its own privacy controls what it is allowed to
+do next.
+\item \textbf{Recalibrate.} Repeated use erodes the single-shot number
+(\S\ref{sub:erosion}); \river's rotation to a fresh angle is the corrective step once
+erosion crosses a threshold, exactly the moment a monitor-and-regulate loop is supposed to
+trigger a correction rather than continue on stale confidence.
+\end{itemize}
+
+\begin{intuition}
+This is the same structure as a control loop: a thermostat that only assumed room
+temperature would be worthless, the sensor is what lets it act correctly. riverrun's ruler
+is the sensor; the floor and the coordinator are the actuator. \textbf{Disanalogy:} a
+thermostat's actuator is continuous (more or less heat); riverrun's is discrete (settle or
+refuse, rotate or continue), because the thing being regulated, an adversary's residual
+uncertainty, only has one safe side of the threshold. There is no partial credit for
+almost hiding a member.
+\end{intuition}
+
+The same shape appears one level up, in an autonomous agent that observes its own
+decisions and corrects its own calibration rather than executing a fixed policy forever.
+\textbf{Disanalogy, stated precisely:} an agent's self-correction is typically
+\emph{continuous and generative}, it edits its own policy or specification in response to
+what it observes. riverrun's is \emph{discrete and refusive}, it does not edit the
+protocol; it declines to act, or advances to a fresh identity, when its own measurement
+says the current one is unsafe. The correction is a gate, not a rewrite. That is a
+narrower kind of self-regulation than a general cognitive loop, and it is narrower on
+purpose: a privacy protocol that could talk itself into a weaker floor is not one you
+could trust the floor of.
+
 % ===================== 10. CERTIFICATES =====================
 \section{Certificates you can check without trusting the agent}
 \label{sec:cert}
@@ -1494,6 +1538,78 @@ The defense is not cryptographic, it is economic: a \textbf{per-participant depo
 bounds the fraction $a/k$ any single funder can occupy, and the coordinator's provenance
 floor (\S\ref{sec:coord}) refuses a round whose honest classes are too small. Composition
 names the exposure; the cap and the floor bound it.
+
+\subsection{Surface enforcement is incomplete, and why the ruler is not optional}
+\label{sub:incompleteness}
+
+State the self-fill floor's shape once more, because it recurs and the recurrence is the
+point. A companion paper on securing language models \cite{galmanus2026d} proves a
+structural result about any system built from a \emph{checked surface} over an
+\emph{uninspected interpretive layer}: no strengthening of the surface's rules closes the
+resulting gap, because the vulnerability lives at a layer those rules do not reach. Its
+Theorem~1 states this for a language model split into a generative layer $G$ (what
+alignment training supervises) and a metacognitive layer $M$ (the construal that produces
+$G$'s behavior, invisible to token-level checks): for any fixed generative-layer defense,
+an adversarial input exists that drives $M$ off the supervised region and secures a bad
+outcome with probability at least a fixed $\varepsilon > 0$ that \emph{does not shrink as
+the defense strengthens}, because strengthening $G$-layer rules raises coverage inside the
+region the defender anticipated and leaves the unanticipated region exactly as
+exploitable.
+
+\begin{claimx}[Surface enforcement is incomplete]
+\label{claim:incompleteness}
+Fix any protocol whose admission and settlement rules operate only on-chain-visible surface
+features (distinct public keys, valid nullifiers, a threshold count $k_{\min}$). For every
+such rule set, there exists an adversarial funding topology, an assignment of on-chain
+identities to real-world controllers, that satisfies every surface rule while reducing the
+honest set below any advertised $k$, including $\keff = 1$ (\S\ref{sub:selffill}). No
+tightening of the surface rules alone, larger $k_{\min}$, stricter nullifier checks,
+removes this: the adversary's freedom lives in the funding-provenance layer, which surface
+rules do not observe.
+\end{claimx}
+
+\begin{proof}[Argument]
+Surface rules are predicates over the on-chain state (public keys, nullifiers, counts).
+Funding provenance, which real-world entity controls which key, is not part of that state;
+it is reconstructed off-chain from a separate signal (the transaction graph,
+\S\ref{sec:ruler}). Any surface rule set $R$ therefore induces a partition of possible
+funding topologies into those $R$ accepts and those it rejects, based only on features $R$
+can see. Because self-fill (\S\ref{sub:selffill}) constructs $k$ surface-valid identities
+from $a$ real controllers with $a$ chosen freely up to $k-1$, and $R$ cannot distinguish a
+surface-valid key funded by a distinct honest party from one funded by a repeat adversary
+using a fresh key, every topology with $a = k-1$ is accepted by every surface rule set that
+accepts the honest case $a = 0$. Tightening $R$ (raising $k_{\min}$, adding nullifier
+checks) changes which \emph{surface} shapes are accepted; it does not add the capacity to
+see funding provenance, so it cannot exclude the $a = k-1$ topology at any $k_{\min}$.
+\end{proof}
+
+\begin{honest}
+The isomorphism is precise, and so is where it breaks. In the companion paper, $M$ is a
+model's internal construal, opaque, continuous, probed only indirectly through
+representation-engineering techniques. Here, the analogous layer, funding provenance, is
+not opaque in the same sense: it is public, on-chain, reconstructable exactly (up to the
+tracer's bounded-trace and circularity limits, \S\ref{sec:ruler}) rather than merely
+inferred with a classifier's uncertainty. That difference is why riverrun's answer is
+stronger than the companion paper's proposed mitigations allow for language models: where
+an LLM's metacognitive state can only be \emph{monitored} probabilistically (Primitive~3
+of \cite{galmanus2026d}, a shadow classifier with a false-negative rate), riverrun's
+funding-provenance layer can be \emph{measured exactly} by the ruler, because the ledger
+that hides the interpretive layer from the protocol's surface rules is the same public
+ledger the ruler reads. The incompleteness is real in both domains; only one of them offers
+a monitor with no blind spot of its own.
+\end{honest}
+
+This is the formal reason \S\ref{sec:coord}'s coordinator and \S\ref{sub:act}'s \code{act}
+gate on a \emph{measurement} rather than accumulate more surface rules: Claim~\ref{claim:incompleteness}
+says the latter cannot close the gap at any $k_{\min}$, so the only sound response is an
+independent signal the surface rules were never going to see. The companion paper's
+\textbf{Primitive 3} (inference-time state monitoring with graduated intervention,
+soft/medium/hard by distance from a threshold) names a design riverrun's floor check has
+not yet adopted: today \code{act} is a single cliff, settle or refuse
+(\S\ref{sub:act}), where a graduated response, widen the wait window near the floor, warn
+and require re-confirmation closer to it, refuse below it, would fail more gracefully.
+Implementing that graduation is future work, tracked alongside the M31 on-chain path
+(\S\ref{sec:onchain}) rather than claimed here.
 
 \subsection{The repeated-use bound: an intersection attack, formally}
 
@@ -2511,6 +2627,9 @@ Standard Specification (SoK).} IACR ePrint 2020/1143.
 System Technical Journal, 1948.
 \bibitem{diaz2002} C.~Diaz, S.~Seys, J.~Claessens, B.~Preneel. \emph{Towards Measuring
 Anonymity.} PET 2002.
+\bibitem{galmanus2026d} M.~G.~Galmanus. \emph{Metacognitive Engineering as a Security
+Surface.} 2026. (Companion paper; source of the generative/metacognitive-layer
+incompleteness result cited in \S\ref{sub:incompleteness}.)
 \bibitem{dwork} C.~Dwork, A.~Roth. \emph{The Algorithmic Foundations of Differential
 Privacy.} Found. and Trends in Theoretical Computer Science, 2014.
 \bibitem{warrenbrandeis} S.~Warren, L.~Brandeis. \emph{The Right to Privacy.} Harvard Law
