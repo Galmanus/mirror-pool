@@ -64,7 +64,7 @@ the anonymity you actually get, and it is built from hashes, so what it hides to
 stays hidden after quantum computers arrive.
 
 <p align="center">
-<img src="scripts/demo.gif" alt="riverrun guided mode: a status panel, the step to become anonymous, and generating a post-quantum secret with the hash resolving live into a different unlinkable identity per context" width="820">
+<img src="scripts/demo.gif" alt="riverrun's terminal: a post-quantum engine boot sequence, a status panel, the step to become anonymous, and generating a post-quantum secret with the hash resolving live into a different unlinkable identity per context" width="820">
 </p>
 
 ## What riverrun does
