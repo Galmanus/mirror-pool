@@ -32,6 +32,7 @@
 //! All domain separation is explicit: each hash use is prefixed with a unique,
 //! versioned tag so a value in one role can never be reinterpreted in another.
 
+pub mod act;
 pub mod commitment;
 pub mod membership;
 pub mod merkle;
