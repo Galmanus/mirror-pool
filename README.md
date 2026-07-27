@@ -17,6 +17,25 @@
 Our goal is to empower people and to make knowledge accessible. Privacy is not
 secrecy. It is the right to act without being profiled for it.
 
+## In short
+
+The submission that is **post-quantum, needs no trusted setup, and measures the
+anonymity it delivers**, all at once (the only row in the [scorecard](#how-riverrun-compares)
+that is). Five facts you can check in minutes:
+
+- **Live on devnet.** A full 8-member round settled, the anonymity floor and
+  anti-replay enforced by the program, every signature clickable in
+  [`docs/DEVNET_ROUND.md`](docs/DEVNET_ROUND.md).
+- **Measured, not advertised.** On a live mainnet pool, advertised `k = 30` was
+  worth an effective **6.5**; a lone depositor exactly **1**. The ruler scores any
+  pool, including the other submissions (`cargo run -p riverrun-trace ... audit`).
+- **Post-quantum by construction.** Every on-chain value is a hash. No curves, no
+  pairings, no trusted setup, nothing for Shor to break on a permanent ledger.
+- **One round, one proof.** 16 memberships settle in a single **45 KB** STARK,
+  about **8x** smaller than 16 separate, verified once.
+- **More than a pool.** riverrun ID (seven unlinkable powers), a 47-page whitepaper
+  with proofs, and **164 tests** green.
+
 ## In one breath
 
 Everything you do on Solana is public and permanent. Anyone can trace your wallet
