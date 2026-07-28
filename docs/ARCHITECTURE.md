@@ -80,3 +80,43 @@ programs/mirror-pool/src/` returns nothing): a relayer pays each round's
 recipients directly from its own transaction, which is also why riverrun
 structurally cannot have the class of fund-draining bug a shared-escrow
 design can (see `docs/DEFENSE.md`).
+
+## Extending riverrun to a new protocol or interaction
+
+`riverrun-sdk`'s `act()` flow (`crates/riverrun-sdk/src/lib.rs`) is generic over
+two traits, not hardcoded to one chain backend or one proof system:
+
+```rust
+pub trait Backend {
+    fn commit(&mut self, commitment: &Commitment) -> Result<(), String>;
+    fn await_round(&mut self) -> Result<RoundInfo, String>;
+    fn settle(&mut self, round: &RoundInfo, nullifier: &Nullifier, action: &[u8],
+               recipient: &[u8; 32], amount: u64, proof: &Proof) -> Result<String, String>;
+}
+
+pub trait Prover {
+    fn prove(&self, secret: &Secret, context: &[u8], action: &[u8],
+              round: &RoundInfo) -> Result<Proof, String>;
+}
+```
+
+`act()` itself (the commit/wait-for-crowd/refuse-below-floor/prove/settle
+sequence, and the anonymity-floor enforcement) never changes when either trait
+gets a new implementation. This is not a hypothetical extension point; it is
+already exercised three different ways in this repo:
+
+- `SimBackend`/`SimProver` (`crates/riverrun-sdk/examples/position_bot.rs`): an
+  in-memory, deterministic backend and a no-op prover, for offline testing.
+- The real devnet backend (`programs/mirror-pool/examples/act_devnet.rs`),
+  settling the same `act()` calls for real, on-chain.
+- Two real, independent provers, `riverrun-stark` (Winterfell f128) and
+  `riverrun-m31` (Plonky3 Circle-STARK), either of which can sit behind
+  `Prover` without `act()`'s own logic changing at all.
+
+**A new protocol or interaction** is a new `req.action` byte string (the
+`ActRequest.action` field is caller-defined, not a fixed enum) plus, if it
+settles somewhere riverrun doesn't already reach, one new `Backend` impl. Adding
+a new settlement chain, a new relayer network, or a new kind of on-chain action
+does not require touching `riverrun-core`'s commitment/nullifier math, the
+proof system, or `act()`'s own control flow, only the trait impl for the new
+target.
