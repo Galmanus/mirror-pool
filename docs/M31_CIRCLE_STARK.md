@@ -5,7 +5,13 @@ of riverrun's membership proof from the current Winterfell **f128 Rescue-Prime +
 FRI** STARK (verified off-chain, gated on-chain by an M-of-N Ed25519 committee) to
 a **Circle STARK over the Mersenne-31 field (M31)** whose proof is **verified
 directly on-chain in a single Solana transaction (~31k CU)** — removing the
-committee entirely.
+committee entirely. Circle STARKs themselves are Haböck, Levit & Vlasov,
+*Circle STARKs* ([eprint 2024/278](https://eprint.iacr.org/2024/278)): a FRI-based
+proof system built directly over a prime field via the circle group (no
+two-adic root of unity needed, the reason M31 works at all here), which is
+what Plonky3's `p3-circle` (this migration's actual dependency) implements.
+Riverrun's own contribution is the relation on top (§1 below), not the proof
+system itself.
 
 > **Verified live (checked on-chain 2026-07-27).** A Circle-STARK verifier of the
 > murkl class this migration targets is deployed and live on Solana devnet: program
@@ -124,6 +130,14 @@ Post-quantum posture is unchanged: everything is hash-based (Poseidon2 + keccak)
 no elliptic curves, no pairings, no trusted setup. Grinding + queries are set for
 **128-bit conjectured security** (blowup 8, ≥43 queries or the Circle-STARK
 equivalent, plus grinding), not the old ~84-bit demo set.
+
+Poseidon2 is Grassi, Khovratovich & Schofnegger, *Poseidon2: A Faster Version of
+the Poseidon Hash Function* ([eprint 2023/323](https://eprint.iacr.org/2023/323)):
+an arithmetization-oriented permutation designed for exactly this setting, a
+STARK's in-circuit hash. `crates/riverrun-m31` uses Plonky3's
+`p3-poseidon2`/`p3-poseidon2-air` implementation with its canonical,
+Grain-LFSR-generated M31 round constants (`RF=8, RP=14, α=5`), not invented
+parameters, matching this table's row above.
 
 ---
 

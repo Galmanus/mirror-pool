@@ -464,6 +464,16 @@ credit for the shape of the idea, not the math.
   it.
 - [`docs/DEFENSE.md`](docs/DEFENSE.md): honest answers to the hardest questions,
   including the one piece still open, the trustless on-chain proof.
+- [`docs/RELATED_WORK.md`](docs/RELATED_WORK.md): the literature riverrun sits in,
+  and where it departs from it, cited: anonymous authentication (PrivDID, eprint
+  2026/127), nullifiers (PLUME, eprint 2022/1255), the anti-Sybil construction
+  riverrun should adopt next (Anonymous Self-Credentials, eprint 2025/618),
+  the anonymity metric riverrun's ruler implements (Serjantov & Danezis, PET
+  2002), advertised-vs-true anonymity measurement on Ethereum (Tutela, arXiv
+  2201.06811; a 2025 Tornado linkage study, arXiv 2510.09433), and prior
+  on-chain STARK verification on Solana (eprint 2025/1741; murkl; mosaic).
+  Named narrowly: three things riverrun does differently, not "we invented
+  privacy."
 
 MIT. **196 tests green** across the repo (117 in the default workspace, incl. the
 unified act derivation and the act() SDK, plus the excluded heavy crates: STARK 31,
