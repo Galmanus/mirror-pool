@@ -33,10 +33,27 @@ committee entirely.
 > secret cells. A dedicated soundness test attempts to prove a leaf and a
 > nullifier built from two *different* secrets and confirms this panics at
 > proving time, the trace is unsatisfiable, not merely that verification later
-> rejects it. 8 tests green, no vendored code (same Plonky3 crates as above).
-> Still not built: §1b, binding `leaf` under a public Merkle root, and on-chain
-> (SBF) verification of any of this. `cargo test --manifest-path
-> crates/riverrun-m31/Cargo.toml`.
+> rejects it. No vendored code (same Plonky3 crates as above).
+>
+> **§1b, real and in-repo (2026-07-28).** `crates/riverrun-m31/src/membership.rs`
+> proves, as one Circle-STARK proof, that a leaf digest sits under a public
+> Merkle root via a private `DEPTH`-step authentication path (`DEPTH = 4`, a
+> provisional 16-leaf tree size, exactly CirclePcs's minimum committable row
+> count, not a production size): a Poseidon2 compression folded per level, a
+> private per-row bit choosing left/right order (constrained boolean), and a
+> transition constraint tying each level's output to the next level's selected
+> node, so the whole chain, not just one hop, is what verifies. A soundness
+> test folds the wrong leaf through a genuine path and claims the original
+> root; proving it panics, the forged trace is unsatisfiable. Composing
+> `Poseidon2Air` with one extra private column needed `p3_uni_stark`'s
+> `SubAirBuilder` (a column-windowed sub-builder, already exported, not
+> vendored) so the inner AIR never sees riverrun's added `bit` column.
+>
+> **Not yet fused.** §1a+§1c (`binding.rs`) and §1b (`membership.rs`) are two
+> separate proofs today, not one. Combining "this leaf comes from my secret"
+> with "this leaf sits under this root" into a single proof, and any on-chain
+> (SBF) verification of either, is real, unstarted work. 12 tests green.
+> `cargo test --manifest-path crates/riverrun-m31/Cargo.toml`.
 
 Why this is the decisive move: it is the one change that makes riverrun
 simultaneously **(a) post-quantum, (b) transparent / no trusted setup, and (c)

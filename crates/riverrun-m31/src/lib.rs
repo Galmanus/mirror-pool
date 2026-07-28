@@ -12,13 +12,16 @@
 //! vetted upstream; what riverrun adds is its own relation on top. `permutation`
 //! is the first real step: prove and verify, end to end with a genuine
 //! Circle-STARK proof, knowledge of a Poseidon2-M31 preimage. `binding` is the
-//! second: prove a leaf and a nullifier share one secret (§1a + §1c). Neither
-//! is yet the full Merkle-membership relation (§1b, `docs/M31_CIRCLE_STARK.md`'s
-//! next milestone, still unstarted); each validates one more real slice of the
-//! pipeline before that relation is built on top.
+//! second: prove a leaf and a nullifier share one secret (§1a + §1c).
+//! `membership` is the third: prove a leaf digest sits under a public root via
+//! a private authentication path (§1b). None of these three is yet fused into
+//! one proof (that integration is real, separate work); each validates one
+//! more real slice of the pipeline on its own.
 
 pub mod binding;
+pub mod membership;
 pub mod permutation;
 
 pub use binding::{prove_binding, verify_binding, BindingProof, CONTEXT_LEN, SECRET_LEN};
+pub use membership::{compress, prove_membership, verify_membership, MembershipProof, PathStep, DEPTH, DIGEST_LEN};
 pub use permutation::{prove_preimage, verify_preimage, PreimageProof, WIDTH};

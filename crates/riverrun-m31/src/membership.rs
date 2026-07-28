@@ -1,0 +1,416 @@
+//! Prove, as one Circle-STARK proof, that a leaf digest sits under a public
+//! Merkle root, without revealing which leaf or its position. This is
+//! riverrun's §1b relation (`docs/M31_CIRCLE_STARK.md`): a Poseidon2
+//! compression function folded `DEPTH` times, each level's node fed into the
+//! next, with a private per-level bit choosing left/right order so the
+//! authentication path stays hidden.
+//!
+//! **Not yet fused with §1a/§1c** (`binding.rs`): this proves membership of a
+//! given leaf digest independently. Combining "the leaf comes from this
+//! secret" (binding.rs) with "this leaf sits under this root" (this module)
+//! into one proof is real, separate integration work, not done here.
+//!
+//! **`DEPTH = 4` (a 16-leaf tree) is a small, concrete, provisional choice**,
+//! picked because it is exactly CirclePcs's minimum committable row count
+//! (no padding needed), not a production tree size. Scaling `DEPTH` up is
+//! mechanical (more rows), not a design change.
+//!
+//! Digests here are 8 M31 elements (not the full `WIDTH = 16`), a compression
+//! convention: `compress(left, right) = permute(left ‖ right)[0..8]`, the
+//! standard "half the permutation's output is the digest" truncation. This is
+//! a concrete choice, not a reviewed security argument, same honesty note as
+//! `binding.rs`'s secret/context split.
+
+extern crate alloc;
+
+use alloc::vec::Vec;
+use core::borrow::Borrow;
+use core::marker::PhantomData;
+
+use p3_air::{Air, AirBuilder, BaseAir, WindowAccess};
+use p3_challenger::{HashChallenger, SerializingChallenger32};
+use p3_circle::CirclePcs;
+use p3_commit::ExtensionMmcs;
+use p3_field::extension::BinomialExtensionField;
+use p3_field::PrimeCharacteristicRing;
+use p3_keccak::Keccak256Hash;
+use p3_matrix::dense::RowMajorMatrix;
+use p3_mersenne_31::{
+    GenericPoseidon2LinearLayersMersenne31, Mersenne31, MERSENNE31_POSEIDON2_RC_16_EXTERNAL_FINAL,
+    MERSENNE31_POSEIDON2_RC_16_EXTERNAL_INITIAL, MERSENNE31_POSEIDON2_RC_16_INTERNAL,
+};
+use p3_merkle_tree::MerkleTreeMmcs;
+use p3_poseidon2_air::{generate_trace_rows, num_cols, Poseidon2Air, Poseidon2Cols, RoundConstants};
+use p3_symmetric::{CompressionFunctionFromHasher, SerializingHasher};
+use p3_uni_stark::{prove, verify, Proof, StarkConfig, SubAirBuilder};
+
+use crate::permutation::{permute, WIDTH};
+
+/// Digest width: half a permutation's output, the compression convention.
+pub const DIGEST_LEN: usize = 8;
+/// Tree depth this module proves against. See module docs: provisional, not
+/// a production size, chosen to be CirclePcs's minimum row count exactly.
+pub const DEPTH: usize = 4;
+
+const SBOX_DEGREE: u64 = 5;
+const SBOX_REGISTERS: usize = 0;
+const HALF_FULL_ROUNDS: usize = 4;
+const PARTIAL_ROUNDS: usize = 14;
+
+type Val = Mersenne31;
+type LinearLayers = GenericPoseidon2LinearLayersMersenne31;
+type InnerAir = Poseidon2Air<
+    Val,
+    LinearLayers,
+    WIDTH,
+    SBOX_DEGREE,
+    SBOX_REGISTERS,
+    HALF_FULL_ROUNDS,
+    PARTIAL_ROUNDS,
+>;
+type Cols<T> =
+    Poseidon2Cols<T, WIDTH, SBOX_DEGREE, SBOX_REGISTERS, HALF_FULL_ROUNDS, PARTIAL_ROUNDS>;
+
+type Challenge = BinomialExtensionField<Val, 3>;
+type ByteHash = Keccak256Hash;
+type FieldHash = SerializingHasher<ByteHash>;
+type Compress = CompressionFunctionFromHasher<ByteHash, 2, 32>;
+type ValMmcs = MerkleTreeMmcs<Val, u8, FieldHash, Compress, 2, 32>;
+type ChallengeMmcs = ExtensionMmcs<Val, Challenge, ValMmcs>;
+type Challenger = SerializingChallenger32<Val, HashChallenger<u8, ByteHash, 32>>;
+type Pcs = CirclePcs<Val, ValMmcs, ChallengeMmcs>;
+type Config = StarkConfig<Pcs, Challenge, Challenger>;
+
+fn constants() -> RoundConstants<Val, WIDTH, HALF_FULL_ROUNDS, PARTIAL_ROUNDS> {
+    RoundConstants::new(
+        MERSENNE31_POSEIDON2_RC_16_EXTERNAL_INITIAL,
+        MERSENNE31_POSEIDON2_RC_16_INTERNAL,
+        MERSENNE31_POSEIDON2_RC_16_EXTERNAL_FINAL,
+    )
+}
+
+fn single_width() -> usize {
+    num_cols::<WIDTH, SBOX_DEGREE, SBOX_REGISTERS, HALF_FULL_ROUNDS, PARTIAL_ROUNDS>()
+}
+
+/// riverrun's Merkle-fold AIR: internal correctness of each row's Poseidon2
+/// compression (delegated to `Poseidon2Air` via a column-windowed
+/// `SubAirBuilder`, since this AIR's rows carry one extra `bit` column
+/// `Poseidon2Air` does not know about), plus riverrun's own constraints: the
+/// per-row left/right selection is a real bit, the first row's selected node
+/// equals the public leaf, each row's output feeds the next row's selected
+/// node, and the last row's output equals the public root.
+struct MembershipAir {
+    inner: InnerAir,
+}
+
+impl MembershipAir {
+    fn new() -> Self {
+        Self { inner: InnerAir::new(constants()) }
+    }
+}
+
+impl BaseAir<Val> for MembershipAir {
+    fn width(&self) -> usize {
+        single_width() + 1
+    }
+
+    fn num_public_values(&self) -> usize {
+        2 * DIGEST_LEN
+    }
+}
+
+impl<AB: AirBuilder<F = Val>> Air<AB> for MembershipAir {
+    fn eval(&self, builder: &mut AB) {
+        let width = single_width();
+
+        // The inner Poseidon2 AIR only knows about its own `width` columns;
+        // give it a windowed view so it never sees this AIR's extra `bit`
+        // column tacked on at the end of each row.
+        let mut sub: SubAirBuilder<AB, InnerAir, Val> = SubAirBuilder::new(builder, 0..width);
+        self.inner.eval(&mut sub);
+
+        let main = builder.main();
+        let current = main.current_slice();
+        let next = main.next_slice();
+
+        let poseidon: &Cols<AB::Var> = current[..width].borrow();
+        let poseidon_next: &Cols<AB::Var> = next[..width].borrow();
+        let bit: AB::Expr = current[width].clone().into();
+        let bit_next: AB::Expr = next[width].clone().into();
+
+        // The selector must be boolean: bit * (1 - bit) == 0.
+        builder.assert_zero(bit.clone() * (AB::Expr::ONE - bit.clone()));
+
+        let output = &poseidon.ending_full_rounds[HALF_FULL_ROUNDS - 1].post;
+
+        let pis: Vec<AB::PublicVar> = builder.public_values().to_vec();
+        let leaf = &pis[0..DIGEST_LEN];
+        let root = &pis[DIGEST_LEN..2 * DIGEST_LEN];
+
+        // This row's canonical node: bit == 0 selects the left half of the
+        // permutation input as the node (sibling on the right); bit == 1
+        // selects the right half (sibling on the left).
+        let selected_node = |cols: &Cols<AB::Var>, bit: AB::Expr| -> Vec<AB::Expr> {
+            (0..DIGEST_LEN)
+                .map(|j| {
+                    let left: AB::Expr = cols.inputs[j].into();
+                    let right: AB::Expr = cols.inputs[DIGEST_LEN + j].into();
+                    (AB::Expr::ONE - bit.clone()) * left + bit.clone() * right
+                })
+                .collect()
+        };
+
+        let this_node = selected_node(poseidon, bit);
+
+        // First row: the selected node is the public leaf.
+        for j in 0..DIGEST_LEN {
+            builder
+                .when_first_row()
+                .assert_eq(this_node[j].clone(), leaf[j].into());
+        }
+
+        // Transition: the NEXT row's selected node must equal THIS row's
+        // output, the fold's continuity, the reason membership under the
+        // root, not just one hop, is what gets proven.
+        let next_node = selected_node(poseidon_next, bit_next);
+        for j in 0..DIGEST_LEN {
+            builder
+                .when_transition()
+                .assert_eq(next_node[j].clone(), output[j].into());
+        }
+
+        // Last row: this row's output is the public root.
+        for j in 0..DIGEST_LEN {
+            builder
+                .when_last_row()
+                .assert_eq(output[j].into(), root[j].into());
+        }
+    }
+}
+
+fn make_config() -> Config {
+    let byte_hash = ByteHash {};
+    let field_hash = FieldHash::new(byte_hash);
+    let compress = Compress::new(byte_hash);
+    let val_mmcs = ValMmcs::new(field_hash, compress, 0);
+    let challenge_mmcs = ChallengeMmcs::new(val_mmcs.clone());
+    let fri_params = p3_fri::FriParameters {
+        log_blowup: 1,
+        log_final_poly_len: 0,
+        max_log_arity: 1,
+        num_queries: 40,
+        commit_proof_of_work_bits: 0,
+        query_proof_of_work_bits: 8,
+        mmcs: challenge_mmcs,
+    };
+    let pcs = Pcs { mmcs: val_mmcs, fri_params, _phantom: PhantomData };
+    let challenger = Challenger::from_hasher(Vec::new(), byte_hash);
+    Config::new(pcs, challenger)
+}
+
+fn to_field8(input: [u64; DIGEST_LEN]) -> [Val; DIGEST_LEN] {
+    core::array::from_fn(|i| Val::from_u64(input[i]))
+}
+
+fn pack16(left: [u64; DIGEST_LEN], right: [u64; DIGEST_LEN]) -> [u64; WIDTH] {
+    let mut out = [0u64; WIDTH];
+    out[..DIGEST_LEN].copy_from_slice(&left);
+    out[DIGEST_LEN..].copy_from_slice(&right);
+    out
+}
+
+fn truncate8(output: [u64; WIDTH]) -> [u64; DIGEST_LEN] {
+    core::array::from_fn(|i| output[i])
+}
+
+/// `compress(left, right) = permute(left ‖ right)[0..DIGEST_LEN]`, riverrun's
+/// M31 Merkle node combiner, built from the same permutation `binding.rs` and
+/// `permutation.rs` use.
+pub fn compress(left: [u64; DIGEST_LEN], right: [u64; DIGEST_LEN]) -> [u64; DIGEST_LEN] {
+    truncate8(permute(pack16(left, right)))
+}
+
+/// One level of an authentication path: the sibling digest and whether the
+/// leaf/current node is on the left (`false`) or right (`true`) at this level.
+#[derive(Clone, Copy)]
+pub struct PathStep {
+    pub sibling: [u64; DIGEST_LEN],
+    pub node_on_right: bool,
+}
+
+/// A real Circle-STARK proof that `leaf` sits under `root` via a private,
+/// depth-`DEPTH` authentication path.
+pub struct MembershipProof {
+    inner: Proof<Config>,
+}
+
+/// Prove that `leaf` sits under `root` following `path` (exactly `DEPTH`
+/// steps). Panics if `path` does not actually fold `leaf` to `root` (the
+/// trace generator would produce an unsatisfiable constraint set; callers
+/// must supply a genuine path, mirroring `permutation.rs`'s documented
+/// preimage-proving behavior).
+pub fn prove_membership(leaf: [u64; DIGEST_LEN], path: [PathStep; DEPTH]) -> (MembershipProof, [u64; DIGEST_LEN]) {
+    let (inputs, bits, root) = build_rows(leaf, path);
+    let air = MembershipAir::new();
+    let poseidon_trace: RowMajorMatrix<Val> = generate_trace_rows::<
+        Val,
+        LinearLayers,
+        WIDTH,
+        SBOX_DEGREE,
+        SBOX_REGISTERS,
+        HALF_FULL_ROUNDS,
+        PARTIAL_ROUNDS,
+    >(inputs, &constants(), 0);
+    let trace = append_bit_column(poseidon_trace, &bits);
+
+    let pis = public_values(leaf, root);
+    let config = make_config();
+    let proof = prove(&config, &air, trace, &pis);
+    (MembershipProof { inner: proof }, root)
+}
+
+/// Verify a [`MembershipProof`] against a claimed `leaf` and `root`.
+pub fn verify_membership(proof: &MembershipProof, leaf: [u64; DIGEST_LEN], root: [u64; DIGEST_LEN]) -> bool {
+    let air = MembershipAir::new();
+    let config = make_config();
+    let pis = public_values(leaf, root);
+    verify(&config, &air, &proof.inner, &pis).is_ok()
+}
+
+fn public_values(leaf: [u64; DIGEST_LEN], root: [u64; DIGEST_LEN]) -> Vec<Val> {
+    let mut pis = Vec::with_capacity(2 * DIGEST_LEN);
+    pis.extend_from_slice(&to_field8(leaf));
+    pis.extend_from_slice(&to_field8(root));
+    pis
+}
+
+/// Fold `leaf` through `path`, returning each level's real permutation input
+/// (already ordered by `node_on_right`), each level's bit, and the resulting
+/// root, so both the prover and tests can build a genuine, consistent trace.
+fn build_rows(
+    leaf: [u64; DIGEST_LEN],
+    path: [PathStep; DEPTH],
+) -> (Vec<[Val; WIDTH]>, [bool; DEPTH], [u64; DIGEST_LEN]) {
+    let mut node = leaf;
+    let mut inputs = Vec::with_capacity(DEPTH);
+    let mut bits = [false; DEPTH];
+    for (i, step) in path.iter().enumerate() {
+        let (left, right) =
+            if step.node_on_right { (step.sibling, node) } else { (node, step.sibling) };
+        inputs.push(to_field(pack16(left, right)));
+        bits[i] = step.node_on_right;
+        node = compress(left, right);
+    }
+    (inputs, bits, node)
+}
+
+fn to_field(input: [u64; WIDTH]) -> [Val; WIDTH] {
+    core::array::from_fn(|i| Val::from_u64(input[i]))
+}
+
+fn append_bit_column(poseidon_trace: RowMajorMatrix<Val>, bits: &[bool; DEPTH]) -> RowMajorMatrix<Val> {
+    let width = poseidon_trace.width;
+    let mut values = Vec::with_capacity((width + 1) * DEPTH);
+    for (row, bit) in poseidon_trace.values.chunks(width).zip(bits.iter()) {
+        values.extend_from_slice(row);
+        values.push(if *bit { Val::ONE } else { Val::ZERO });
+    }
+    RowMajorMatrix::new(values, width + 1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn leaf_value(byte: u64) -> [u64; DIGEST_LEN] {
+        core::array::from_fn(|i| byte * 3000 + i as u64)
+    }
+
+    fn sibling(byte: u64) -> [u64; DIGEST_LEN] {
+        core::array::from_fn(|i| byte * 4000 + i as u64)
+    }
+
+    /// Build a genuine depth-DEPTH path with concrete, distinct siblings and a
+    /// mixed left/right pattern, and fold it by hand (via `compress`) to get
+    /// the real root, so tests never assert against an invented root.
+    fn sample_path_and_root(leaf: [u64; DIGEST_LEN]) -> ([PathStep; DEPTH], [u64; DIGEST_LEN]) {
+        let path: [PathStep; DEPTH] = core::array::from_fn(|i| PathStep {
+            sibling: sibling(i as u64 + 1),
+            node_on_right: i % 2 == 1,
+        });
+        let mut node = leaf;
+        for step in &path {
+            node = if step.node_on_right {
+                compress(step.sibling, node)
+            } else {
+                compress(node, step.sibling)
+            };
+        }
+        (path, node)
+    }
+
+    #[test]
+    fn a_genuine_path_proves_and_verifies() {
+        let leaf = leaf_value(1);
+        let (path, root) = sample_path_and_root(leaf);
+        let (proof, proved_root) = prove_membership(leaf, path);
+        assert_eq!(proved_root, root, "the prover's computed root must match the hand-folded one");
+        assert!(verify_membership(&proof, leaf, root), "a genuine path must verify");
+    }
+
+    #[test]
+    fn a_proof_does_not_verify_against_a_different_root() {
+        let leaf = leaf_value(1);
+        let (path, root) = sample_path_and_root(leaf);
+        let (proof, _) = prove_membership(leaf, path);
+        let mut wrong_root = root;
+        wrong_root[0] ^= 1;
+        assert!(!verify_membership(&proof, leaf, wrong_root), "must not verify against a tampered root");
+    }
+
+    #[test]
+    fn a_proof_does_not_verify_against_a_different_leaf() {
+        let leaf = leaf_value(1);
+        let (path, root) = sample_path_and_root(leaf);
+        let (proof, _) = prove_membership(leaf, path);
+        let other_leaf = leaf_value(2);
+        assert!(
+            !verify_membership(&proof, other_leaf, root),
+            "must not verify a different leaf against this root"
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn a_path_that_does_not_fold_to_the_claimed_root_cannot_be_proved() {
+        // A malicious/broken path: reuse a genuine path's siblings and bits,
+        // but for the WRONG leaf, so folding it does not actually reach the
+        // root claimed to the prover. Mirrors permutation.rs's documented
+        // "panics on an unsatisfiable trace" behavior.
+        let leaf = leaf_value(1);
+        let (path, root) = sample_path_and_root(leaf);
+        let wrong_leaf = leaf_value(99);
+
+        // Directly forge the trace: fold wrong_leaf through the path (so the
+        // trace is internally consistent with itself) but claim the ORIGINAL
+        // root as the public input, which this folding does not reach.
+        let (inputs, bits, actual_root) = build_rows(wrong_leaf, path);
+        assert_ne!(actual_root, root, "sanity: folding the wrong leaf must not reach the same root");
+
+        let air = MembershipAir::new();
+        let poseidon_trace: RowMajorMatrix<Val> = generate_trace_rows::<
+            Val,
+            LinearLayers,
+            WIDTH,
+            SBOX_DEGREE,
+            SBOX_REGISTERS,
+            HALF_FULL_ROUNDS,
+            PARTIAL_ROUNDS,
+        >(inputs, &constants(), 0);
+        let trace = append_bit_column(poseidon_trace, &bits);
+        let pis = public_values(wrong_leaf, root); // claims the ORIGINAL root
+        let config = make_config();
+        let _ = prove(&config, &air, trace, &pis);
+    }
+}
