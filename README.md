@@ -51,7 +51,7 @@ you can check in minutes:
 - **One round, one proof.** 16 memberships settle in a single **45 KB** STARK,
   about **8x** smaller than 16 separate, verified once.
 - **More than a pool.** riverrun ID (seven unlinkable powers), a 47-page whitepaper
-  with proofs, and **193 tests** green.
+  with proofs, and **196 tests** green.
 
 ## In one breath
 
@@ -377,11 +377,19 @@ AIR) and now proves, end to end, every piece §1 of the migration spec calls for
 leaf and a nullifier bound to one shared secret (`binding.rs`), a leaf proven under
 a public root via a private, order-hidden path (`membership.rs`), and the two
 composed into the full relation via a shared public leaf value (`relation.rs`).
-14 tests green, no vendored code. Not yet done, named honestly: fusing this into
-one monolithic proof rather than two composed ones, and any on-chain (SBF)
-verification of it at all, the two things that would make it the property above.
-Closing both is the next milestone, and it is specified, not hand-waved:
-[`docs/M31_CIRCLE_STARK.md`](docs/M31_CIRCLE_STARK.md).
+16 tests green, no vendored production code (two documented toolchain-compat
+patches, `docs/adr/0001-vendor-patch-over-fork-or-wait.md`).
+
+**On-chain attempt, real and honest (2026-07-28):** `programs/riverrun-m31-verifier`
+loads and executes riverrun's own binding proof verifier on Solana SBF, after
+finding and fixing three real toolchain blockers (an unsupported `getrandom`
+backend, an unused dependency overflowing SBF's stack-frame limit, debug
+instrumentation bloating the binary). It does not yet complete: `verify()` itself
+exceeds Solana's hard 256KB heap ceiling, at a cost measured, not guessed at
+(~1.5-2M CU before running out, flat across query counts), documented precisely in
+an `#[ignore]`d test rather than left silently broken. Fusing the two proofs into
+one and closing the memory wall are the next milestones, specified, not
+hand-waved: [`docs/M31_CIRCLE_STARK.md`](docs/M31_CIRCLE_STARK.md).
 
 Nothing here is faked. Every claim has a test, a signature, or a measured number
 beside it, and every limitation is named where the claim is made.
@@ -457,6 +465,8 @@ credit for the shape of the idea, not the math.
 - [`docs/DEFENSE.md`](docs/DEFENSE.md): honest answers to the hardest questions,
   including the one axis a curve-based submission still leads.
 
-MIT. **193 tests green** across the repo (117 in the default workspace, incl. the
+MIT. **196 tests green** across the repo (117 in the default workspace, incl. the
 unified act derivation and the act() SDK, plus the excluded heavy crates: STARK 31,
-mirror-pool 24 e2e incl. the batch settlement, pool-zk 7, M31 14).
+mirror-pool 24 e2e incl. the batch settlement, pool-zk 7, M31 16, M31 on-chain
+verifier 1; one further M31 on-chain test is `#[ignore]`d with its failure
+precisely diagnosed, not counted as green, see `docs/M31_CIRCLE_STARK.md`).

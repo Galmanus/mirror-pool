@@ -60,9 +60,32 @@ committee entirely.
 > computation and a multi-row chained fold; real, larger, unstarted work). A
 > regression test splices one member's real binding proof onto a *different*
 > member's real membership proof, each individually valid alone, and confirms
-> the composed check rejects it. 14 tests green. Still not built: any on-chain
-> (SBF) verification of any of this. `cargo test --manifest-path
-> crates/riverrun-m31/Cargo.toml`.
+> the composed check rejects it. 16 tests green.
+>
+> **On-chain attempt, real and honest (2026-07-28).**
+> `programs/riverrun-m31-verifier` verifies riverrun's own binding relation
+> (§1a+§1c) on Solana SBF, not murkl's reference verifier. Three real
+> toolchain blockers found and fixed (see `docs/adr/0001-vendor-patch-over-
+> fork-or-wait.md` for the full diagnosis): `rand`'s default features pulling
+> in an SBF-unsupported `getrandom` backend, `p3-mersenne-31`'s unused
+> Poseidon1/MDS code overflowing SBF's 4KB stack-frame limit at load time,
+> and `tracing`'s `#[instrument]` callsites bloating the ELF's section count.
+> The `.so` now loads and executes on-chain, deserializes a real proof, and
+> reaches `verify()`. **Not yet complete:** `verify()` itself exceeds
+> Solana's hard 256KB heap ceiling, at a CU cost that held ~1.5-2M
+> essentially flat across 4/12/40 FRI queries, meaning the wall is in
+> `verify()`'s fixed setup, not the per-query loop; a LIFO-reclaiming bump
+> allocator was tried and did not close it. Documented precisely, not
+> silently broken: `programs/riverrun-m31-verifier/tests/cu.rs`'s
+> `#[ignore]`d `measure_on_chain_binding_verification_cost` carries the full
+> diagnosis. Separately confirmed: a production (~78 KB, 40-query) proof does
+> not fit a transaction's message-size limit at all (65535 bytes, a `u16`
+> field), exactly the buffer-account requirement this document already
+> specified, not a new problem. `cargo test --manifest-path
+> crates/riverrun-m31/Cargo.toml`; `cargo build-sbf --manifest-path
+> programs/riverrun-m31-verifier/Cargo.toml` then `cargo test --release
+> --test cu -- --ignored --nocapture` from that directory to reproduce the
+> memory wall.
 
 Why this is the decisive move: it is the one change that makes riverrun
 simultaneously **(a) post-quantum, (b) transparent / no trusted setup, and (c)
