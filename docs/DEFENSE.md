@@ -61,32 +61,39 @@ on-chain Groth16 membership proof that settles with no participant signature,
 the exact axis named above where riverrun still trails. Two facts from their
 own repository matter for a panel weighing trust, not capability:
 
-1. **A self-disclosed, currently unfixed fund-draining bug.** Their own test,
+1. **A real fund-draining bug they found, disclosed, and then fixed.**
    `settle_zk_escrow_is_a_pool_wide_pot_any_leaf_can_spend`
-   (`programs/mirror-pool/tests/integration.rs:1335` on
-   `marcelofeitoza/mirror-pool@feat/mirror-pool-v1`), proves that a
-   participant who deposits nothing (a fee-only crowd commit) can drain a
-   *different* depositor's real escrowed SOL, because no on-chain check ties a
-   settled amount to the leaf that funded it. They document it honestly
-   ("a v1 pool must not hold value it cannot afford to lose") rather than hide
-   it, which is to their credit, but it is live on their deployed devnet
-   program and unfixed in that branch.
-2. **The ceremony's deployed keys are admittedly insecure.** `docs/CEREMONY.md`
-   in that repo states plainly that the verifying keys currently committed and
-   deployed come from an "insecure dev setup," not a real multi-party run. The
-   ceremony *tooling* is real and tested; the *keys actually protecting live
-   value* are not, today.
+   (`programs/mirror-pool/tests/integration.rs` on
+   `marcelofeitoza/mirror-pool@feat/mirror-pool-v1`) proved a participant who
+   deposits nothing (a fee-only crowd commit) could drain a *different*
+   depositor's real escrowed SOL. They disclosed it honestly first ("a v1 pool
+   must not hold value it cannot afford to lose"), and as of
+   `836b30c` (2026-07-28) closed it for real: crowd leaves are now
+   domain-separated by the program itself
+   (`Poseidon(CROWD_LEAF_DOMAIN, commitment)`, applied on-chain, not left to a
+   client to tag honestly) plus a fixed denomination, and the original attack
+   test is inverted to assert the theft is now rejected. Credit where it's
+   due: that is a real fix, verified in their own test suite, not a patch that
+   only narrows the window.
+2. **The ceremony's deployed keys are still admittedly insecure**, as of the
+   same commit. `docs/CEREMONY.md` in that repo still states plainly that the
+   verifying keys currently committed and deployed come from an "insecure dev
+   setup," not a real multi-party run. The ceremony *tooling* is real and
+   tested; the *keys actually protecting live value* are not, today.
 
-riverrun cannot have the first bug by construction, not by a fix applied in
-response to finding it: the pool holds no shared escrow at all. `execute_batch`
-pays each round's recipients directly from the relayer's transaction; there is
-no pot for one leaf's proof to drain another leaf's deposit from (verify it
-yourself: `grep -rn escrow programs/mirror-pool/src/` on this repo returns
-nothing). riverrun cannot have the second either, because it has no ceremony
-and no ceremony keys to be insecure, by the same no-trusted-setup argument
-already made above. Neither is a race we are ahead in by luck; both are
-structural consequences of being hash-based and committee-attested rather than
-holding value against a proof of a leaf someone else may have funded.
+riverrun could never have had the first bug at all, not because we patched it
+faster: the pool holds no shared escrow. `execute_batch` pays each round's
+recipients directly from the relayer's transaction; there is no pot for one
+leaf's proof to drain another leaf's deposit from (verify it yourself:
+`grep -rn escrow programs/mirror-pool/src/` on this repo returns nothing).
+That their fix needed a coordinated change across the program, the CLI, the
+merkle state, and the paper, while ours needed nothing because the bug class
+doesn't exist here, is the actual comparison worth making, not "who found a
+bug first." riverrun cannot have the second issue either, because it has no
+ceremony and no ceremony keys to be insecure, by the same no-trusted-setup
+argument already made above. Neither is a race we are ahead in by luck; both
+are structural consequences of being hash-based and committee-attested rather
+than holding value against a proof of a leaf someone else may have funded.
 
 This does not close riverrun's own named gap (the single-transaction,
 no-committee on-chain proof, still the M31 verifier's job, still not shipped).
