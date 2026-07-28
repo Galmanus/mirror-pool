@@ -14,14 +14,19 @@
 //! Circle-STARK proof, knowledge of a Poseidon2-M31 preimage. `binding` is the
 //! second: prove a leaf and a nullifier share one secret (§1a + §1c).
 //! `membership` is the third: prove a leaf digest sits under a public root via
-//! a private authentication path (§1b). None of these three is yet fused into
-//! one proof (that integration is real, separate work); each validates one
-//! more real slice of the pipeline on its own.
+//! a private authentication path (§1b). `relation` is the fourth: compose
+//! `binding` and `membership` into the full relation via a shared public leaf
+//! value, real, verified end to end, though as two separately-verified proofs
+//! rather than one monolithic trace (see `relation`'s module doc for exactly
+//! what that does and does not claim). No on-chain (SBF) verification of any
+//! of this exists yet.
 
 pub mod binding;
 pub mod membership;
 pub mod permutation;
+pub mod relation;
 
 pub use binding::{prove_binding, verify_binding, BindingProof, CONTEXT_LEN, SECRET_LEN};
 pub use membership::{compress, prove_membership, verify_membership, MembershipProof, PathStep, DEPTH, DIGEST_LEN};
 pub use permutation::{prove_preimage, verify_preimage, PreimageProof, WIDTH};
+pub use relation::{prove_full_relation, verify_full_relation, FullRelationProof};
