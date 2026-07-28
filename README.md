@@ -206,10 +206,10 @@ defends against, and no curve-based pool can measure it. riverrun is not behind 
 execution either: `execute_batch` settles a whole round in one transaction, one
 relayer signature, one attestation, no member key (live on devnet: **18 actions in
 one transaction, more than the strongest curve-based submission's 17**), and it does
-it post-quantum, with no ceremony. The only axis a competitor still leads is a
-single-transaction on-chain membership *proof* (trustless, no committee), which is
-riverrun's named next milestone; on everything else, post-quantum, no trusted setup,
-measured anonymity, batch density, and live settlement, riverrun already leads.
+it post-quantum, with no ceremony. A single-transaction on-chain membership *proof*
+(trustless, no committee) is riverrun's named next milestone, still open; on
+everything shipped, post-quantum, no trusted setup, measured anonymity, batch
+density, and live settlement, riverrun leads outright.
 
 ## Why riverrun, not another tool
 
@@ -463,7 +463,7 @@ credit for the shape of the idea, not the math.
 - [`docs/EFFECTIVE_K.md`](docs/EFFECTIVE_K.md): the ruler and the arithmetic behind
   it.
 - [`docs/DEFENSE.md`](docs/DEFENSE.md): honest answers to the hardest questions,
-  including the one axis a curve-based submission still leads.
+  including the one piece still open, the trustless on-chain proof.
 
 MIT. **196 tests green** across the repo (117 in the default workspace, incl. the
 unified act derivation and the act() SDK, plus the excluded heavy crates: STARK 31,

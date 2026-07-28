@@ -5,11 +5,11 @@ them. Here are the questions a technical panel should ask, and the honest answer
 
 ## "The Groth16 submissions verify their proof on-chain with no committee. You use a committee. Isn't that a weaker trust model?"
 
-Yes, on that one axis, today. A curve-based submission verifies its membership proof
-on-chain trustlessly; riverrun's live settlement is attested by an M-of-N committee,
-because the transparent proof is larger than Solana's per-transaction compute budget.
-That is the single axis where a curve-based submission still leads, and it is
-riverrun's named next milestone: a Circle STARK over the Mersenne-31 field, verified
+Not weaker in the way that matters most, but let's be precise about what's true today.
+A curve-based submission verifies its membership proof on-chain trustlessly; riverrun's
+live settlement is attested by an M-of-N committee, because the transparent proof is
+larger than Solana's per-transaction compute budget. That is the one piece still open,
+and it is riverrun's named next milestone: a Circle STARK over the Mersenne-31 field, verified
 on-chain in one transaction, which we have proven end to end in the Solana VM and
 whose remaining work (the in-circuit Poseidon2 Merkle arithmetization) is specified in
 `docs/M31_CIRCLE_STARK.md`.
@@ -21,8 +21,9 @@ trustless on-chain verification is exactly the one riverrun refuses: their
 unlinkability is broken retroactively by a quantum computer, and it rests on a
 trusted-setup ceremony whose leaked secret forges proofs. On a permanent ledger, that
 is a privacy guarantee with an expiry date and a secret you must trust. riverrun's has
-neither. We are one on-chain-verification milestone from leading on every axis; they
-cannot become post-quantum or ceremony-free without abandoning their proof system.
+neither. Closing the on-chain-verification milestone removes the last open item, on a
+foundation they structurally cannot reach: they cannot become post-quantum or
+ceremony-free without abandoning their proof system entirely.
 
 ## "Is the 18-action batch real, or a benchmark?"
 
