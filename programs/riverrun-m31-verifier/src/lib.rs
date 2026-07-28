@@ -103,6 +103,14 @@ mod bump {
             let start = (pos + align - 1) & !(align - 1);
             let end = start + layout.size();
             if end > HEAP_START + HEAP_LEN {
+                // Tried logging the failing request's exact size here
+                // (format! + sol_log) to tell a single giant allocation
+                // apart from many small ones; reverted; std::format! itself
+                // allocates, so a failing alloc's own logging can recurse
+                // into more failing allocs, which surfaced as Solana's BPF-
+                // to-BPF call-depth limit instead of useful data. Left
+                // unresolved rather than chasing a diagnostic that fights
+                // itself.
                 return core::ptr::null_mut();
             }
             *pos_ptr = end;
