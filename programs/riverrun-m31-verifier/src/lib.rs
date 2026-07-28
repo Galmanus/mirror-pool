@@ -62,6 +62,23 @@
 //! here. See `programs/riverrun-m31-verifier/tests/cu.rs`'s two `#[ignore]`d
 //! tests, `measure_on_chain_binding_verification_cost` and
 //! `measure_on_chain_preimage_verification_cost`, for the reproduction.
+//!
+//! **Source-level follow-up (2026-07-28).** Read `p3_uni_stark::verifier::verify`,
+//! `CirclePcs::verify`, and the start of `p3_fri::verifier::verify_fri` directly
+//! (not guessing from outside): no single oversized `Vec::with_capacity` or
+//! buffer stands out in `verify()`'s own body; most of what it holds is
+//! proof-sized data already accounted for in the ~16KB deserialization cost.
+//! One real signal from the CU data: cost stayed nearly flat across a 10x
+//! query-count range (4 to 40 queries, 1.5M to 2.06M CU, +37%), which is not
+//! what a per-query-dominated cost would look like; it points at FRI/PCS's
+//! one-time setup (challenger sampling, alpha/domain bookkeeping, before the
+//! per-query closure ever runs) as the actual driver, not the query loop
+//! itself. Pinpointing the exact allocation from here needs either
+//! instrumenting or forking `p3-fri`/`p3-circle` internals directly, a
+//! materially larger step than the two toolchain patches this crate already
+//! carries (those changed a build flag and a stable-API rewrite; this would
+//! mean editing real verification logic in an upstream crypto library).
+//! Deliberately not done without separate sign-off given that risk profile.
 #![allow(unexpected_cfgs)]
 
 use solana_program::{
