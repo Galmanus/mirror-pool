@@ -3,7 +3,7 @@
 //! honesty: the real Circle-STARK verifier, run inside LiteSVM's simulated
 //! Solana runtime, priced, not asserted.
 use litesvm::LiteSVM;
-use riverrun_m31::{prove_binding_tuned, CONTEXT_LEN, SECRET_LEN, WIDTH};
+use riverrun_m31::{prove_binding_tuned, prove_preimage, CONTEXT_LEN, SECRET_LEN, WIDTH};
 use solana_sdk::{
     instruction::Instruction, message::Message, pubkey::Pubkey, signature::{Keypair, Signer},
     transaction::Transaction,
@@ -38,12 +38,24 @@ fn instruction_data() -> Vec<u8> {
     let (proof, leaf, nullifier) =
         prove_binding_tuned(secret, action, round, MEASURED_QUERIES as usize);
 
-    let mut d = Vec::new();
+    let mut d = vec![0u8]; // discriminator 0: BindingProof
     d.extend_from_slice(&MEASURED_QUERIES.to_le_bytes());
     d.extend_from_slice(&ctx_bytes(action));
     d.extend_from_slice(&ctx_bytes(round));
     d.extend_from_slice(&wide_bytes(leaf));
     d.extend_from_slice(&wide_bytes(nullifier));
+    d.extend_from_slice(&proof.to_bytes());
+    d
+}
+
+/// Instruction data for the simpler, single-block, non-vectorized preimage
+/// AIR (`permutation.rs`), added purely to compare its on-chain peak
+/// `verify()` memory against `BindingProof`'s two-block vectorized one.
+fn preimage_instruction_data() -> Vec<u8> {
+    let input: [u64; WIDTH] = core::array::from_fn(|i| i as u64 + 1);
+    let (proof, output) = prove_preimage(input);
+    let mut d = vec![1u8]; // discriminator 1: PreimageProof
+    d.extend_from_slice(&wide_bytes(output));
     d.extend_from_slice(&proof.to_bytes());
     d
 }
@@ -76,7 +88,7 @@ fn measure_on_chain_binding_verification_cost() {
     svm.airdrop(&payer.pubkey(), 1_000_000_000).unwrap();
 
     let data = instruction_data();
-    let proof_bytes = data.len() - (2 + 2 * CONTEXT_LEN * 8 + 2 * WIDTH * 8);
+    let proof_bytes = data.len() - (1 + 2 + 2 * CONTEXT_LEN * 8 + 2 * WIDTH * 8);
     let heap_ix = solana_sdk::compute_budget::ComputeBudgetInstruction::request_heap_frame(256 * 1024);
     let ix = Instruction { program_id: PROGRAM_ID, accounts: vec![], data };
     let msg = Message::new(&[heap_ix, ix], Some(&payer.pubkey()));
@@ -113,7 +125,7 @@ fn a_tampered_proof_is_rejected_on_chain() {
     let mut data = instruction_data();
     // Flip one byte inside the claimed nullifier (a public value, not the
     // proof itself): the on-chain verifier must reject it.
-    let nullifier_offset = 2 + 2 * CONTEXT_LEN * 8 + WIDTH * 8;
+    let nullifier_offset = 1 + 2 + 2 * CONTEXT_LEN * 8 + WIDTH * 8;
     data[nullifier_offset] ^= 1;
     let heap_ix = solana_sdk::compute_budget::ComputeBudgetInstruction::request_heap_frame(256 * 1024);
     let ix = Instruction { program_id: PROGRAM_ID, accounts: vec![], data };
@@ -124,6 +136,55 @@ fn a_tampered_proof_is_rejected_on_chain() {
         Ok(_) => panic!("a tampered public value must not verify on-chain"),
         Err(e) => {
             println!("rejected as expected: {:?}", e.err);
+        }
+    }
+}
+
+/// Diagnostic comparison, real answer found: does the SIMPLER, single-block,
+/// non-vectorized preimage AIR (`permutation.rs`, one Poseidon2 permutation,
+/// the smallest AIR in this crate) fit Solana's 256 KB heap ceiling where
+/// `BindingProof`'s two-block vectorized AIR does not? **No.** It OOMs too,
+/// consuming even MORE CU before failing (~3.05M vs ~1.5-2M), and with 58,932
+/// bytes of heap gone by `verify_preimage`'s internal `deserialize` step
+/// alone (before this path's own checkpoint hook, not yet added, would show
+/// what `verify()` itself needs on top of that). This rules out "AIR
+/// complexity" as the driver: the smallest possible AIR here still exceeds
+/// the ceiling, so the wall is inherent to this CirclePcs / Keccak-MMCS /
+/// FRI verifier construction as configured, not something scoped to
+/// `BindingAir`'s two-block width. `#[ignore]`d for the same reason as
+/// `measure_on_chain_binding_verification_cost`: a real, diagnosed, open
+/// finding, not a mystery, not silently broken.
+#[test]
+#[ignore = "even the simplest AIR in this crate exceeds Solana's 256 KB heap ceiling; rules out AIR complexity as the cause, see the comment above"]
+fn measure_on_chain_preimage_verification_cost() {
+    let mut budget = solana_compute_budget::compute_budget::ComputeBudget::default();
+    budget.compute_unit_limit = 50_000_000;
+    budget.heap_size = 256 * 1024;
+    let mut svm = LiteSVM::new().with_compute_budget(budget);
+    let so = concat!(env!("CARGO_MANIFEST_DIR"), "/target/deploy/riverrun_m31_verifier.so");
+    svm.add_program_from_file(PROGRAM_ID, so).expect("load .so (run cargo build-sbf first)");
+    let payer = Keypair::new();
+    svm.airdrop(&payer.pubkey(), 1_000_000_000).unwrap();
+
+    let data = preimage_instruction_data();
+    let proof_bytes = data.len() - (1 + WIDTH * 8);
+    let heap_ix = solana_sdk::compute_budget::ComputeBudgetInstruction::request_heap_frame(256 * 1024);
+    let ix = Instruction { program_id: PROGRAM_ID, accounts: vec![], data };
+    let msg = Message::new(&[heap_ix, ix], Some(&payer.pubkey()));
+    let tx = Transaction::new(&[&payer], msg, svm.latest_blockhash());
+
+    match svm.send_transaction(tx) {
+        Ok(meta) => {
+            println!(
+                "riverrun-m31 preimage proof: {proof_bytes} B proof, {} CU (fits 256KB heap)",
+                meta.compute_units_consumed,
+            );
+        }
+        Err(e) => {
+            for l in &e.meta.logs {
+                println!("    {l}");
+            }
+            panic!("on-chain M31 preimage verification failed: {:?}", e.err);
         }
     }
 }

@@ -168,6 +168,24 @@ pub struct PreimageProof {
     inner: Proof<Config>,
 }
 
+impl PreimageProof {
+    /// Serialize to bytes (`bincode`, over `Proof`'s own `serde` impl). Same
+    /// wire format convention as `binding::BindingProof::to_bytes`, added
+    /// while diagnosing riverrun-m31-verifier's on-chain memory ceiling: this
+    /// lets a single-block preimage proof (this AIR) be compared on-chain
+    /// against a two-block vectorized one (`BindingAir`) to isolate whether
+    /// peak `verify()` memory scales with AIR width/complexity.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        bincode::serialize(&self.inner).expect("Proof<Config> is always serializable")
+    }
+
+    /// Deserialize from bytes produced by [`PreimageProof::to_bytes`]. `None`
+    /// on malformed input.
+    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        bincode::deserialize(bytes).ok().map(|inner| Self { inner })
+    }
+}
+
 /// Prove knowledge of `input` such that `permute(input) == output`, as a
 /// single-row Circle-STARK trace. `output` becomes the proof's public values.
 /// Panics if `input` does not actually permute to `output` (the trace generator

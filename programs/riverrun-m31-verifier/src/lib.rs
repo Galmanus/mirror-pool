@@ -40,19 +40,28 @@
 //! two SBF-toolchain fixes: `p3-mersenne-31`'s unused Poseidon1/MDS code
 //! removed via a vendored patch, and `tracing`'s `#[instrument]` callsite
 //! statics compiled out via the `max_level_off` feature). It executes,
-//! deserializes a real proof (bisected with temporary `msg!` logging: proof
-//! bytes arrive and parse fine). It then runs out of Solana's hard 256 KB
-//! heap ceiling (`MAX_HEAP_FRAME_BYTES`, not something a program can request
-//! past) **inside `verify()` itself**, at a compute-unit cost
-//! (~1.5-2M CU consumed before OOM) that stayed essentially flat between 4
-//! and 12 FRI queries, meaning the memory wall sits in `verify()`'s fixed
-//! setup (challenger/PCS construction), not the per-query loop, so reducing
-//! queries further will not fix this alone. Closing it needs either a
-//! from-scratch, memory-budgeted verifier (not `p3_uni_stark::verify`'s
-//! generic machinery as-is) or confirming this is a hard ceiling for this
-//! construction on SBF: real, unstarted work, not attempted further here.
-//! See `programs/riverrun-m31-verifier/tests/cu.rs`'s `#[ignore]`d
-//! `measure_on_chain_binding_verification_cost` for the reproduction.
+//! deserializes a real proof (bisected with checkpointed `msg!` logging:
+//! proof bytes arrive and parse fine, using well under 10% of the heap:
+//! 16,196 of 262,144 bytes for a 4-query `BindingProof` right up to the
+//! `verify()` call). It then runs out of Solana's hard 256 KB heap ceiling
+//! (`MAX_HEAP_FRAME_BYTES`, not something a program can request past)
+//! **inside `verify()` itself**, meaning `verify()` alone needs over 240 KB
+//! on top of a proof that only cost 16 KB to hold. The CU cost before OOM
+//! stayed essentially flat between 4 and 12 FRI queries (~1.5-2M), meaning
+//! the wall is not the per-query loop. **A further, real comparison ruled
+//! out AIR complexity as the cause too:** the smallest possible AIR in this
+//! crate (`permutation.rs`'s single-block, non-vectorized preimage proof,
+//! `discriminator 1`) ALSO exceeds the ceiling (and costs even more CU
+//! before failing, ~3.05M), so this is not specific to `BindingAir`'s two-
+//! block width. The wall looks inherent to this CirclePcs / Keccak-MMCS /
+//! FRI verifier construction as configured here, independent of both proof
+//! size and AIR shape. Closing it needs either a from-scratch, memory-
+//! budgeted verifier (not `p3_uni_stark::verify`'s generic machinery as-is)
+//! or confirming this really is a hard ceiling for this construction on SBF:
+//! real, unstarted, and genuinely uncertain work, not attempted further
+//! here. See `programs/riverrun-m31-verifier/tests/cu.rs`'s two `#[ignore]`d
+//! tests, `measure_on_chain_binding_verification_cost` and
+//! `measure_on_chain_preimage_verification_cost`, for the reproduction.
 #![allow(unexpected_cfgs)]
 
 use solana_program::{
@@ -60,7 +69,7 @@ use solana_program::{
     pubkey::Pubkey,
 };
 
-use riverrun_m31::{verify_binding_tuned, BindingProof, CONTEXT_LEN, WIDTH};
+use riverrun_m31::{BindingProof, PreimageProof, CONTEXT_LEN, WIDTH};
 
 // A real Circle-STARK verification allocates well past SBF's default 32 KB
 // heap (same reason programs/stark-verifier needs this for Winterfell): a
@@ -113,6 +122,27 @@ mod bump {
 #[global_allocator]
 static A: bump::Bump = bump::Bump;
 
+/// Bytes of heap consumed so far (the bump pointer's distance from the base),
+/// for diagnostic `msg!` logging while bisecting where a heap ceiling is hit.
+/// `0` off-chain (there is no HEAP_START_ADDRESS memory to read).
+fn heap_used() -> usize {
+    #[cfg(target_os = "solana")]
+    {
+        let heap_start = solana_program::entrypoint::HEAP_START_ADDRESS as usize;
+        let pos_ptr = heap_start as *const usize;
+        let pos = unsafe { *pos_ptr };
+        if pos == 0 {
+            0
+        } else {
+            pos - heap_start
+        }
+    }
+    #[cfg(not(target_os = "solana"))]
+    {
+        0
+    }
+}
+
 entrypoint!(process_instruction);
 
 const U64S: usize = 8;
@@ -121,14 +151,30 @@ const CTX_BYTES: usize = CONTEXT_LEN * U64S; // 64
 const WIDTH_BYTES: usize = WIDTH * U64S; // 128
 const HEAD: usize = QUERIES_BYTES + CTX_BYTES + CTX_BYTES + WIDTH_BYTES + WIDTH_BYTES; // queries | action | round | leaf | nullifier
 
-/// Instruction data layout (little-endian):
-///   num_queries(2, u16) | action(64) | round(64) | leaf(128) | nullifier(128) | proof(rest, bincode)
+/// Instruction data layout: a 1-byte discriminator, then per-instruction data.
 ///
-/// `num_queries` must match whatever FRI query count the proof was produced
-/// with (`prove_binding_tuned`). Exposed here, not hardcoded, so the caller's
-/// choice of security/size tradeoff is explicit in the instruction itself,
-/// not silently assumed by the program.
+/// - `0`: verify a `BindingProof` (§1a+§1c). `num_queries(2, u16) | action(64)
+///   | round(64) | leaf(128) | nullifier(128) | proof(rest, bincode)`.
+///   `num_queries` must match whatever FRI query count the proof was produced
+///   with (`prove_binding_tuned`), exposed rather than assumed by the program.
+/// - `1`: verify a `PreimageProof` (the simpler, single-block, non-vectorized
+///   AIR from `permutation.rs`), added purely to diagnose
+///   riverrun-m31-verifier's on-chain memory ceiling: comparing this
+///   smaller/simpler AIR's peak `verify()` memory against `BindingProof`'s
+///   two-block vectorized one isolates whether AIR complexity is what drives
+///   it. `output(128) | proof(rest, bincode)`.
 pub fn process_instruction(_id: &Pubkey, _accts: &[AccountInfo], data: &[u8]) -> ProgramResult {
+    let Some((&discriminator, rest)) = data.split_first() else {
+        return Err(ProgramError::InvalidInstructionData);
+    };
+    match discriminator {
+        0 => process_binding(rest),
+        1 => process_preimage(rest),
+        _ => Err(ProgramError::InvalidInstructionData),
+    }
+}
+
+fn process_binding(data: &[u8]) -> ProgramResult {
     if data.len() < HEAD {
         return Err(ProgramError::InvalidInstructionData);
     }
@@ -138,17 +184,45 @@ pub fn process_instruction(_id: &Pubkey, _accts: &[AccountInfo], data: &[u8]) ->
     let leaf = wide_at(&data[QUERIES_BYTES + 2 * CTX_BYTES..QUERIES_BYTES + 2 * CTX_BYTES + WIDTH_BYTES]);
     let nullifier = wide_at(&data[QUERIES_BYTES + 2 * CTX_BYTES + WIDTH_BYTES..HEAD]);
     let proof_bytes = &data[HEAD..];
+    msg!("heap: {} B before deserialize", heap_used());
 
     let Some(proof) = BindingProof::from_bytes(proof_bytes) else {
         msg!("riverrun M31 binding proof: malformed bytes");
         return Err(ProgramError::InvalidInstructionData);
     };
+    msg!("heap: {} B after deserialize", heap_used());
 
-    if verify_binding_tuned(&proof, action, round, leaf, nullifier, num_queries) {
+    if riverrun_m31::verify_binding_tuned_checkpointed(&proof, action, round, leaf, nullifier, num_queries, || {
+        msg!("heap: {} B after config, before verify()", heap_used());
+    }) {
         msg!("riverrun M31 binding proof verified on-chain");
         Ok(())
     } else {
         msg!("riverrun M31 binding proof rejected");
+        Err(ProgramError::Custom(1))
+    }
+}
+
+fn process_preimage(data: &[u8]) -> ProgramResult {
+    if data.len() < WIDTH_BYTES {
+        return Err(ProgramError::InvalidInstructionData);
+    }
+    let output = wide_at(&data[..WIDTH_BYTES]);
+    let proof_bytes = &data[WIDTH_BYTES..];
+    msg!("heap: {} B before deserialize", heap_used());
+
+    let Some(proof) = PreimageProof::from_bytes(proof_bytes) else {
+        msg!("riverrun M31 preimage proof: malformed bytes");
+        return Err(ProgramError::InvalidInstructionData);
+    };
+    msg!("heap: {} B after deserialize", heap_used());
+
+    if riverrun_m31::verify_preimage(&proof, output) {
+        msg!("heap: {} B after verify()", heap_used());
+        msg!("riverrun M31 preimage proof verified on-chain");
+        Ok(())
+    } else {
+        msg!("riverrun M31 preimage proof rejected");
         Err(ProgramError::Custom(1))
     }
 }

@@ -329,9 +329,27 @@ pub fn verify_binding_tuned(
     nullifier: [u64; WIDTH],
     num_queries: usize,
 ) -> bool {
+    verify_binding_tuned_checkpointed(proof, action, round, leaf, nullifier, num_queries, || {})
+}
+
+/// Same as [`verify_binding_tuned`], calling `checkpoint` once config
+/// construction is done, right before the actual `verify()` call. Exists to
+/// let a caller measure/log memory usage at that exact boundary (e.g. an
+/// on-chain program bisecting where its heap runs out); the no-op default
+/// via [`verify_binding_tuned`] costs nothing extra.
+pub fn verify_binding_tuned_checkpointed(
+    proof: &BindingProof,
+    action: [u64; CONTEXT_LEN],
+    round: [u64; CONTEXT_LEN],
+    leaf: [u64; WIDTH],
+    nullifier: [u64; WIDTH],
+    num_queries: usize,
+    checkpoint: impl FnOnce(),
+) -> bool {
     let air = BindingAir::new();
     let config = make_config_tuned(num_queries);
     let pis = public_values(action, round, leaf, nullifier);
+    checkpoint();
     verify(&config, &air, &proof.inner, &pis).is_ok()
 }
 

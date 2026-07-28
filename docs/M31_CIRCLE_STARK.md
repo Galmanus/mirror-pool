@@ -70,22 +70,32 @@ committee entirely.
 > in an SBF-unsupported `getrandom` backend, `p3-mersenne-31`'s unused
 > Poseidon1/MDS code overflowing SBF's 4KB stack-frame limit at load time,
 > and `tracing`'s `#[instrument]` callsites bloating the ELF's section count.
-> The `.so` now loads and executes on-chain, deserializes a real proof, and
-> reaches `verify()`. **Not yet complete:** `verify()` itself exceeds
-> Solana's hard 256KB heap ceiling, at a CU cost that held ~1.5-2M
-> essentially flat across 4/12/40 FRI queries, meaning the wall is in
-> `verify()`'s fixed setup, not the per-query loop; a LIFO-reclaiming bump
-> allocator was tried and did not close it. Documented precisely, not
-> silently broken: `programs/riverrun-m31-verifier/tests/cu.rs`'s
-> `#[ignore]`d `measure_on_chain_binding_verification_cost` carries the full
-> diagnosis. Separately confirmed: a production (~78 KB, 40-query) proof does
-> not fit a transaction's message-size limit at all (65535 bytes, a `u16`
-> field), exactly the buffer-account requirement this document already
-> specified, not a new problem. `cargo test --manifest-path
-> crates/riverrun-m31/Cargo.toml`; `cargo build-sbf --manifest-path
-> programs/riverrun-m31-verifier/Cargo.toml` then `cargo test --release
-> --test cu -- --ignored --nocapture` from that directory to reproduce the
-> memory wall.
+> The `.so` now loads and executes on-chain, deserializes a real proof
+> (checkpointed with `msg!`: 16,196 of 262,144 heap bytes used, under 10% of
+> budget, all the way up to the `verify()` call for a 4-query `BindingProof`),
+> and reaches `verify()`. **Not yet complete:** `verify()` itself exceeds
+> Solana's hard 256KB heap ceiling, needing over 240KB on top of a proof that
+> only cost 16KB to hold, at a CU cost that held ~1.5-2M essentially flat
+> across 4/12/40 FRI queries (ruling out the per-query loop as the cause). A
+> further, real experiment ruled out AIR complexity too: the smallest
+> possible AIR in this crate (`permutation.rs`'s single-block, non-vectorized
+> preimage proof) exceeds the same ceiling, and costs even more CU before
+> failing (~3.05M), so this is not specific to `BindingAir`'s two-block
+> width. A LIFO-reclaiming bump allocator was also tried and did not close
+> the gap. The wall looks inherent to this CirclePcs / Keccak-MMCS / FRI
+> verifier construction as configured here, independent of both proof size
+> and AIR shape, an open, genuinely uncertain question, not a known-fixable
+> bug. Documented precisely, not silently broken:
+> `programs/riverrun-m31-verifier/tests/cu.rs`'s two `#[ignore]`d tests
+> (`measure_on_chain_binding_verification_cost`,
+> `measure_on_chain_preimage_verification_cost`) carry the full diagnosis.
+> Separately confirmed: a production (~78 KB, 40-query) proof does not fit a
+> transaction's message-size limit at all (65535 bytes, a `u16` field),
+> exactly the buffer-account requirement this document already specified,
+> not a new problem. `cargo test --manifest-path crates/riverrun-m31/Cargo.toml`;
+> `cargo build-sbf --manifest-path programs/riverrun-m31-verifier/Cargo.toml`
+> then `cargo test --release --test cu -- --ignored --nocapture` from that
+> directory to reproduce the memory wall.
 
 Why this is the decisive move: it is the one change that makes riverrun
 simultaneously **(a) post-quantum, (b) transparent / no trusted setup, and (c)

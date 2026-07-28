@@ -27,8 +27,8 @@ pub mod permutation;
 pub mod relation;
 
 pub use binding::{
-    prove_binding, prove_binding_tuned, verify_binding, verify_binding_tuned, BindingProof, CONTEXT_LEN,
-    SECRET_LEN,
+    prove_binding, prove_binding_tuned, verify_binding, verify_binding_tuned,
+    verify_binding_tuned_checkpointed, BindingProof, CONTEXT_LEN, SECRET_LEN,
 };
 pub use membership::{compress, prove_membership, verify_membership, MembershipProof, PathStep, DEPTH, DIGEST_LEN};
 pub use permutation::{prove_preimage, verify_preimage, PreimageProof, WIDTH};
