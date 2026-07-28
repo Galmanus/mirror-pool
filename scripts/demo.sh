@@ -13,14 +13,16 @@ rm -f "$HOME/.riverrun/session" 2>/dev/null || true
 # starts. Two shades of green for depth, a bright row breaking the pattern.
 boot() {
   local GREEN='\033[38;5;46m' DGREEN='\033[38;5;28m' BGREEN='\033[1;38;5;46m' RESET='\033[0m'
-  local rows=10
+  # Fill the whole 80x24 recording terminal (23 rows, one left for the banner
+  # line after), not a small block in the corner leaving the rest black.
+  local rows=23
   clear 2>/dev/null || true
   for frame in $(seq 1 16); do
     for l in $(seq 1 $rows); do
       local shade=$DGREEN
       if (( l % 3 == 0 )); then shade=$GREEN; fi
       local hex=""
-      for ((i=0;i<58;i++)); do hex+=$(printf '%x' $((RANDOM % 16))); done
+      for ((i=0;i<76;i++)); do hex+=$(printf '%x' $((RANDOM % 16))); done
       printf "${shade}%s${RESET}\n" "$hex"
     done
     sleep 0.05
