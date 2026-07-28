@@ -51,6 +51,50 @@ vendor into this submission. Shipping a half-finished in-circuit proof would be 
 mathematics presented as a feature, which is the opposite of what this project stands
 for. We would rather ship what is real and name what is next than fake the finish.
 
+## "PR#1's confidential-value layer and Groth16 membership proof look more complete. Why should a panel weigh riverrun over it?"
+
+We read it closely rather than assert against it. It is genuinely strong
+engineering: a live devnet program, a real ceremony toolkit, a rigorously
+measured effective-k table with an honestly corrected methodology, and an
+on-chain Groth16 membership proof that settles with no participant signature,
+the exact axis named above where riverrun still trails. Two facts from their
+own repository matter for a panel weighing trust, not capability:
+
+1. **A self-disclosed, currently unfixed fund-draining bug.** Their own test,
+   `settle_zk_escrow_is_a_pool_wide_pot_any_leaf_can_spend`
+   (`programs/mirror-pool/tests/integration.rs:1335` on
+   `marcelofeitoza/mirror-pool@feat/mirror-pool-v1`), proves that a
+   participant who deposits nothing (a fee-only crowd commit) can drain a
+   *different* depositor's real escrowed SOL, because no on-chain check ties a
+   settled amount to the leaf that funded it. They document it honestly
+   ("a v1 pool must not hold value it cannot afford to lose") rather than hide
+   it, which is to their credit, but it is live on their deployed devnet
+   program and unfixed in that branch.
+2. **The ceremony's deployed keys are admittedly insecure.** `docs/CEREMONY.md`
+   in that repo states plainly that the verifying keys currently committed and
+   deployed come from an "insecure dev setup," not a real multi-party run. The
+   ceremony *tooling* is real and tested; the *keys actually protecting live
+   value* are not, today.
+
+riverrun cannot have the first bug by construction, not by a fix applied in
+response to finding it: the pool holds no shared escrow at all. `execute_batch`
+pays each round's recipients directly from the relayer's transaction; there is
+no pot for one leaf's proof to drain another leaf's deposit from (verify it
+yourself: `grep -rn escrow programs/mirror-pool/src/` on this repo returns
+nothing). riverrun cannot have the second either, because it has no ceremony
+and no ceremony keys to be insecure, by the same no-trusted-setup argument
+already made above. Neither is a race we are ahead in by luck; both are
+structural consequences of being hash-based and committee-attested rather than
+holding value against a proof of a leaf someone else may have funded.
+
+This does not close riverrun's own named gap (the single-transaction,
+no-committee on-chain proof, still the M31 verifier's job, still not shipped).
+It is not offered as a substitute for that. It is offered as the honest answer
+to "which of these is safer to trust with real value today," which is a
+different question than "which is cryptographically further along," and on
+that question the answer is concrete, cited, and checkable in both
+repositories, not asserted.
+
 ## "What stops a relayer from stealing or redirecting a payout in the batch?"
 
 The committee's attestation is over a digest that binds the pool, root, round, the
