@@ -49,11 +49,20 @@ committee entirely.
 > `SubAirBuilder` (a column-windowed sub-builder, already exported, not
 > vendored) so the inner AIR never sees riverrun's added `bit` column.
 >
-> **Not yet fused.** §1a+§1c (`binding.rs`) and §1b (`membership.rs`) are two
-> separate proofs today, not one. Combining "this leaf comes from my secret"
-> with "this leaf sits under this root" into a single proof, and any on-chain
-> (SBF) verification of either, is real, unstarted work. 12 tests green.
-> `cargo test --manifest-path crates/riverrun-m31/Cargo.toml`.
+> **Composed, real and in-repo (2026-07-28).** `crates/riverrun-m31/src/relation.rs`
+> proves and verifies the full relation end to end: `prove_full_relation` /
+> `verify_full_relation` compose `binding.rs` and `membership.rs` via a shared
+> public leaf value, checked outside either proof's algebraic constraints, the
+> same composition an on-chain verifier would do (two proof checks plus one
+> public-value equality). **Not one monolithic trace**: §1a+§1c and §1b stay
+> two separately-verified proofs, not fused into a single AIR (that would need
+> a row-type-selector AIR whose layout serves both a same-row two-block
+> computation and a multi-row chained fold; real, larger, unstarted work). A
+> regression test splices one member's real binding proof onto a *different*
+> member's real membership proof, each individually valid alone, and confirms
+> the composed check rejects it. 14 tests green. Still not built: any on-chain
+> (SBF) verification of any of this. `cargo test --manifest-path
+> crates/riverrun-m31/Cargo.toml`.
 
 Why this is the decisive move: it is the one change that makes riverrun
 simultaneously **(a) post-quantum, (b) transparent / no trusted setup, and (c)

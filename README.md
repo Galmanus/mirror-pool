@@ -51,7 +51,7 @@ you can check in minutes:
 - **One round, one proof.** 16 memberships settle in a single **45 KB** STARK,
   about **8x** smaller than 16 separate, verified once.
 - **More than a pool.** riverrun ID (seven unlinkable powers), a 47-page whitepaper
-  with proofs, and **179 tests** green.
+  with proofs, and **193 tests** green.
 
 ## In one breath
 
@@ -368,9 +368,20 @@ in one transaction with no committee. The transparent Winterfell proof is **3.77
 compute units**, above Solana's 1.4M per-transaction cap, so today it is verified
 off-chain and gated on-chain by an M-of-N committee. A Circle STARK over the
 Mersenne-31 field fits a single transaction (verified end to end in the Solana VM at
-**159,849 CU**, with riverrun's action binding), but not yet on riverrun's full
-Merkle-path relation. Closing that is the next milestone, and it is specified, not
-hand-waved: [`docs/M31_CIRCLE_STARK.md`](docs/M31_CIRCLE_STARK.md).
+**159,849 CU**, with riverrun's action binding, on the murkl reference AIR extended
+with that binding), but not yet on riverrun's own full Merkle-path relation.
+
+**riverrun's own M31 relation, real and native (2026-07-28):** `crates/riverrun-m31`
+is riverrun's own from-scratch Circle-STARK code (Plonky3, not murkl's reference
+AIR) and now proves, end to end, every piece §1 of the migration spec calls for: a
+leaf and a nullifier bound to one shared secret (`binding.rs`), a leaf proven under
+a public root via a private, order-hidden path (`membership.rs`), and the two
+composed into the full relation via a shared public leaf value (`relation.rs`).
+14 tests green, no vendored code. Not yet done, named honestly: fusing this into
+one monolithic proof rather than two composed ones, and any on-chain (SBF)
+verification of it at all, the two things that would make it the property above.
+Closing both is the next milestone, and it is specified, not hand-waved:
+[`docs/M31_CIRCLE_STARK.md`](docs/M31_CIRCLE_STARK.md).
 
 Nothing here is faked. Every claim has a test, a signature, or a measured number
 beside it, and every limitation is named where the claim is made.
@@ -446,6 +457,6 @@ credit for the shape of the idea, not the math.
 - [`docs/DEFENSE.md`](docs/DEFENSE.md): honest answers to the hardest questions,
   including the one axis a curve-based submission still leads.
 
-MIT. **179 tests green** across the repo (117 in the default workspace, incl. the
+MIT. **193 tests green** across the repo (117 in the default workspace, incl. the
 unified act derivation and the act() SDK, plus the excluded heavy crates: STARK 31,
-mirror-pool 24 e2e incl. the batch settlement, pool-zk 7).
+mirror-pool 24 e2e incl. the batch settlement, pool-zk 7, M31 14).
