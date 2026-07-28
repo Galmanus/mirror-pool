@@ -457,6 +457,10 @@ credit for the shape of the idea, not the math.
 
 - **[Whitepaper (PDF)](paper/riverrun.pdf)**: the philosophy, the cryptography, and
   the mathematics of anonymity, with proofs.
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): every crate and program in this
+  repo, one line each, with an honest `[live]`/`[tested]`/`[blocked]` status, and
+  the two membership-proof paths (Winterfell f128, Plonky3 Circle-STARK) compared
+  directly.
 - [`docs/DEVNET_ROUND.md`](docs/DEVNET_ROUND.md): the live round, every signature.
 - [`docs/POST_QUANTUM_VS_CURVE_POOLS.md`](docs/POST_QUANTUM_VS_CURVE_POOLS.md): hash
   vs curve, honestly.
