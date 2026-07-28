@@ -3,7 +3,7 @@ name = "riverrun-m31"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "The post-quantum M31 Circle-STARK path for riverrun. Built on the official, MIT/Apache-2.0-licensed Plonky3 crates (field, Poseidon2 permutation, FRI, Circle PCS) — no vendored or unlicensed code."
+description = "The post-quantum M31 Circle-STARK path for riverrun. Built on the official, MIT/Apache-2.0-licensed Plonky3 crates (field, Poseidon2 permutation, FRI, Circle PCS); one dependency (p3-util) carries a one-function, documented patch for Solana SBF toolchain compatibility, see vendor/p3-util-0.6.2-sbf-patch/PATCH.md; no other vendored or unlicensed code."
 
 [dependencies]
 p3-air = "0.6.2"
@@ -20,4 +20,23 @@ p3-fri = "0.6.2"
 p3-challenger = "0.6.2"
 p3-keccak = "0.6.2"
 p3-merkle-tree = "0.6.2"
-rand = "0.9"
+rand = { version = "0.9", default-features = false }
+bincode = "1.3"
+
+# One-function SBF-toolchain-compatibility patch, documented in
+# vendor/p3-util-0.6.2-sbf-patch/PATCH.md. Not a fork we intend to diverge on;
+# remove this the moment Solana's platform-tools ships a newer rustc or
+# upstream Plonky3 avoids the unstable API itself.
+[patch.crates-io]
+p3-util = { path = "vendor/p3-util-0.6.2-sbf-patch" }
+
+# Matches this repo's other Solana programs' release profile (contracts/receipt
+# etc.): aggressive DCE/LTO, which SBF's link-time stack-frame check benefits
+# from directly (unreferenced functions from dependencies riverrun-m31 doesn't
+# actually call, e.g. p3-mersenne-31's Poseidon1/MDS code, should not survive
+# to be checked at all).
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"

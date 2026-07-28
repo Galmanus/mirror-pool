@@ -200,6 +200,20 @@ pub struct BindingProof {
     inner: Proof<Config>,
 }
 
+impl BindingProof {
+    /// Serialize to bytes (`bincode`, over `Proof`'s own `serde` impl), the
+    /// wire format an on-chain verifier reads from instruction data.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        bincode::serialize(&self.inner).expect("Proof<Config> is always serializable")
+    }
+
+    /// Deserialize from bytes produced by [`BindingProof::to_bytes`]. `None`
+    /// on malformed input; callers on-chain treat that as proof rejection.
+    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        bincode::deserialize(bytes).ok().map(|inner| Self { inner })
+    }
+}
+
 /// Prove that `leaf = permute(secret ‖ action)` and
 /// `nullifier = permute(secret ‖ round)` for one shared `secret`, returning the
 /// proof and both public outputs.
@@ -403,5 +417,29 @@ mod tests {
         let config = make_config();
         // Expected to panic: the shared-secret constraint is violated.
         let _ = prove(&config, &air, trace, &pis);
+    }
+
+    #[test]
+    fn a_proof_survives_a_byte_round_trip() {
+        // The wire format an on-chain verifier actually reads: serialize,
+        // deserialize, and confirm the round-tripped proof still verifies
+        // against the same public values, exactly as the original did.
+        let s = secret(1);
+        let action = context(1);
+        let round = context(2);
+        let (proof, leaf, nullifier) = prove_binding(s, action, round);
+        let bytes = proof.to_bytes();
+        eprintln!("BindingProof serialized size: {} bytes", bytes.len());
+        let round_tripped = BindingProof::from_bytes(&bytes).expect("valid bytes must deserialize");
+        assert!(
+            verify_binding(&round_tripped, action, round, leaf, nullifier),
+            "a proof must still verify after a to_bytes/from_bytes round trip"
+        );
+    }
+
+    #[test]
+    fn garbage_bytes_do_not_deserialize_into_a_proof() {
+        let garbage = [0xFFu8; 64];
+        assert!(BindingProof::from_bytes(&garbage).is_none(), "malformed bytes must not parse as a proof");
     }
 }
