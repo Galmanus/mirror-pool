@@ -23,8 +23,19 @@ committee entirely.
 > crates.io under MIT OR Apache-2.0. It proves and verifies, end to end with a
 > genuine Circle-STARK proof, knowledge of a Poseidon2-M31 permutation preimage
 > (canonical Plonky3 round constants, not invented ones), which validates the whole
-> pipeline the harder relation below needs. It is not yet the Merkle-membership
-> relation (§1) or on-chain (SBF) verification: `cargo test --manifest-path
+> pipeline the harder relation below needs.
+>
+> **§1a + §1c, real and in-repo (2026-07-28).** `crates/riverrun-m31/src/binding.rs`
+> proves, as one Circle-STARK proof, that a leaf (`Poseidon2(secret ‖ action)`) and
+> a nullifier (`Poseidon2(secret ‖ round)`) are bound to the same private secret:
+> two Poseidon2 permutations packed into one row via Plonky3's
+> `VectorizedPoseidon2Air`, with a same-row equality constraint over the shared
+> secret cells. A dedicated soundness test attempts to prove a leaf and a
+> nullifier built from two *different* secrets and confirms this panics at
+> proving time, the trace is unsatisfiable, not merely that verification later
+> rejects it. 8 tests green, no vendored code (same Plonky3 crates as above).
+> Still not built: §1b, binding `leaf` under a public Merkle root, and on-chain
+> (SBF) verification of any of this. `cargo test --manifest-path
 > crates/riverrun-m31/Cargo.toml`.
 
 Why this is the decisive move: it is the one change that makes riverrun

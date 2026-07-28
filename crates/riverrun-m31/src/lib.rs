@@ -9,13 +9,16 @@
 //! `docs/M31_CIRCLE_STARK.md` calls for a Circle STARK over Mersenne-31 whose
 //! membership proof verifies in a single Solana transaction. The heavy machinery
 //! (the field, the permutation, FRI, the circle-domain PCS) is already built and
-//! vetted upstream; what riverrun adds is its own relation on top. This module is
-//! the first real step: prove and verify, end to end with a genuine Circle-STARK
-//! proof, knowledge of a Poseidon2-M31 preimage. It is deliberately not yet the
-//! full Merkle-membership relation (`docs/M31_CIRCLE_STARK.md`'s next milestone);
-//! it validates the whole pipeline, wired correctly, before that relation is built
-//! on top of it.
+//! vetted upstream; what riverrun adds is its own relation on top. `permutation`
+//! is the first real step: prove and verify, end to end with a genuine
+//! Circle-STARK proof, knowledge of a Poseidon2-M31 preimage. `binding` is the
+//! second: prove a leaf and a nullifier share one secret (§1a + §1c). Neither
+//! is yet the full Merkle-membership relation (§1b, `docs/M31_CIRCLE_STARK.md`'s
+//! next milestone, still unstarted); each validates one more real slice of the
+//! pipeline before that relation is built on top.
 
+pub mod binding;
 pub mod permutation;
 
+pub use binding::{prove_binding, verify_binding, BindingProof, CONTEXT_LEN, SECRET_LEN};
 pub use permutation::{prove_preimage, verify_preimage, PreimageProof, WIDTH};
