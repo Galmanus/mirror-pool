@@ -262,8 +262,6 @@ dependencies = [
 [[package]]
 name = "p3-mersenne-31"
 version = "0.6.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6052ea20bbf7fe76976295b9de4ed6b9d9e5b5005dd39f602256c0f51e4e61fc"
 dependencies = [
  "itertools",
  "num-bigint",
@@ -271,8 +269,6 @@ dependencies = [
  "p3-dft",
  "p3-field",
  "p3-matrix",
- "p3-mds",
- "p3-poseidon1",
  "p3-poseidon2",
  "p3-symmetric",
  "p3-util",

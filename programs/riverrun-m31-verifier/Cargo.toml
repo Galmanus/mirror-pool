@@ -1,0 +1,59 @@
+[package]
+name = "riverrun-m31-verifier"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "On-chain verification of riverrun's own M31 Circle-STARK binding relation (leaf+nullifier share a secret): measures whether it fits Solana SBF, and at what cost, mirroring programs/stark-verifier's honesty for the Winterfell f128 path."
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "riverrun_m31_verifier"
+
+[features]
+default = ["custom-heap"]
+no-entrypoint = []
+custom-heap = []
+
+[dependencies]
+solana-program = "2"
+riverrun-m31 = { path = "../../crates/riverrun-m31" }
+# Plonky3's crates (p3-uni-stark, p3-poseidon2-air, p3-air, ...) instrument
+# several functions with #[instrument] (tracing's "attributes" feature),
+# each generating a named static CALLSITE symbol in its own ELF section.
+# max_level_off compiles all of that out at the macro level (Cargo feature
+# unification applies it to every crate pulling this tracing version), so
+# those sections never exist in the first place.
+tracing = { version = "0.1", default-features = false, features = ["max_level_off"] }
+
+# Cargo [patch] only applies from the manifest of whatever package is
+# currently the build root; riverrun-m31's own patch (see
+# ../../crates/riverrun-m31/vendor/p3-util-0.6.2-sbf-patch/PATCH.md) does not
+# propagate here automatically, so it is repeated. Same patch, same reason.
+[patch.crates-io]
+p3-util = { path = "../../crates/riverrun-m31/vendor/p3-util-0.6.2-sbf-patch" }
+p3-mersenne-31 = { path = "../../crates/riverrun-m31/vendor/p3-mersenne-31-0.6.2-sbf-patch" }
+
+[dev-dependencies]
+litesvm = "0.6"
+solana-compute-budget = "2"
+solana-sdk = "2"
+
+# codegen-units=1 + lto=true are load-bearing, not cosmetic: without them the
+# linker emits one .data.<mangled_symbol> / .bss.<mangled_symbol> section per
+# static instead of consolidating into single .data/.bss sections. The SBF
+# loader (litesvm's add_program_from_file, and a real cluster) rejects that
+# shape with InvalidAccountData, confirmed by directly diffing `readelf -S`
+# against programs/stark-verifier's clean-shaped .so (9 sections there, 21
+# here without this profile). Separately, this profile is NOT what fixes the
+# Poseidon1/MDS stack-frame overflow (that's the p3-mersenne-31 patch above,
+# a real code-content issue); the two problems looked similar but were not
+# the same fix.
+[profile.release]
+opt-level = "z"
+overflow-checks = true
+debug = 0
+strip = "symbols"
+debug-assertions = false
+panic = "abort"
+codegen-units = 1
+lto = true

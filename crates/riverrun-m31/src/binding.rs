@@ -159,7 +159,21 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for BindingAir {
     }
 }
 
+/// Production security level: 40 FRI queries. Use [`make_config_tuned`]
+/// directly only for parameter-sweep measurement, never to ship a weaker
+/// proof under this name.
 fn make_config() -> Config {
+    make_config_tuned(40)
+}
+
+/// Same construction as [`make_config`], with the FRI query count exposed.
+/// Not a way to weaken production proofs: `prove_binding`/`verify_binding`
+/// always call [`make_config`] with the real parameter. This exists so a
+/// caller who explicitly wants a different point on the size/security
+/// tradeoff (e.g. measuring on-chain verification cost at a proof size that
+/// fits a transaction's message-size limit) can ask for it by name, and the
+/// reduced-security choice is visible at every call site, not hidden.
+pub fn make_config_tuned(num_queries: usize) -> Config {
     let byte_hash = ByteHash {};
     let field_hash = FieldHash::new(byte_hash);
     let compress = Compress::new(byte_hash);
@@ -169,7 +183,7 @@ fn make_config() -> Config {
         log_blowup: 1,
         log_final_poly_len: 0,
         max_log_arity: 1,
-        num_queries: 40,
+        num_queries,
         commit_proof_of_work_bits: 0,
         query_proof_of_work_bits: 8,
         mmcs: challenge_mmcs,
@@ -216,11 +230,25 @@ impl BindingProof {
 
 /// Prove that `leaf = permute(secret ‖ action)` and
 /// `nullifier = permute(secret ‖ round)` for one shared `secret`, returning the
-/// proof and both public outputs.
+/// proof and both public outputs. Production security level (40 FRI queries).
 pub fn prove_binding(
     secret: [u64; SECRET_LEN],
     action: [u64; CONTEXT_LEN],
     round: [u64; CONTEXT_LEN],
+) -> (BindingProof, [u64; WIDTH], [u64; WIDTH]) {
+    prove_binding_tuned(secret, action, round, 40)
+}
+
+/// Same as [`prove_binding`], with the FRI query count exposed. See
+/// [`make_config_tuned`]'s doc: not a way to ship a weaker proof under the
+/// production name, a way to measure a different, explicit point on the
+/// size/security tradeoff (e.g. a proof small enough to fit a transaction's
+/// message-size limit, for on-chain verification-cost measurement).
+pub fn prove_binding_tuned(
+    secret: [u64; SECRET_LEN],
+    action: [u64; CONTEXT_LEN],
+    round: [u64; CONTEXT_LEN],
+    num_queries: usize,
 ) -> (BindingProof, [u64; WIDTH], [u64; WIDTH]) {
     let leaf_input = pack(secret, action);
     let nullifier_input = pack(secret, round);
@@ -259,7 +287,7 @@ pub fn prove_binding(
     >(inputs, &constants, 0);
 
     let pis = public_values(action, round, leaf_output, nullifier_output);
-    let config = make_config();
+    let config = make_config_tuned(num_queries);
     let proof = prove(&config, &air, trace, &pis);
     (BindingProof { inner: proof }, leaf_output, nullifier_output)
 }
@@ -288,8 +316,21 @@ pub fn verify_binding(
     leaf: [u64; WIDTH],
     nullifier: [u64; WIDTH],
 ) -> bool {
+    verify_binding_tuned(proof, action, round, leaf, nullifier, 40)
+}
+
+/// Same as [`verify_binding`], with the FRI query count exposed; must match
+/// whatever count the proof was produced with ([`prove_binding_tuned`]).
+pub fn verify_binding_tuned(
+    proof: &BindingProof,
+    action: [u64; CONTEXT_LEN],
+    round: [u64; CONTEXT_LEN],
+    leaf: [u64; WIDTH],
+    nullifier: [u64; WIDTH],
+    num_queries: usize,
+) -> bool {
     let air = BindingAir::new();
-    let config = make_config();
+    let config = make_config_tuned(num_queries);
     let pis = public_values(action, round, leaf, nullifier);
     verify(&config, &air, &proof.inner, &pis).is_ok()
 }

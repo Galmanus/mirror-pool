@@ -16,6 +16,7 @@ exclude = [
     "crates/riverrun-pool-zk",
     "programs/mirror-pool",
     "programs/stark-verifier",
+    "programs/riverrun-m31-verifier",
 ]
 
 # The on-chain Solana program and the round coordinator join the workspace as they
