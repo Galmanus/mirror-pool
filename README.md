@@ -234,17 +234,22 @@ Every alternative gives up at least one of these. riverrun gives up none.
 **You measure your anonymity, you do not trust it.** Every noise pool advertises
 `1/k`. That counts members and ignores where their money came from, which on a
 public chain is public. riverrun traces each wallet's funding graph and reports the
-real number. On a live mainnet pool an advertised **k = 30** was worth an effective
-**6.5**, and one depositor, alone in their funding class, was worth exactly **1**.
-The ruler scores any pool, including the other submissions in this bounty.
+real number. On a live mainnet pool an advertised **k = 30** was worth between
+**1.0 and 6.5** — 11 of the 30 depositors reached an attributable origin, and the
+19 that did not are a gap, not a crowd, so the run brackets rather than resolves.
+One depositor, alone in their funding class, was worth exactly **1**. The tool
+**refuses** to quote the 6.5 on its own: at 37% resolved the sample is under the
+50% floor its own gate enforces. Bracket, bootstrap range and refusal are in
+`riverrun runs` and `docs/EFFECTIVE_K.md`. The ruler scores any pool, including
+the other submissions in this bounty.
 
 ```mermaid
 flowchart LR
     P["The pool says:<br/><b>hidden among 30</b>"] --> S{"Group everyone by<br/>where their money<br/>came from (public!)"}
-    S --> G1["funded from<br/>exchange A<br/><b>18 people</b>"]
-    S --> G2["funded from<br/>exchange B<br/><b>6 people</b>"]
-    S --> G3["you, a source<br/>no one else shares<br/><b>1 person</b>"]
-    G3 --> R["Your REAL crowd = <b>1</b><br/>advertised 30, effective ~6.5"]
+    S --> G1["no origin found<br/>within the trace bound<br/><b>19 people</b>"]
+    S --> G2["each reached a<br/>different exchange<br/><b>11 people, 11 classes</b>"]
+    G2 --> G3["you, a source<br/>no one else shares<br/><b>1 person</b>"]
+    G3 --> R["Your REAL crowd = <b>1</b><br/>advertised 30, effective 1.0…6.5"]
 ```
 
 **A full round, live on devnet.** Eight distinct members each committed (each

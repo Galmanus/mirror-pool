@@ -30,8 +30,10 @@ pub mod rng;
 pub mod cli;
 #[cfg(feature = "onchain")]
 pub mod rpc;
+pub mod runs;
 pub mod scenario;
 pub mod tracer;
+pub mod uncertainty;
 
 use scenario::Scheme;
 use tracer::Tracer;

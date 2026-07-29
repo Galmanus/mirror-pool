@@ -15,6 +15,11 @@ use std::collections::HashSet;
 
 use crate::rpc::{fee_payer, provenance_class, system_transfers, Rpc, HUB_THRESHOLD};
 use crate::rng::SplitMix64;
+use crate::runs::PRIVACY_CASH_N30;
+use crate::uncertainty::{
+    effective_k_interval, Bracket, Census, Gate, Interval, MemberOutcome, UnresolvedReason,
+    DEFAULT_REPLICATES, DEFAULT_SEED,
+};
 use crate::{
     effective_k, evaluate, exposure_rank, preflight, scenario, valid_pubkey, EffectiveK,
     SchemeStats, Verdict,
@@ -495,6 +500,7 @@ pub fn main() {
         "watch" => cmd_watch(rest, json),
         "trace" => cmd_trace(rest, json),
         "exhibit" => cmd_exhibit(json),
+        "runs" => cmd_runs(json),
         "id" => cmd_id(rest, json),
         "pq" | "quantum" => cmd_pq(rest),
         "floor" | "selffill" => cmd_floor(rest, json),
@@ -727,6 +733,14 @@ struct PoolMeasurement {
     reach_origin: usize,
     ek: EffectiveK,
     severity: &'static str,
+    /// Every member accounted for: resolved, unresolved, or lost to our own RPC.
+    census: Census,
+    /// The two readings of the unresolved members. `ek` above is its upper end.
+    bracket: Bracket,
+    /// The spread of the upper reading over the draw of depositors.
+    interval: Option<Interval>,
+    /// Whether this sample supports quoting a single number at all.
+    gate: Gate,
 }
 
 /// Measure a pool once: sample depositors, trace each one's provenance, and
@@ -747,17 +761,33 @@ fn measure_pool(
     if verbose {
         eprintln!("tracing each one's funding graph...");
     }
-    let classes: Vec<String> = depositors
-        .iter()
-        .enumerate()
-        .map(|(i, d)| {
-            let c = provenance_class(rpc, d, budget, DEPTH, NODES, FUNDERS, SCAN_TX);
-            if verbose {
-                eprintln!("  [{:>2}/{}] {}", i + 1, depositors.len(), short_class(&c));
-            }
-            c
-        })
-        .collect();
+    // Per-member outcomes, not just labels. A member whose trace hit an RPC
+    // failure is recorded as ours and leaves the population: a throttled call
+    // that returns nothing must never read as "this wallet has no funder", which
+    // is exactly the bucket that inflates an anonymity figure.
+    let mut outcomes: Vec<MemberOutcome> = Vec::with_capacity(depositors.len());
+    let mut classes: Vec<String> = Vec::with_capacity(depositors.len());
+    for (i, d) in depositors.iter().enumerate() {
+        let failures_before = rpc.failures;
+        let budget_before = *budget;
+        let c = provenance_class(rpc, d, budget, DEPTH, NODES, FUNDERS, SCAN_TX);
+        if verbose {
+            eprintln!("  [{:>2}/{}] {}", i + 1, depositors.len(), short_class(&c));
+        }
+        let failed = rpc.failures > failures_before;
+        let starved = budget_before > 0 && *budget == 0;
+        let outcome = if c != "rootless" {
+            MemberOutcome::Resolved { class: c.clone() }
+        } else if failed {
+            MemberOutcome::Unresolved { reason: UnresolvedReason::RpcFailure }
+        } else if starved {
+            MemberOutcome::Unresolved { reason: UnresolvedReason::TraceBudgetExhausted }
+        } else {
+            MemberOutcome::Unresolved { reason: UnresolvedReason::NoOriginWithinBound }
+        };
+        outcomes.push(outcome);
+        classes.push(c);
+    }
 
     let mut seen: Vec<(&String, usize)> = Vec::new();
     for c in &classes {
@@ -771,7 +801,25 @@ fn measure_pool(
     let sizes: Vec<usize> = seen.iter().map(|(_, n)| *n).collect();
     let ek = effective_k(&sizes);
     let severity = severity(ek.effective, classes.len(), ek.worst_case);
-    Some(PoolMeasurement { depositors_sampled: classes.len(), reach_origin, ek, severity })
+
+    let census = Census::of(&outcomes);
+    let bracket = Bracket::from_outcomes(&outcomes)?;
+    let gate = bracket.gate(&census);
+    // The interval is around the reading actually reported — the one where the
+    // unresolved share a class — and it holds n fixed, so it is a statement about
+    // this sample size only.
+    let interval = effective_k_interval(&classes, DEFAULT_REPLICATES, DEFAULT_SEED);
+
+    Some(PoolMeasurement {
+        depositors_sampled: classes.len(),
+        reach_origin,
+        ek,
+        severity,
+        census,
+        bracket,
+        interval,
+        gate,
+    })
 }
 
 /// Exit cleanly when a live command recovered no data, distinguishing a genuine
@@ -808,6 +856,8 @@ fn help() {
          \x20 trace     <wallet>              one wallet's funding provenance, one hop at a time\n\
          \x20 exhibit                         the effective-k metric on riverrun's own\n\
          \x20                                 constructions (offline, no RPC)\n\
+         \x20 runs                            this repo's published measurements, with their\n\
+         \x20                                 bracket, interval and gate (offline, no RPC)\n\
          \x20 id <new|show|erosion>          riverrun ID: one secret, a different\n\
          \x20                                 unlinkable identity per context, offline\n\
          \x20 pq [X] [Z]                      post-quantum posture + Mosca inequality\n\
@@ -946,8 +996,21 @@ fn cmd_audit(args: &[String], json: bool) {
     let Some(m) = measure_pool(&mut rpc, pool, n, &mut budget, true) else {
         no_data_exit(&rpc, "no depositors recovered: no recent SOL deposits (inactive, or not a SOL pool).");
     };
-    let PoolMeasurement { depositors_sampled, reach_origin: rooted, ek, severity: sev } = m;
+    let PoolMeasurement {
+        depositors_sampled,
+        reach_origin: rooted,
+        ek,
+        severity: sev,
+        census,
+        bracket,
+        interval,
+        gate,
+    } = m;
     let classes_len = depositors_sampled;
+    let refusal = match &gate {
+        Gate::Publish => None,
+        Gate::Refuse { reason } => Some(reason.clone()),
+    };
 
     if json {
         let obj = serde_json::json!({
@@ -965,6 +1028,33 @@ fn cmd_audit(args: &[String], json: bool) {
             "effective_k": ek.effective,
             "worst_case": ek.worst_case,
             "residual_bits": ek.residual_bits,
+            // the two readings of the members that reached no origin
+            "effective_k_bracket": {
+                "unresolved_merged": bracket.upper.effective,
+                "unresolved_split": bracket.lower.effective,
+                "resolved": bracket.resolved,
+                "unresolved": bracket.unresolved,
+                "resolved_fraction": bracket.resolved_fraction(),
+            },
+            "census": {
+                "attempted": census.attempted(),
+                "resolved": census.resolved,
+                "no_origin_within_bound": census.no_origin_within_bound,
+                "trace_budget_exhausted": census.trace_budget_exhausted,
+                "rpc_failure": census.rpc_failure,
+                "failure_rate": census.failure_rate(),
+            },
+            "sampling_interval": interval.map(|i| serde_json::json!({
+                "statistic": "effective_k, unresolved merged",
+                "point": i.point,
+                "lo": i.lo,
+                "hi": i.hi,
+                "resampling_bias": i.resampling_bias(),
+                "replicates": i.replicates,
+                "seed": format!("{:#018x}", i.seed),
+            })),
+            "publishable": refusal.is_none(),
+            "refusal": refusal,
             "is_floor": true,
             "reliable": rpc.failures == 0,
             "rpc_calls": rpc.calls,
@@ -988,9 +1078,32 @@ fn cmd_audit(args: &[String], json: bool) {
         ek.worst_case
     );
     println!(
+        "unresolved bracket     : {:.1} … {:.1}  ({} of {} reached an origin)",
+        bracket.lower.effective,
+        bracket.upper.effective,
+        bracket.resolved,
+        bracket.measured()
+    );
+    if let Some(i) = interval {
+        println!(
+            "95% resampling range   : {:.1} … {:.1}  (bias {:+.1}, {} replicates, seed {:#018x})",
+            i.lo, i.hi, i.resampling_bias(), i.replicates, i.seed
+        );
+    }
+    println!("census                 : {}", census.summary());
+    match &refusal {
+        Some(reason) => println!(
+            "{}: {reason}\n\
+             The effective k above is the favourable end of that bracket, not a result.",
+            red("REFUSED")
+        ),
+        None => println!("gate                   : {}", green("PUBLISHABLE")),
+    }
+    println!(
         "\nAdvertised anonymity counts members. Effective k is what those members are\n\
-         worth once an adversary sorts them by funding provenance. A floor: bounded\n\
-         trace, SOL only. See docs/EFFECTIVE_K.md."
+         worth once an adversary sorts them by funding provenance — and members whose\n\
+         bounded walk found no origin are a gap, not a class, which is what the bracket\n\
+         spans. A floor: bounded trace, SOL only. See docs/EFFECTIVE_K.md."
     );
     if rpc.failures > 0 {
         println!("{}: {} RPC call(s) failed, this is a partial floor, not the full picture.", yellow("WARNING"), rpc.failures);
@@ -1071,6 +1184,8 @@ fn run_scan(pools: &[String], json: bool) {
                     "effective_k": m.ek.effective,
                     "worst_case": m.ek.worst_case,
                     "reach_origin": m.reach_origin,
+                    "effective_k_bracket": [m.bracket.lower.effective, m.bracket.upper.effective],
+                    "publishable": m.gate.publishes(),
                     "reliable": *f == 0,
                     "rpc_failures": f,
                 })
@@ -1323,6 +1438,67 @@ fn cmd_id(args: &[String], json: bool) {
             println!("  riverrun id show <secret> <context>   your shape/fit/turn in a context");
             println!("  riverrun id erosion                   how a persistent identity erodes, when to rotate");
         }
+    }
+}
+
+/// The runs this repository has published, re-measured offline with their
+/// uncertainty attached. No RPC: it recomputes from the committed histogram, so
+/// a reader gets the same bytes we did.
+fn cmd_runs(json: bool) {
+    let run = PRIVACY_CASH_N30;
+    let b = run.bracket();
+    let i = run.interval();
+    let c = run.census();
+    let refusal = match b.gate(&c) {
+        Gate::Publish => None,
+        Gate::Refuse { reason } => Some(reason),
+    };
+
+    if json {
+        let obj = serde_json::json!({
+            "tool": "riverrun",
+            "version": env!("CARGO_PKG_VERSION"),
+            "command": "runs",
+            "offline": true,
+            "runs": [{
+                "source": run.source,
+                "pool": run.pool,
+                "sampled": run.sampled,
+                "resolved": b.resolved,
+                "unresolved": b.unresolved,
+                "effective_k_bracket": {
+                    "unresolved_merged": b.upper.effective,
+                    "unresolved_split": b.lower.effective,
+                },
+                "sampling_interval": {
+                    "statistic": "effective_k, unresolved merged",
+                    "point": i.point,
+                    "lo": i.lo,
+                    "hi": i.hi,
+                    "resampling_bias": i.resampling_bias(),
+                    "replicates": i.replicates,
+                    "seed": format!("{:#018x}", i.seed),
+                },
+                "publishable": refusal.is_none(),
+                "refusal": refusal,
+                "raw_sample_committed": false,
+            }],
+        });
+        println!("{}", serde_json::to_string_pretty(&obj).unwrap());
+        return;
+    }
+
+    println!("{}\n", cyan("riverrun: the published runs, with what they do not know"));
+    println!("  {} {}\n", dim("source:"), run.source);
+    for line in run.report().lines() {
+        println!("  {line}");
+    }
+    println!();
+    for line in [
+        "The class histogram is committed; the per-member addresses and funding edges",
+        "were not recorded, so this recomputes the arithmetic, not the tracing.",
+    ] {
+        println!("  {}", dim(line));
     }
 }
 

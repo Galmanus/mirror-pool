@@ -43,6 +43,62 @@ Reproduce it:
 cargo run --features onchain --bin pool-provenance -- <POOL_PROGRAM_ID> 30
 ```
 
+## What that number does not know, and the gate that now refuses it
+
+The 6.5 above is a point estimate from one sample with two uncertainties stripped
+off it. Both are now computed, and the run is re-measured offline against its own
+committed histogram by `riverrun runs` (no RPC, fixed seed):
+
+```
+effective-k, unresolved merged (as published) : 6.45
+effective-k, unresolved split (adversarial)   : 1.00
+bracket                                       : 1.00 … 6.45 members
+95% resampling range of the merged reading    : 4.90 … 13.31
+                                                (bias +1.79, 10,000 replicates,
+                                                 seed 0x726976657272756e)
+gate : REFUSED — 11 of 30 members (37%) reached an origin, under the 50% floor
+```
+
+**The bracket.** 19 of the 30 depositors reached no attributable origin within
+the trace bound (depth 3, 14 nodes, SOL transfers only). They were reported as
+one shared "rootless" class. That is a *reading*, not a measurement: merging them
+is the most favourable interpretation available, and it is the one that produced
+6.5. Split them into singletons — the adversarial reading, equally consistent
+with what was observed — and the same run reads as **1.0**. The truth is
+somewhere in 1.0…6.5, and most of the published number is the part we did not
+resolve. `riverrun_trace::uncertainty::Bracket` computes both ends exactly.
+
+**The sampling range.** Resampling the 30 members with replacement and
+recomputing effective-k puts the estimator in 4.9…13.3. It is a bootstrap
+percentile range, **not** a confidence interval, and it does not contain the
+point at its centre: the population is one crowd plus eleven singletons, and
+resampling drops a singleton class about 37% of the time, which raises the
+estimate. The `+1.79` bias is that tail, reported next to the range instead of
+hidden inside it. A second bias runs the same way and is *not* corrected here:
+plug-in entropy from counts understates `H(C)` at small `n`, and by
+`H(X|C) = log2 K − H(C)` that overstates effective-k. Every effective-k in this
+repository is plausibly optimistic.
+
+**The gate.** `Bracket::gate` refuses to publish a single effective-k when fewer
+than half the members resolved, or fewer than 8 did, or more than 1% were lost to
+our own RPC. This run fails the first: 37% resolved. The refusal is enforced in
+code and tested (`the_published_run_does_not_pass_this_crate_s_own_gate`), not
+printed as a caveat someone can drop when quoting the figure. **6.5 is the
+ceiling of a bracket, not a result.** The honest statement of this measurement is
+*"a live pool advertising 30 delivers between 1.0 and 6.5, and this sample cannot
+narrow it further"*.
+
+`riverrun audit` now emits the census, the bracket, the range and the gate
+verdict on every live run, in text and in `--json`.
+
+**What is still missing, named rather than implied.** The per-member evidence of
+this run — the sampled depositor addresses, the funding edges walked, the hubs
+reached — was never written to disk. Only the class histogram is committed, so a
+third party can recompute the arithmetic (`riverrun runs`) but cannot re-check
+the tracing without re-running against a live RPC and drawing a different sample.
+The neighbouring measurement in this bounty (`solanabr/mirror-pool` PR #5) commits
+its raw per-member chains and is offline-checkable in a way this run is not.
+
 ## What this is not
 
 **Not a vulnerability in that pool.** No deposit-pool design can control where
@@ -127,7 +183,24 @@ once provenance partitions it?* — an effective set size, measured against a
 deployed pool. Different object, different metric, same channel, and neither
 subsumes the other.
 
-No other `mirror-pool` submission measures this channel.
+**And inside `mirror-pool` too.** [PR
+#5](https://github.com/solanabr/mirror-pool/pull/5) (@thiagorochatr) measures the
+same channel against a live mainnet mixer and reports `ρ = 0.0955` with an
+unresolved bracket of `0.0350…0.1136` and a 95% sampling interval of
+`0.0848…0.1790`, 54 of 83 members resolved, with six of its eight collection runs
+published as unpublishable. The statistical apparatus in the section above —
+bracket, bootstrap range, refusal gate — is the answer to that work, and the
+prior claim on this line that no other submission measured this channel was
+wrong.
+
+The objects differ, which matters when comparing the two numbers. Theirs is
+`ρ = 2^{−H(C)}`, the *fraction* of nominal k that survives, chosen because it is
+independent of `k` and therefore comparable across pools of different sizes.
+Ours is `effective_k = 2^{H(X|C)}`, a member count, which is not: an effective-k
+of 6.5 at n=30 and one at n=83 are not the same statement, and this repository
+does not compare them. The two are related by the chain rule
+`H(C) + H(X|C) = log2 K`, so on one sample they carry the same information — but
+only on one sample.
 
 ## The ruler
 
