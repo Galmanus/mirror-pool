@@ -384,6 +384,28 @@ mod tests {
         core::array::from_fn(|i| byte * 2000 + i as u64)
     }
 
+    /// Records the AIR's trace width, because width is what drives on-chain
+    /// verification cost. Per-query CU attribution (2026-07-29, LiteSVM, the
+    /// `cu-trace` feature): of ~297k CU per FRI query, `open_input` is 296,927
+    /// and the whole FRI fold chain is 5,285 — 98% vs 2%. `open_input`'s work
+    /// is one MMCS Merkle opening plus a DEEP-quotient dot product over every
+    /// trace column, in the degree-3 extension field, so cost tracks WIDTH,
+    /// not rows and not query count per se. This test prints the number so a
+    /// future width change shows up as a cost change, not a surprise.
+    #[test]
+    fn the_trace_width_that_drives_on_chain_cost_is_recorded() {
+        let air = BindingAir::new();
+        let width = BaseAir::<Val>::width(&air);
+        let single =
+            num_cols::<WIDTH, SBOX_DEGREE, SBOX_REGISTERS, HALF_FULL_ROUNDS, PARTIAL_ROUNDS>();
+        println!("BindingAir trace width: {width} columns ({single} per Poseidon2 block x {VECTOR_LEN} blocks)");
+        assert_eq!(
+            width,
+            single * VECTOR_LEN,
+            "the vectorized AIR's width must be exactly VECTOR_LEN blocks wide"
+        );
+    }
+
     #[test]
     fn the_pinned_quotient_chunk_count_matches_the_symbolic_pass() {
         use p3_uni_stark::{get_log_num_quotient_chunks, AirLayout, StarkGenericConfig};

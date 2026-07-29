@@ -34,6 +34,7 @@ solana-program = "2"
 p3-util = { path = "vendor/p3-util-0.6.2-sbf-patch" }
 p3-mersenne-31 = { path = "vendor/p3-mersenne-31-0.6.2-sbf-patch" }
 p3-uni-stark = { path = "vendor/p3-uni-stark-0.6.2-heap-patch" }
+p3-circle = { path = "vendor/p3-circle-0.6.2-cutrace-patch" }
 
 # Matches this repo's other Solana programs' release profile (contracts/receipt
 # etc.): aggressive DCE/LTO, which SBF's link-time stack-frame check benefits
@@ -45,3 +46,8 @@ opt-level = "z"
 lto = true
 codegen-units = 1
 panic = "abort"
+
+[features]
+# Per-phase on-chain CU attribution via sol_log_compute_units in the vendored
+# patches. Off by default: zero behavioral difference unless enabled.
+cu-trace = ["p3-circle/cu-trace", "p3-uni-stark/cu-trace"]

@@ -1953,8 +1953,6 @@ dependencies = [
 [[package]]
 name = "p3-circle"
 version = "0.6.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a131aa8634483ef0531d1b7712ea27d735bdaab96f8c69fc3652bc13e8a9f5d"
 dependencies = [
  "itertools 0.15.0",
  "p3-challenger",
@@ -1966,6 +1964,7 @@ dependencies = [
  "p3-maybe-rayon",
  "p3-util",
  "serde",
+ "solana-program",
  "thiserror 2.0.19",
  "tracing",
 ]
