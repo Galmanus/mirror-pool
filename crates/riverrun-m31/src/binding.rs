@@ -36,7 +36,6 @@ use p3_circle::CirclePcs;
 use p3_commit::ExtensionMmcs;
 use p3_field::extension::BinomialExtensionField;
 use p3_field::PrimeCharacteristicRing;
-use p3_keccak::Keccak256Hash;
 use p3_matrix::dense::RowMajorMatrix;
 use p3_mersenne_31::{
     GenericPoseidon2LinearLayersMersenne31, Mersenne31, MERSENNE31_POSEIDON2_RC_16_EXTERNAL_FINAL,
@@ -45,12 +44,24 @@ use p3_mersenne_31::{
 use p3_merkle_tree::MerkleTreeMmcs;
 use p3_poseidon2_air::{generate_vectorized_trace_rows, num_cols, Poseidon2Cols, RoundConstants, VectorizedPoseidon2Air};
 use p3_symmetric::{CompressionFunctionFromHasher, SerializingHasher};
-use p3_uni_stark::{prove, verify, Proof, StarkConfig};
+use p3_uni_stark::{prove, verify_with_known_quotient_chunks, Proof, StarkConfig};
 
 use crate::permutation::{permute, WIDTH};
 
 /// Two permutations packed per row: block 0 is the leaf, block 1 the nullifier.
 const VECTOR_LEN: usize = 2;
+
+/// log2 of the number of quotient chunks for [`BindingAir`], pinned as a
+/// constant so the verifier never runs `p3_uni_stark`'s symbolic-builder pass.
+/// That pass exists only to derive this one number, and its transient
+/// `SymbolicExpr` tree peaks at ~440 KB of live heap for this AIR (measured;
+/// see `docs/M31_CIRCLE_STARK.md`), which is what overran Solana's 256 KB
+/// heap ceiling. The AIR is fixed, so the value is a compile-time fact; the
+/// test `the_pinned_quotient_chunk_count_matches_the_symbolic_pass` recomputes
+/// it via the symbolic pass natively and fails if this constant ever drifts.
+/// A wrong value cannot weaken soundness (it changes the expected proof shape,
+/// so honest proofs would fail loudly, not forged ones pass).
+pub const LOG_NUM_QUOTIENT_CHUNKS: usize = 2;
 /// Input cells `[0..SECRET_LEN)` are the shared, private secret.
 pub const SECRET_LEN: usize = 8;
 /// Input cells `[SECRET_LEN..WIDTH)` are the block's public context (`action`
@@ -78,7 +89,7 @@ type Cols<T> =
     Poseidon2Cols<T, WIDTH, SBOX_DEGREE, SBOX_REGISTERS, HALF_FULL_ROUNDS, PARTIAL_ROUNDS>;
 
 type Challenge = BinomialExtensionField<Val, 3>;
-type ByteHash = Keccak256Hash;
+type ByteHash = crate::keccak::SolKeccak256;
 type FieldHash = SerializingHasher<ByteHash>;
 type Compress = CompressionFunctionFromHasher<ByteHash, 2, 32>;
 type ValMmcs = MerkleTreeMmcs<Val, u8, FieldHash, Compress, 2, 32>;
@@ -350,7 +361,15 @@ pub fn verify_binding_tuned_checkpointed(
     let config = make_config_tuned(num_queries);
     let pis = public_values(action, round, leaf, nullifier);
     checkpoint();
-    verify(&config, &air, &proof.inner, &pis).is_ok()
+    verify_with_known_quotient_chunks(
+        &config,
+        &air,
+        &proof.inner,
+        &pis,
+        None,
+        LOG_NUM_QUOTIENT_CHUNKS,
+    )
+    .is_ok()
 }
 
 #[cfg(test)]
@@ -363,6 +382,27 @@ mod tests {
 
     fn context(byte: u64) -> [u64; CONTEXT_LEN] {
         core::array::from_fn(|i| byte * 2000 + i as u64)
+    }
+
+    #[test]
+    fn the_pinned_quotient_chunk_count_matches_the_symbolic_pass() {
+        use p3_uni_stark::{get_log_num_quotient_chunks, AirLayout, StarkGenericConfig};
+        let air = BindingAir::new();
+        let config = make_config_tuned(4);
+        let layout = AirLayout {
+            preprocessed_width: 0,
+            main_width: BaseAir::<Val>::width(&air),
+            num_public_values: BaseAir::<Val>::num_public_values(&air),
+            num_periodic_columns: BaseAir::<Val>::num_periodic_columns(&air),
+            ..Default::default()
+        };
+        let recomputed =
+            get_log_num_quotient_chunks::<Val, BindingAir>(&air, layout, config.is_zk());
+        assert_eq!(
+            LOG_NUM_QUOTIENT_CHUNKS, recomputed,
+            "the pinned constant must equal what the symbolic pass derives for this exact AIR; \
+             if the AIR changed, re-pin the constant to the recomputed value"
+        );
     }
 
     #[test]

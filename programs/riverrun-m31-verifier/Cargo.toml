@@ -32,6 +32,7 @@ tracing = { version = "0.1", default-features = false, features = ["max_level_of
 [patch.crates-io]
 p3-util = { path = "../../crates/riverrun-m31/vendor/p3-util-0.6.2-sbf-patch" }
 p3-mersenne-31 = { path = "../../crates/riverrun-m31/vendor/p3-mersenne-31-0.6.2-sbf-patch" }
+p3-uni-stark = { path = "../../crates/riverrun-m31/vendor/p3-uni-stark-0.6.2-heap-patch" }
 
 [dev-dependencies]
 litesvm = "0.6"
@@ -49,7 +50,7 @@ solana-sdk = "2"
 # a real code-content issue); the two problems looked similar but were not
 # the same fix.
 [profile.release]
-opt-level = "z"
+opt-level = 3
 overflow-checks = true
 debug = 0
 strip = "symbols"

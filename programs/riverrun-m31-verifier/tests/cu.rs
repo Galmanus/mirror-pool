@@ -60,23 +60,22 @@ fn preimage_instruction_data() -> Vec<u8> {
     d
 }
 
-// Currently fails: real, precisely diagnosed, not a mystery. The program
-// loads on-chain (readelf-confirmed clean ELF shape), executes, and
-// deserializes a real BindingProof (confirmed via temporary msg! bisection,
-// 15,001 bytes at 4 queries), then genuinely runs out of Solana's hard
-// 256 KB heap ceiling (MAX_HEAP_FRAME_BYTES) INSIDE verify() itself.
-// Compute-units-consumed before OOM was ~1.54M at both 4 and 12 queries
-// (2.06M at 40), essentially query-count-independent: the memory wall sits
-// in verify()'s fixed setup (challenger/PCS construction), not the
-// per-query loop, so reducing FRI queries further will not fix this on its
-// own. Closing this needs either a from-scratch, memory-budgeted verifier
-// (not calling p3_uni_stark::verify's generic machinery as-is) or confirming
-// this is a hard architectural ceiling for this construction on SBF. Real,
-// unstarted work; not attempted further here. #[ignore] so this documented,
-// diagnosed failure doesn't block `cargo test` for anyone else; run with
-// `cargo test --release --test cu -- --ignored --nocapture` to reproduce.
+// PASSES as of 2026-07-29: the 256 KB heap wall is closed and the proof
+// VERIFIES on-chain. Root cause was p3_uni_stark's symbolic AIR
+// re-evaluation (deriving one constant, ~440 KB of transient heap), removed
+// by the vendored p3-uni-stark heap patch + the pinned
+// `binding::LOG_NUM_QUOTIENT_CHUNKS`; full story in src/lib.rs's module doc
+// and the patch's PATCH.md. Measured here: 2,384,277 CU at 4 FRI queries
+// (with syscall keccak and opt-level 3), ACCEPTED — still over a real
+// transaction's 1.4M CU cap, and the slope is per-query (~348k CU/query,
+// measured 4 vs 12 queries), so production 40-query verification in one
+// transaction needs per-query cost work (arity/blowup tuning, column
+// reduction, or staged verification across transactions). #[ignore] only
+// because this needs the `cargo build-sbf` artifact to exist first; run
+// `cargo build-sbf`, then
+// `cargo test --release --test cu -- --ignored --nocapture`.
 #[test]
-#[ignore = "peak verify() memory exceeds Solana's 256 KB heap ceiling; see the comment above for the full diagnosis"]
+#[ignore = "needs target/deploy/riverrun_m31_verifier.so: run cargo build-sbf first, then --ignored"]
 fn measure_on_chain_binding_verification_cost() {
     let mut budget = solana_compute_budget::compute_budget::ComputeBudget::default();
     budget.compute_unit_limit = 50_000_000; // for measurement; real cap is 1.4M/tx
@@ -96,6 +95,9 @@ fn measure_on_chain_binding_verification_cost() {
 
     match svm.send_transaction(tx) {
         Ok(meta) => {
+            for l in &meta.logs {
+                println!("    {l}");
+            }
             println!(
                 "riverrun-m31 binding proof: {proof_bytes} B proof, {} CU {}",
                 meta.compute_units_consumed,
@@ -147,15 +149,18 @@ fn a_tampered_proof_is_rejected_on_chain() {
 /// consuming even MORE CU before failing (~3.05M vs ~1.5-2M), and with 58,932
 /// bytes of heap gone by `verify_preimage`'s internal `deserialize` step
 /// alone (before this path's own checkpoint hook, not yet added, would show
-/// what `verify()` itself needs on top of that). This rules out "AIR
-/// complexity" as the driver: the smallest possible AIR here still exceeds
-/// the ceiling, so the wall is inherent to this CirclePcs / Keccak-MMCS /
-/// FRI verifier construction as configured, not something scoped to
-/// `BindingAir`'s two-block width. `#[ignore]`d for the same reason as
-/// `measure_on_chain_binding_verification_cost`: a real, diagnosed, open
-/// finding, not a mystery, not silently broken.
+/// what `verify()` itself needs on top of that). This ruled out "AIR
+/// complexity" as the driver, which is exactly what pointed the later native
+/// heap profiling at the shared fixed setup — and the culprit it found there
+/// (p3-uni-stark's symbolic AIR re-evaluation, see src/lib.rs) explains this
+/// test's result too. PASSES as of 2026-07-29 with the heap patch + pinned
+/// `permutation::LOG_NUM_QUOTIENT_CHUNKS`: this is the crate's **production
+/// security point completing on-chain** — a 40-FRI-query, 48,749 B
+/// `PreimageProof`, ACCEPTED at 9,457,190 CU inside the 256 KB heap. That CU
+/// figure is the measured size of the remaining per-query cost problem the
+/// binding test's comment names.
 #[test]
-#[ignore = "even the simplest AIR in this crate exceeds Solana's 256 KB heap ceiling; rules out AIR complexity as the cause, see the comment above"]
+#[ignore = "needs target/deploy/riverrun_m31_verifier.so: run cargo build-sbf first, then --ignored"]
 fn measure_on_chain_preimage_verification_cost() {
     let mut budget = solana_compute_budget::compute_budget::ComputeBudget::default();
     budget.compute_unit_limit = 50_000_000;

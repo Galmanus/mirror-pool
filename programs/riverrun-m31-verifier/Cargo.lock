@@ -2216,8 +2216,6 @@ dependencies = [
 [[package]]
 name = "p3-uni-stark"
 version = "0.6.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4d24388051e6351e136205e8634bc842a6776c775fd61519ece452610e60bae2"
 dependencies = [
  "itertools 0.15.0",
  "libm",
@@ -2230,6 +2228,7 @@ dependencies = [
  "p3-maybe-rayon",
  "p3-util",
  "serde",
+ "solana-program",
  "thiserror 2.0.19",
  "tracing",
 ]
@@ -2614,6 +2613,7 @@ dependencies = [
  "p3-symmetric",
  "p3-uni-stark",
  "rand 0.9.5",
+ "solana-program",
 ]
 
 [[package]]

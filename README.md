@@ -377,19 +377,29 @@ AIR) and now proves, end to end, every piece §1 of the migration spec calls for
 leaf and a nullifier bound to one shared secret (`binding.rs`), a leaf proven under
 a public root via a private, order-hidden path (`membership.rs`), and the two
 composed into the full relation via a shared public leaf value (`relation.rs`).
-16 tests green, no vendored production code (two documented toolchain-compat
-patches, `docs/adr/0001-vendor-patch-over-fork-or-wait.md`).
+20 tests green, no vendored production code (three documented vendored
+patches — two toolchain-compat, one heap-budget, each with a PATCH.md —
+`docs/adr/0001-vendor-patch-over-fork-or-wait.md`).
 
-**On-chain attempt, real and honest (2026-07-28):** `programs/riverrun-m31-verifier`
-loads and executes riverrun's own binding proof verifier on Solana SBF, after
-finding and fixing three real toolchain blockers (an unsupported `getrandom`
-backend, an unused dependency overflowing SBF's stack-frame limit, debug
-instrumentation bloating the binary). It does not yet complete: `verify()` itself
-exceeds Solana's hard 256KB heap ceiling, at a cost measured, not guessed at
-(~1.5-2M CU before running out, flat across query counts), documented precisely in
-an `#[ignore]`d test rather than left silently broken. Fusing the two proofs into
-one and closing the memory wall are the next milestones, specified, not
-hand-waved: [`docs/M31_CIRCLE_STARK.md`](docs/M31_CIRCLE_STARK.md).
+**On-chain, VERIFIED (2026-07-29):** `programs/riverrun-m31-verifier` runs
+riverrun's own binding relation to completion inside the Solana runtime —
+**ACCEPTED at 2,383,973 CU** (4-FRI-query proof, LiteSVM), tampered public
+values rejected, and the production 40-query preimage proof (48,749 B) also
+completing in-heap at 9,457,190 CU. The 256KB heap wall the previous entry
+left open is diagnosed and closed: native heap profiling attributed ~92% of
+`verify()`'s peak (452,760 B of 16 KB proof data) to `p3_uni_stark`
+symbolically re-evaluating the whole AIR just to derive one compile-time
+constant; a third documented vendored patch
+(`p3-uni-stark-0.6.2-heap-patch`) accepts that constant as a parameter, and
+each AIR pins it under a drift-guard test. Peak live heap after: 109,376 B at
+production security, ~90 KB inside the ceiling. Also measured on the way:
+keccak256 routed to Solana's syscall (software keccak cost 6.17M CU) and
+`opt-level = 3` (size-optimized `"z"` cost 4.31M). Named honestly: 2.38M CU
+is still above the 1.4M single-transaction cap, the slope is per-query
+(~348k CU/query, ~70% inside `pcs.verify`), so the next milestones are
+per-query cost reduction (FRI arity/blowup, column count, or staged
+verification) and fusing the two proofs into one:
+[`docs/M31_CIRCLE_STARK.md`](docs/M31_CIRCLE_STARK.md).
 
 Nothing here is faked. Every claim has a test, a signature, or a measured number
 beside it, and every limitation is named where the claim is made.

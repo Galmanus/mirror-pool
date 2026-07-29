@@ -67,9 +67,11 @@ Neither is "the fake one." `riverrun-stark`'s on-chain verifier genuinely
 runs and is genuinely priced; it just costs more CU than a single real
 transaction affords at production security. `riverrun-m31` genuinely has
 smaller proofs and a real shot at fitting Solana's CU budget, and is real,
-tested, in-repo code, not vendored, not a claim; it just hasn't cleared
-Solana's heap ceiling yet, for reasons named precisely in
-`docs/M31_CIRCLE_STARK.md`, not hand-waved.
+tested, in-repo code, not vendored, not a claim; as of 2026-07-29 it clears
+Solana's heap ceiling and verifies on-chain (binding relation ACCEPTED at
+2,383,973 CU in LiteSVM; production-security preimage at 9.46M CU), with the
+remaining gap to the 1.4M single-transaction cap being per-query cost, named
+precisely in `docs/M31_CIRCLE_STARK.md`, not hand-waved.
 
 ## What actually settles value on-chain, today
 

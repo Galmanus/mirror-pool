@@ -25,7 +25,6 @@ use p3_circle::CirclePcs;
 use p3_commit::ExtensionMmcs;
 use p3_field::extension::BinomialExtensionField;
 use p3_field::PrimeCharacteristicRing;
-use p3_keccak::Keccak256Hash;
 use p3_matrix::dense::RowMajorMatrix;
 use p3_mersenne_31::{
     default_mersenne31_poseidon2_16, GenericPoseidon2LinearLayersMersenne31, Mersenne31,
@@ -35,7 +34,7 @@ use p3_mersenne_31::{
 use p3_merkle_tree::MerkleTreeMmcs;
 use p3_poseidon2_air::{generate_trace_rows, Poseidon2Air, Poseidon2Cols, RoundConstants};
 use p3_symmetric::{CompressionFunctionFromHasher, Permutation, SerializingHasher};
-use p3_uni_stark::{prove, verify, Proof, StarkConfig};
+use p3_uni_stark::{prove, verify_with_known_quotient_chunks, Proof, StarkConfig};
 
 /// Poseidon2 state width for this instantiation: Plonky3's standard width-16
 /// permutation for a 31-bit field, matching the canonical constants below.
@@ -60,7 +59,7 @@ type Cols<T> =
     Poseidon2Cols<T, WIDTH, SBOX_DEGREE, SBOX_REGISTERS, HALF_FULL_ROUNDS, PARTIAL_ROUNDS>;
 
 type Challenge = BinomialExtensionField<Val, 3>;
-type ByteHash = Keccak256Hash;
+type ByteHash = crate::keccak::SolKeccak256;
 type FieldHash = SerializingHasher<ByteHash>;
 type Compress = CompressionFunctionFromHasher<ByteHash, 2, 32>;
 type ValMmcs = MerkleTreeMmcs<Val, u8, FieldHash, Compress, 2, 32>;
@@ -220,12 +219,42 @@ pub fn verify_preimage(proof: &PreimageProof, output: [u64; WIDTH]) -> bool {
     let air = PreimageAir::new();
     let config = make_config();
     let pis: Vec<Val> = to_field(output).to_vec();
-    verify(&config, &air, &proof.inner, &pis).is_ok()
+    verify_with_known_quotient_chunks(&config, &air, &proof.inner, &pis, None, LOG_NUM_QUOTIENT_CHUNKS)
+        .is_ok()
 }
+
+/// log2 of the number of quotient chunks for [`PreimageAir`], pinned for the
+/// same reason and under the same drift-guard discipline as
+/// `binding::LOG_NUM_QUOTIENT_CHUNKS` (see that constant's doc): the symbolic
+/// pass that derives it is what overran Solana's 256 KB heap ceiling, and for
+/// a fixed AIR the value is a compile-time fact.
+pub const LOG_NUM_QUOTIENT_CHUNKS: usize = 2;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_pinned_quotient_chunk_count_matches_the_symbolic_pass() {
+        use p3_air::BaseAir;
+        use p3_uni_stark::{get_log_num_quotient_chunks, AirLayout, StarkGenericConfig};
+        let air = PreimageAir::new();
+        let config = make_config();
+        let layout = AirLayout {
+            preprocessed_width: 0,
+            main_width: BaseAir::<Val>::width(&air),
+            num_public_values: BaseAir::<Val>::num_public_values(&air),
+            num_periodic_columns: BaseAir::<Val>::num_periodic_columns(&air),
+            ..Default::default()
+        };
+        let recomputed =
+            get_log_num_quotient_chunks::<Val, PreimageAir>(&air, layout, config.is_zk());
+        assert_eq!(
+            LOG_NUM_QUOTIENT_CHUNKS, recomputed,
+            "the pinned constant must equal what the symbolic pass derives for this exact AIR; \
+             if the AIR changed, re-pin the constant to the recomputed value"
+        );
+    }
 
     fn sample_input() -> [u64; WIDTH] {
         core::array::from_fn(|i| (i as u64) * 7 + 3)

@@ -32,8 +32,37 @@
 //! tests can measure a reduced-security point that fits inline, without ever
 //! silently weakening the production path.
 //!
-//! **Status, as of this writing: loads and executes on-chain, does not yet
-//! complete.** The compiled `.so` loads cleanly (confirmed by diffing
+//! **Status (2026-07-29): VERIFIES ON-CHAIN.** The 256 KB heap wall described
+//! below is closed. Native heap profiling with a tracking allocator (plus a
+//! replay simulation of this program's exact LIFO-bump reclaim semantics)
+//! attributed ~92% of `verify()`'s peak live heap not to FRI, PCS state or
+//! the challenger but to `p3_uni_stark`'s **symbolic AIR re-evaluation** —
+//! `get_log_num_quotient_chunks` building a transient `SymbolicExpr` tree
+//! (452,760 B peak live at 4 queries) purely to derive one compile-time
+//! constant. The fix is the third vendored patch,
+//! `vendor/p3-uni-stark-0.6.2-heap-patch` (see its PATCH.md):
+//! `verify_with_known_quotient_chunks` takes that constant as a parameter,
+//! and `riverrun_m31` pins it (`binding::LOG_NUM_QUOTIENT_CHUNKS`, guarded by
+//! a native test that recomputes it symbolically and fails on drift).
+//! Re-measured peak live heap after the fix: 37,664 B at 4 queries,
+//! 109,376 B at the production 40 queries — LIFO-bump watermark 171,736 B,
+//! under the ceiling with ~90 KB of margin.
+//!
+//! Measured on-chain cost (LiteSVM, 4-query proof, this crate's `cu.rs`):
+//! **2,384,277 CU, ACCEPTED** — the first time riverrun's own M31 relation
+//! verifies inside the Solana runtime. Two further cost reductions got it
+//! there: keccak256 routed to Solana's syscall on-chain
+//! (`riverrun_m31::keccak::SolKeccak256`; software keccak cost 6.17M CU
+//! total) and `opt-level = 3` for the SBF build (`"z"` cost 4.31M; CU is an
+//! instruction count, not bytes). Still over a real transaction's 1.4M cap:
+//! per-phase attribution (the patch's `cu-trace` feature) puts ~70% in
+//! `pcs.verify` at ~348k CU *per FRI query* (DEEP column reduction + MMCS +
+//! fold), so the remaining gap is per-query cost, not fixed overhead —
+//! open, real work (arity/blowup tuning, column-count reduction, or staged
+//! verification), named in `tests/cu.rs`.
+//!
+//! History of the wall, kept because the diagnosis was real work: the
+//! compiled `.so` loads cleanly (confirmed by diffing
 //! `readelf -S` section layout against `programs/stark-verifier`'s working
 //! one: both end up at the same clean shape, `.text` / `.rodata` /
 //! `.data.rel.ro` / `.dynamic` / `.dynsym` / `.dynstr` / `.rel.dyn`, after

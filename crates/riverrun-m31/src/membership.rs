@@ -33,7 +33,6 @@ use p3_circle::CirclePcs;
 use p3_commit::ExtensionMmcs;
 use p3_field::extension::BinomialExtensionField;
 use p3_field::PrimeCharacteristicRing;
-use p3_keccak::Keccak256Hash;
 use p3_matrix::dense::RowMajorMatrix;
 use p3_mersenne_31::{
     GenericPoseidon2LinearLayersMersenne31, Mersenne31, MERSENNE31_POSEIDON2_RC_16_EXTERNAL_FINAL,
@@ -42,7 +41,7 @@ use p3_mersenne_31::{
 use p3_merkle_tree::MerkleTreeMmcs;
 use p3_poseidon2_air::{generate_trace_rows, num_cols, Poseidon2Air, Poseidon2Cols, RoundConstants};
 use p3_symmetric::{CompressionFunctionFromHasher, SerializingHasher};
-use p3_uni_stark::{prove, verify, Proof, StarkConfig, SubAirBuilder};
+use p3_uni_stark::{prove, verify_with_known_quotient_chunks, Proof, StarkConfig, SubAirBuilder};
 
 use crate::permutation::{permute, WIDTH};
 
@@ -72,7 +71,7 @@ type Cols<T> =
     Poseidon2Cols<T, WIDTH, SBOX_DEGREE, SBOX_REGISTERS, HALF_FULL_ROUNDS, PARTIAL_ROUNDS>;
 
 type Challenge = BinomialExtensionField<Val, 3>;
-type ByteHash = Keccak256Hash;
+type ByteHash = crate::keccak::SolKeccak256;
 type FieldHash = SerializingHasher<ByteHash>;
 type Compress = CompressionFunctionFromHasher<ByteHash, 2, 32>;
 type ValMmcs = MerkleTreeMmcs<Val, u8, FieldHash, Compress, 2, 32>;
@@ -270,12 +269,21 @@ pub fn prove_membership(leaf: [u64; DIGEST_LEN], path: [PathStep; DEPTH]) -> (Me
     (MembershipProof { inner: proof }, root)
 }
 
+/// log2 of the number of quotient chunks for [`MembershipAir`], pinned for the
+/// same reason as `binding::LOG_NUM_QUOTIENT_CHUNKS`: the symbolic pass that
+/// derives it peaks at hundreds of KB of transient heap, past Solana's 256 KB
+/// ceiling, and for a fixed AIR the value is a compile-time fact. Guarded by
+/// the test `the_pinned_quotient_chunk_count_matches_the_symbolic_pass` below;
+/// a wrong value rejects honest proofs, it never accepts forged ones.
+pub const LOG_NUM_QUOTIENT_CHUNKS: usize = 2;
+
 /// Verify a [`MembershipProof`] against a claimed `leaf` and `root`.
 pub fn verify_membership(proof: &MembershipProof, leaf: [u64; DIGEST_LEN], root: [u64; DIGEST_LEN]) -> bool {
     let air = MembershipAir::new();
     let config = make_config();
     let pis = public_values(leaf, root);
-    verify(&config, &air, &proof.inner, &pis).is_ok()
+    verify_with_known_quotient_chunks(&config, &air, &proof.inner, &pis, None, LOG_NUM_QUOTIENT_CHUNKS)
+        .is_ok()
 }
 
 fn public_values(leaf: [u64; DIGEST_LEN], root: [u64; DIGEST_LEN]) -> Vec<Val> {
@@ -322,6 +330,28 @@ fn append_bit_column(poseidon_trace: RowMajorMatrix<Val>, bits: &[bool; DEPTH]) 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_pinned_quotient_chunk_count_matches_the_symbolic_pass() {
+        use p3_air::BaseAir;
+        use p3_uni_stark::{get_log_num_quotient_chunks, AirLayout, StarkGenericConfig};
+        let air = MembershipAir::new();
+        let config = make_config();
+        let layout = AirLayout {
+            preprocessed_width: 0,
+            main_width: BaseAir::<Val>::width(&air),
+            num_public_values: BaseAir::<Val>::num_public_values(&air),
+            num_periodic_columns: BaseAir::<Val>::num_periodic_columns(&air),
+            ..Default::default()
+        };
+        let recomputed =
+            get_log_num_quotient_chunks::<Val, MembershipAir>(&air, layout, config.is_zk());
+        assert_eq!(
+            LOG_NUM_QUOTIENT_CHUNKS, recomputed,
+            "the pinned constant must equal what the symbolic pass derives for this exact AIR; \
+             if the AIR changed, re-pin the constant to the recomputed value"
+        );
+    }
 
     fn leaf_value(byte: u64) -> [u64; DIGEST_LEN] {
         core::array::from_fn(|i| byte * 3000 + i as u64)

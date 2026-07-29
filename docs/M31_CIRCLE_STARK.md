@@ -103,6 +103,33 @@ system itself.
 > then `cargo test --release --test cu -- --ignored --nocapture` from that
 > directory to reproduce the memory wall.
 
+> **On-chain VERIFIED, heap wall closed (2026-07-29).** The 256 KB ceiling the
+> previous entry left as "genuinely uncertain" is diagnosed and fixed. Native
+> heap profiling (tracking allocator + a replay simulation of the on-chain
+> LIFO-bump allocator's exact reclaim semantics) attributed ~92% of `verify()`'s
+> peak — 452,760 B live of which the numeric verification needs only ~38 KB —
+> to `p3_uni_stark`'s symbolic AIR re-evaluation, which exists solely to derive
+> `log_num_quotient_chunks`, a compile-time constant for any fixed AIR. Fix:
+> a third vendored patch (`p3-uni-stark-0.6.2-heap-patch`, MIT/Apache upstream,
+> PATCH.md documents it) adds `verify_with_known_quotient_chunks` taking that
+> value as a parameter; `riverrun-m31` pins it per AIR
+> (`binding::LOG_NUM_QUOTIENT_CHUNKS`, `membership::LOG_NUM_QUOTIENT_CHUNKS`),
+> each guarded by a native test that recomputes it symbolically and fails on
+> drift. Re-measured: 37,664 B peak live at 4 queries, 109,376 B at the
+> production 40 — LIFO-bump watermark 171,736 B, inside the ceiling with ~90 KB
+> margin. On-chain result (LiteSVM, 4-query proof): **ACCEPTED at 2,384,277
+> CU**, riverrun's own binding relation, the first completion. Two further
+> reductions got it there: keccak256 via Solana's syscall on-chain
+> (`riverrun_m31::keccak::SolKeccak256`, software keccak cost 6.17M CU) and
+> `opt-level = 3` for the SBF build (`"z"` cost 4.31M). Remaining, named
+> honestly: 2.38M CU is still over the 1.4M single-transaction cap, and the
+> slope is per-query (~348k CU/query measured 4→12; ~70% of total inside
+> `pcs.verify`: DEEP column reduction + MMCS + FRI fold), so a production
+> 40-query proof in one transaction needs per-query cost work — FRI
+> arity/blowup tuning, column-count reduction, or staged verification across
+> transactions — plus the buffer-account staging already specified in §2 for
+> the 78 KB proof itself.
+
 Why this is the decisive move: it is the one change that makes riverrun
 simultaneously **(a) post-quantum, (b) transparent / no trusted setup, and (c)
 verified on-chain with no trusted committee** — a position the pairing/Groth16
