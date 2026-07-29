@@ -21,7 +21,13 @@ p3-challenger = "0.6.2"
 p3-keccak = "0.6.2"
 p3-merkle-tree = "0.6.2"
 rand = { version = "0.9", default-features = false }
-bincode = "1.3"
+# bincode 1.x pulls serde with default features, i.e. serde/std. On a bare-wasm
+# target (Soroban's wasm32v1-none) that makes serde_core drop its own #![no_std]
+# and fail to find a standard library that does not exist there. It is only used
+# for the proof wire format, so it lives behind a default-on feature that a
+# bare-wasm build turns off (--no-default-features) and supplies its own
+# serialization for.
+bincode = { version = "1.3", optional = true }
 
 [target.'cfg(target_os = "solana")'.dependencies]
 # Only for the keccak256 syscall in src/keccak.rs; never linked off-chain.
@@ -48,6 +54,10 @@ codegen-units = 1
 panic = "abort"
 
 [features]
+default = ["wire"]
+# The bincode proof wire format. On by default; off for bare-wasm targets whose
+# host provides its own serialization (see the bincode dependency's comment).
+wire = ["dep:bincode"]
 # Per-phase on-chain CU attribution via sol_log_compute_units in the vendored
 # patches. Off by default: zero behavioral difference unless enabled.
 cu-trace = ["p3-circle/cu-trace", "p3-uni-stark/cu-trace"]

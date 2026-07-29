@@ -228,12 +228,14 @@ pub struct BindingProof {
 impl BindingProof {
     /// Serialize to bytes (`bincode`, over `Proof`'s own `serde` impl), the
     /// wire format an on-chain verifier reads from instruction data.
+    #[cfg(feature = "wire")]
     pub fn to_bytes(&self) -> Vec<u8> {
         bincode::serialize(&self.inner).expect("Proof<Config> is always serializable")
     }
 
     /// Deserialize from bytes produced by [`BindingProof::to_bytes`]. `None`
     /// on malformed input; callers on-chain treat that as proof rejection.
+    #[cfg(feature = "wire")]
     pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
         bincode::deserialize(bytes).ok().map(|inner| Self { inner })
     }

@@ -174,12 +174,14 @@ impl PreimageProof {
     /// lets a single-block preimage proof (this AIR) be compared on-chain
     /// against a two-block vectorized one (`BindingAir`) to isolate whether
     /// peak `verify()` memory scales with AIR width/complexity.
+    #[cfg(feature = "wire")]
     pub fn to_bytes(&self) -> Vec<u8> {
         bincode::serialize(&self.inner).expect("Proof<Config> is always serializable")
     }
 
     /// Deserialize from bytes produced by [`PreimageProof::to_bytes`]. `None`
     /// on malformed input.
+    #[cfg(feature = "wire")]
     pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
         bincode::deserialize(bytes).ok().map(|inner| Self { inner })
     }

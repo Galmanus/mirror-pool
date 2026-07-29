@@ -21,6 +21,13 @@
 //! what that does and does not claim). No on-chain (SBF) verification of any
 //! of this exists yet.
 
+// Bare-wasm targets (Soroban's `wasm32v1-none`) have no standard library at
+// all, so the crate root must not pull one in. Every module here already runs
+// on `core` + `alloc`; `test` keeps `std` because the test harness needs it.
+#![cfg_attr(not(test), no_std)]
+
+extern crate alloc;
+
 pub mod binding;
 pub mod keccak;
 pub mod membership;
