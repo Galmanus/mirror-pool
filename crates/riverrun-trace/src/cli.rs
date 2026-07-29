@@ -312,6 +312,25 @@ fn save_session(secret_hex: &str) -> std::io::Result<()> {
         use std::os::unix::fs::PermissionsExt;
         let _ = std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600));
     }
+    // Windows has no chmod-equivalent bit; the file was otherwise saved with
+    // whatever the parent directory's inherited ACL grants (other accounts on
+    // a shared machine, by default), unlike Unix's 0600 above. Best-effort
+    // lock it to the current user only via icacls (ships with every Windows
+    // install, no extra dependency): strip inherited ACEs and grant Full
+    // Control to $USERNAME alone. Failure here (e.g. icacls missing on some
+    // non-standard Windows install) is not fatal; the session still saves,
+    // just without this hardening, same as if this block did not exist.
+    #[cfg(windows)]
+    {
+        if let Ok(user) = std::env::var("USERNAME") {
+            let _ = std::process::Command::new("icacls")
+                .arg(&p)
+                .arg("/inheritance:r")
+                .arg("/grant:r")
+                .arg(format!("{user}:F"))
+                .output();
+        }
+    }
     Ok(())
 }
 

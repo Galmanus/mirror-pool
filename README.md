@@ -457,6 +457,10 @@ credit for the shape of the idea, not the math.
 
 - **[Whitepaper (PDF)](paper/riverrun.pdf)**: the philosophy, the cryptography, and
   the mathematics of anonymity, with proofs.
+- [`docs/WINDOWS.md`](docs/WINDOWS.md): the measurement tooling (the ruler, the
+  CLI, the adversarial harness) cross-compiles to a real, verified
+  `x86_64-pc-windows-gnu` binary, no WSL required; named honestly what still
+  needs it (on-chain program builds).
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): every crate and program in this
   repo, one line each, with an honest `[live]`/`[tested]`/`[blocked]` status, the
   two membership-proof paths (Winterfell f128, Plonky3 Circle-STARK) compared
