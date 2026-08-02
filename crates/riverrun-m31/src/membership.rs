@@ -244,6 +244,23 @@ pub struct MembershipProof {
     inner: Proof<Config>,
 }
 
+impl MembershipProof {
+    /// Serialize with `postcard`, the no_std wire format a bare-wasm verifier
+    /// (Soroban) reads from its host boundary. Same convention as
+    /// [`crate::binding::BindingProof::to_postcard`].
+    #[cfg(feature = "wire-postcard")]
+    pub fn to_postcard(&self) -> Vec<u8> {
+        postcard::to_allocvec(&self.inner).expect("Proof<Config> is always serializable")
+    }
+
+    /// Deserialize from bytes produced by [`MembershipProof::to_postcard`].
+    /// `None` on malformed input; callers on-chain treat that as rejection.
+    #[cfg(feature = "wire-postcard")]
+    pub fn from_postcard(bytes: &[u8]) -> Option<Self> {
+        postcard::from_bytes(bytes).ok().map(|inner| Self { inner })
+    }
+}
+
 /// Prove that `leaf` sits under `root` following `path` (exactly `DEPTH`
 /// steps). Panics if `path` does not actually fold `leaf` to `root` (the
 /// trace generator would produce an unsatisfiable constraint set; callers
