@@ -28,10 +28,22 @@ rand = { version = "0.9", default-features = false }
 # bare-wasm build turns off (--no-default-features) and supplies its own
 # serialization for.
 bincode = { version = "1.3", optional = true }
+# no_std wire format for bare-wasm hosts (Soroban's wasm32v1-none): postcard is
+# serde-based like bincode but core+alloc only, so the proof can cross the
+# Soroban host boundary as Bytes without pulling std in. A different wire
+# format than bincode's on purpose: each chain's boundary owns its encoding.
+postcard = { version = "1", default-features = false, features = ["alloc"], optional = true }
 
 [target.'cfg(target_os = "solana")'.dependencies]
 # Only for the keccak256 syscall in src/keccak.rs; never linked off-chain.
 solana-program = "2"
+
+[target.'cfg(all(target_family = "wasm", not(target_os = "solana")))'.dependencies]
+# Only for routing keccak256 to Soroban's native host function in
+# src/keccak.rs (feature `soroban-host-keccak`); never linked off-chain or
+# on Solana. Guest-side bindings only — no soroban-sdk dependency.
+soroban-env-guest = { version = "26.1", optional = true }
+soroban-env-common = { version = "26.1", optional = true }
 
 # Two SBF-toolchain-compatibility patches, documented in each PATCH.md. Not
 # forks we intend to diverge on; remove them the moment Solana's SBF loader
@@ -58,6 +70,15 @@ default = ["wire"]
 # The bincode proof wire format. On by default; off for bare-wasm targets whose
 # host provides its own serialization (see the bincode dependency's comment).
 wire = ["dep:bincode"]
+# The postcard proof wire format, usable on bare-wasm (no_std + alloc).
+wire-postcard = ["dep:postcard"]
+# Measurement-only: count keccak calls/bytes inside SolKeccak256 (std targets).
+keccak-count = []
+# Route SolKeccak256 to Soroban's native keccak256 host function (wasm guest
+# targets only). Same function, same transcript: prover stays on software
+# keccak, Fiat-Shamir enforces cross-implementation equivalence, exactly as
+# the Solana syscall arm does.
+soroban-host-keccak = ["dep:soroban-env-guest", "dep:soroban-env-common"]
 # Per-phase on-chain CU attribution via sol_log_compute_units in the vendored
 # patches. Off by default: zero behavioral difference unless enabled.
 cu-trace = ["p3-circle/cu-trace", "p3-uni-stark/cu-trace"]

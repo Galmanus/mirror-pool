@@ -239,6 +239,21 @@ impl BindingProof {
     pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
         bincode::deserialize(bytes).ok().map(|inner| Self { inner })
     }
+
+    /// Serialize to bytes with `postcard`, the no_std wire format a bare-wasm
+    /// verifier (Soroban) reads from its host boundary. Not interchangeable
+    /// with the bincode format of [`BindingProof::to_bytes`].
+    #[cfg(feature = "wire-postcard")]
+    pub fn to_postcard(&self) -> Vec<u8> {
+        postcard::to_allocvec(&self.inner).expect("Proof<Config> is always serializable")
+    }
+
+    /// Deserialize from bytes produced by [`BindingProof::to_postcard`].
+    /// `None` on malformed input; callers on-chain treat that as rejection.
+    #[cfg(feature = "wire-postcard")]
+    pub fn from_postcard(bytes: &[u8]) -> Option<Self> {
+        postcard::from_bytes(bytes).ok().map(|inner| Self { inner })
+    }
 }
 
 /// Prove that `leaf = permute(secret ‖ action)` and
