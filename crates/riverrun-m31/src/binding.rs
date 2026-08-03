@@ -298,7 +298,9 @@ pub fn prove_binding_tuned_rows(
     log_rows: usize,
 ) -> (BindingProof, [u64; WIDTH], [u64; WIDTH]) {
     assert!(log_rows >= 2, "CirclePcs needs at least 4 rows");
-    prove_binding_inner(secret, action, round, num_queries, 1 << (log_rows - 1))
+    // Each row holds VECTOR_LEN = 2 permutations, and each repeat contributes
+    // one (leaf, nullifier) pair, so rows == repeats.
+    prove_binding_inner(secret, action, round, num_queries, 1 << log_rows)
 }
 
 pub fn prove_binding_tuned(
