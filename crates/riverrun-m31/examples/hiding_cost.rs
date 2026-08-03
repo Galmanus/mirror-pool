@@ -18,22 +18,28 @@ fn main() {
     // the AIR to declare them, which is part of the AIR work this instrument
     // deliberately does not fake. Their cost is small anyway next to the
     // ~700-column Poseidon2 trace.
-    for (log_rows, random_cols) in [(2usize, 0usize), (6, 0), (7, 0)] {
+    // (log_rows, queries). Hiding needs the committed trace to hold at least
+    // `queries` random rows beside the real ones, so a 2^k-row commitment
+    // supports about 2^(k-1) queries. These are the pairs that satisfy that
+    // and the ones that bracket the transaction-size cap.
+    for (log_rows, queries) in [(2usize, 40usize), (6, 40), (7, 40), (6, 32), (6, 26)] {
+        let random_cols = 0;
         let (proof, leaf, nullifier) =
-            prove_binding_hiding_cost(secret, action, round, 40, log_rows, random_cols);
-        let ok = verify_binding_hiding_cost(&proof, action, round, leaf, nullifier, 40);
+            prove_binding_hiding_cost(secret, action, round, queries, log_rows, random_cols);
+        let ok = verify_binding_hiding_cost(&proof, action, round, leaf, nullifier, queries);
         let bytes = proof.to_postcard();
         println!(
-            "{} rows, +{} random cols: verify={ok}, degree_bits={}, proof {} B",
+            "{} rows, {} queries: verify={ok}, degree_bits={}, proof {} B ({:.0}% of the 132,096 B tx cap)",
             1 << log_rows,
-            random_cols,
+            queries,
             proof.degree_bits(),
-            bytes.len()
+            bytes.len(),
+            bytes.len() as f64 / 1_320.96
         );
         assert!(ok, "the hiding-cost config must still prove and verify");
 
         if let Some(dir) = &outdir {
-            let tag = format!("{}r{}c", 1 << log_rows, random_cols);
+            let tag = format!("{}r{}q", 1 << log_rows, queries);
             std::fs::write(format!("{dir}/hiding_{tag}.postcard"), &bytes).unwrap();
             let mut publics = Vec::new();
             for v in action.iter().chain(&round).chain(&leaf).chain(&nullifier) {
