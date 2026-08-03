@@ -62,6 +62,33 @@ fn os_entropy() -> u64 {
     u64::from_le_bytes(buf)
 }
 
+/// `N` independent canonical Mersenne-31 limbs, each drawn from the OS.
+///
+/// The blinder is the whole unlinkability mechanism, so the entropy behind it
+/// is a security parameter rather than a convenience. An earlier version of
+/// this file drew ONE u64 and expanded it with an LCG: the blinder occupied
+/// 248 bits of space and carried 64 bits of entropy, while the documentation
+/// claimed a "uniform 248-bit blinder". The gap was found by an adversarial
+/// audit (docs/AUDIT-2026-08-03.md, M1) and is closed here.
+///
+/// Rejection sampling rather than a modulo, so the distribution is uniform
+/// over the field instead of merely close to it. A draw is rejected with
+/// probability 2^-31, so the loop terminates immediately in practice.
+fn os_entropy_limbs<const N: usize>() -> [u64; N] {
+    use std::io::Read;
+    const P: u32 = (1 << 31) - 1;
+    let mut f = std::fs::File::open("/dev/urandom").expect("opening /dev/urandom must succeed");
+    core::array::from_fn(|_| loop {
+        let mut b = [0u8; 4];
+        f.read_exact(&mut b)
+            .expect("reading /dev/urandom must succeed");
+        let v = u32::from_le_bytes(b) & P;
+        if v != P {
+            return v as u64;
+        }
+    })
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() != 6 {
@@ -75,18 +102,11 @@ fn main() {
     let outdir = &args[5];
     std::fs::create_dir_all(outdir).unwrap();
 
-    // A fresh blinder per use. This is the whole unlinkability mechanism;
-    // a fixed value here would silently undo it.
-    let entropy = os_entropy();
-    let blinder: [u64; BLINDER_LEN] = {
-        let mut state = entropy;
-        core::array::from_fn(|_| {
-            state = state
-                .wrapping_mul(6364136223846793005)
-                .wrapping_add(1442695040888963407);
-            (state >> 33) % ((1u64 << 31) - 1)
-        })
-    };
+    // A fresh blinder per use. This is the whole unlinkability mechanism; a
+    // fixed value here would silently undo it, and so would a value that
+    // merely LOOKS wide. Every limb is drawn independently from the OS, so the
+    // 248 bits of space the blinder occupies carry 248 bits of entropy.
+    let blinder: [u64; BLINDER_LEN] = os_entropy_limbs();
 
     let (bproof, c, leaf_digest, nullifier) = prove_binding_crowd(
         secret,
