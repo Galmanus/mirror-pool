@@ -288,4 +288,47 @@ mod tests {
             "a proof for one output must not verify against a different one"
         );
     }
+
+    /// The S-box `x -> x^5` is a bijection on F_p, and its inverse exponent is
+    /// `d = 5^-1 mod (p-1) = 1717986917`.
+    ///
+    /// This is not a curiosity. It is the load-bearing step in inverting the
+    /// Poseidon2 permutation cheaply, and inverting the permutation cheaply is
+    /// what makes `membership::compress` — a truncation of that permutation
+    /// with no feed-forward — fail to be collision resistant. See
+    /// `docs/COMPRESSION-NOTE.md` in riverrun-soroban for the proposition and
+    /// for what it does and does not break. Pinned here so the fact stays
+    /// visible in the crate whose construction depends on it.
+    #[test]
+    fn the_sbox_exponent_is_invertible_over_the_field() {
+        const P: u128 = (1 << 31) - 1;
+        const D: u128 = 1_717_986_917;
+
+        fn pow_mod(mut base: u128, mut exp: u128) -> u128 {
+            let mut acc = 1u128;
+            base %= P;
+            while exp > 0 {
+                if exp & 1 == 1 {
+                    acc = acc * base % P;
+                }
+                base = base * base % P;
+                exp >>= 1;
+            }
+            acc
+        }
+
+        // d is genuinely the inverse of 5 modulo p-1, which is what makes
+        // x -> x^5 invertible rather than merely surjective.
+        assert_eq!(5 * D % (P - 1), 1, "d must be 5^-1 mod (p-1)");
+
+        // (x^5)^d == x across a spread of the field, including the edges.
+        let mut x = 1u128;
+        for i in 0..4096u128 {
+            assert_eq!(pow_mod(pow_mod(x, 5), D), x, "the S-box must invert at x = {x}");
+            x = (x * 7 + i * 1_000_003 + 1) % P;
+        }
+        for x in [0u128, 1, 2, P - 2, P - 1] {
+            assert_eq!(pow_mod(pow_mod(x, 5), D), x, "the S-box must invert at the edge x = {x}");
+        }
+    }
 }

@@ -667,8 +667,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
-    fn a_path_that_does_not_fold_to_the_claimed_root_cannot_be_proved() {
+    fn a_path_that_does_not_fold_to_the_claimed_root_cannot_yield_a_verifying_proof() {
         // A malicious/broken path: reuse a genuine path's siblings and bits,
         // but for the WRONG leaf, so folding it does not actually reach the
         // root claimed to the prover. Mirrors permutation.rs's documented
@@ -696,6 +695,23 @@ mod tests {
         let trace = append_bit_column(poseidon_trace, &bits);
         let pis = public_values(wrong_leaf, root); // claims the ORIGINAL root
         let config = make_config();
-        let _ = prove(&config, &air, trace, &pis);
+
+        // `prove` runs `check_constraints` only under `debug_assertions`
+        // (p3-uni-stark 0.6.2, prover.rs:39), so in RELEASE — the profile that
+        // ships — it emits a proof for this unsatisfiable trace rather than
+        // panicking. Asserting only the panic made this test vacuous exactly
+        // where it mattered. The claim that holds in both profiles is that no
+        // such proof verifies.
+        let attempt = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            prove(&config, &air, trace, &pis)
+        }));
+        match attempt {
+            Err(_) => { /* debug: the prover refused to build it at all */ }
+            Ok(proof) => assert!(
+                !verify_membership(&MembershipProof { inner: proof }, wrong_leaf, root),
+                "a fold that does not reach the claimed root produced a proof that \
+                 verified: the root constraint is not binding"
+            ),
+        }
     }
 }

@@ -74,10 +74,14 @@
 //! subtracting `Z_D · R` from the published openings recovered the witness the
 //! proof was built to hide. See [`Seed`] for the attack as an audit stated it.
 //!
-//! The generator is now ChaCha20 ([`Csprng`]) over a 256-bit [`Seed`], with the
-//! two streams domain-separated through the permutation rather than by a
-//! constant. This is prover-side only: no verifier draws from either generator,
-//! so nothing about it changed on-chain and no contract needed redeploying.
+//! The generator is now ChaCha20 ([`Csprng`]) over a 256-bit [`Seed`]. The salt
+//! stream and the blinding stream are separated by ChaCha20's own nonce field,
+//! so their independence is the cipher's PRF assumption and not a construction
+//! this crate invented — an intermediate version *did* invent one, and
+//! [`Csprng::from_seed`] records why it was worse than it looked.
+//!
+//! This is prover-side only: no verifier draws from either generator, so
+//! nothing about it changed on-chain and no contract needed redeploying.
 
 extern crate alloc;
 
@@ -148,26 +152,13 @@ impl Seed {
         ])
     }
 
-    /// A seed derived from this one by domain separation, so the salt stream
-    /// and the blinding stream are independent rather than related by a
-    /// constant the way `rng_seed` and `rng_seed ^ 0x5A17` were.
-    fn domain(&self, tag: u8) -> Self {
-        let mut bytes = self.0;
-        bytes[31] ^= tag;
-        // One permutation call so the two streams differ everywhere rather
-        // than in a single byte, which a keystream comparison would expose.
-        let mut block = [0u64; WIDTH];
-        for (i, chunk) in bytes.chunks(4).enumerate() {
-            block[i] = u32::from_le_bytes(chunk.try_into().unwrap()) as u64 % ((1 << 31) - 1);
-        }
-        let out = permute(block);
-        let mut derived = [0u8; 32];
-        for (i, v) in out.iter().take(8).enumerate() {
-            derived[i * 4..(i + 1) * 4].copy_from_slice(&(*v as u32).to_le_bytes());
-        }
-        Self(derived)
-    }
 }
+
+/// Stream indices separating the two uses of one seed. ChaCha20's nonce field
+/// exists for exactly this, so the independence of the two keystreams is the
+/// cipher's own PRF assumption rather than anything this crate invents.
+const STREAM_SALTS: u64 = 1;
+const STREAM_BLINDING: u64 = 2;
 
 /// The cryptographic generator behind the leaf salts and the blinding
 /// polynomials. ChaCha20, from `rand_chacha`, wrapped only to satisfy the
@@ -180,9 +171,28 @@ impl Seed {
 pub struct Csprng(rand_chacha::ChaCha20Rng);
 
 impl Csprng {
-    fn from_seed(seed: Seed) -> Self {
+    /// The generator for one use of `seed`, separated from the other uses by
+    /// ChaCha20's stream index.
+    ///
+    /// The first version of this fix derived a second seed by XOR-ing a tag in
+    /// and pushing the result through the Poseidon2 permutation. That was worse
+    /// than it looked, for two reasons worth recording. The permutation is not
+    /// a key-derivation function — there is no sponge padding and no capacity
+    /// separation, so nothing standard backs the claim that its output is a
+    /// uniform key. And the arithmetic leaked: eight Mersenne-31 limbs written
+    /// as four bytes each cannot exceed `2^31 - 2`, so the top bit of every
+    /// 32-bit word of the derived key was *identically zero* and the key
+    /// carried at most 248 bits, eight of them constant.
+    ///
+    /// Using the cipher's own nonce costs nothing, keeps all 256 bits of the
+    /// key, and reduces independence of the two streams to the standard
+    /// assumption that ChaCha20 is a PRF — which is the assumption already
+    /// being made by using it at all.
+    fn from_seed(seed: Seed, stream: u64) -> Self {
         use rand10::SeedableRng;
-        Self(rand_chacha::ChaCha20Rng::from_seed(seed.0))
+        let mut rng = rand_chacha::ChaCha20Rng::from_seed(seed.0);
+        rng.set_stream(stream);
+        Self(rng)
     }
 }
 
@@ -764,7 +774,7 @@ pub(crate) fn make_zk_config_tuned(
         field_hash,
         compress,
         0,
-        Csprng::from_seed(seed.domain(0x01)),
+        Csprng::from_seed(seed, STREAM_SALTS),
     );
     let challenge_mmcs = ZkChallengeMmcs::new(val_mmcs.clone());
     let fri_params = p3_fri::FriParameters {
@@ -781,7 +791,7 @@ pub(crate) fn make_zk_config_tuned(
         fri_params,
         _phantom: core::marker::PhantomData,
     };
-    let pcs = ZkPcs::new(inner, NUM_RANDOM_CODEWORDS, Csprng::from_seed(seed.domain(0x02)));
+    let pcs = ZkPcs::new(inner, NUM_RANDOM_CODEWORDS, Csprng::from_seed(seed, STREAM_BLINDING));
     StarkConfig::new(pcs, Challenger::from_hasher(Vec::new(), byte_hash))
 }
 
@@ -1129,5 +1139,87 @@ mod tests {
             verify_binding_zk(&round_tripped, action, round, leaf, nullifier, TEST_QUERIES),
             "a hiding proof must still verify after a wire round trip"
         );
+    }
+
+    // ---------------------------------------------------------------- seeds
+    //
+    // These do not assert that the generator is good — ChaCha20's security is
+    // assumed, not tested here. They falsify the two concrete defects this
+    // code actually had: a seed whose bits were not all load-bearing, and two
+    // streams related by something an adversary could invert.
+
+    /// Every one of the 256 seed bits must reach the output.
+    ///
+    /// This is the test that would have caught the discarded intermediate
+    /// derivation, where eight bits of the derived key were identically zero:
+    /// flipping a seed bit that the key does not carry leaves the keystream
+    /// untouched, and this loop would have found all eight.
+    #[test]
+    fn every_seed_bit_changes_the_keystream() {
+        use rand10::TryRng;
+        let base = [0u8; 32];
+        let reference = {
+            let mut rng = Csprng::from_seed(Seed::from_bytes(base), STREAM_SALTS);
+            core::array::from_fn::<u64, 8, _>(|_| rng.try_next_u64().unwrap())
+        };
+        for bit in 0..256 {
+            let mut flipped = base;
+            flipped[bit / 8] ^= 1 << (bit % 8);
+            let mut rng = Csprng::from_seed(Seed::from_bytes(flipped), STREAM_SALTS);
+            let out = core::array::from_fn::<u64, 8, _>(|_| rng.try_next_u64().unwrap());
+            assert_ne!(
+                out, reference,
+                "seed bit {bit} does not reach the keystream, so the seed is \
+                 narrower than the 256 bits its type claims"
+            );
+        }
+    }
+
+    /// The salt stream and the blinding stream must not coincide, and must not
+    /// be one another shifted: the predecessor seeded them from values a fixed
+    /// XOR apart, which is what let recovering one recover the other.
+    #[test]
+    fn the_two_streams_of_one_seed_diverge() {
+        use rand10::TryRng;
+        let seed = Seed::from_bytes([7u8; 32]);
+        let draw = |stream| {
+            let mut rng = Csprng::from_seed(seed, stream);
+            core::array::from_fn::<u64, 64, _>(|_| rng.try_next_u64().unwrap())
+        };
+        let salts = draw(STREAM_SALTS);
+        let blinding = draw(STREAM_BLINDING);
+        assert_ne!(salts, blinding, "the two streams must differ");
+        for shift in 1..64 {
+            assert_ne!(
+                &salts[shift..],
+                &blinding[..64 - shift],
+                "the blinding stream must not be the salt stream offset by {shift}"
+            );
+        }
+    }
+
+    /// A seed is a seed: same bytes, same stream, same output. Reproducibility
+    /// is what the fixtures rest on, so it is worth pinning.
+    #[test]
+    fn one_seed_reproduces_its_own_stream() {
+        use rand10::TryRng;
+        let seed = Seed::from_bytes([3u8; 32]);
+        let mut a = Csprng::from_seed(seed, STREAM_BLINDING);
+        let mut b = Csprng::from_seed(seed, STREAM_BLINDING);
+        for _ in 0..32 {
+            assert_eq!(a.try_next_u64().unwrap(), b.try_next_u64().unwrap());
+        }
+    }
+
+    /// `Seed::reproducible` is documented as carrying 64 bits, not 256. That
+    /// is a real limitation and the test states it rather than letting a
+    /// reader assume the constructor is as strong as the type.
+    #[test]
+    fn the_reproducible_seed_carries_only_sixty_four_bits() {
+        let s = Seed::reproducible(0x0123_4567_89AB_CDEF);
+        let bytes = s.0;
+        for chunk in bytes.chunks(8) {
+            assert_eq!(chunk, &bytes[..8], "reproducible() repeats one u64 four times");
+        }
     }
 }

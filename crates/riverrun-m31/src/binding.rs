@@ -553,8 +553,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
-    fn a_trace_built_from_two_different_secrets_cannot_even_be_proved() {
+    fn a_trace_built_from_two_different_secrets_cannot_yield_a_verifying_proof() {
         // The strongest form of the soundness claim: attempting to build a
         // trace where the leaf block and the nullifier block use DIFFERENT
         // secrets does not merely fail verification later, it fails to
@@ -602,8 +601,31 @@ mod tests {
         >(inputs, &constants, 0);
         let pis = public_values(action, round, leaf_output, nullifier_output);
         let config = make_config();
-        // Expected to panic: the shared-secret constraint is violated.
-        let _ = prove(&config, &air, trace, &pis);
+
+        // Plonky3 runs `check_constraints` inside `prove` only under
+        // `debug_assertions` (p3-uni-stark 0.6.2, prover.rs:39). In debug it
+        // panics on this trace; in RELEASE it does not, and emits a proof.
+        // This test used to assert only the panic, which made it vacuous in
+        // the profile that actually ships. The claim that holds in both
+        // profiles, and the only one soundness rests on, is that no such
+        // proof verifies — so that is what is asserted here.
+        let attempt = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            prove(&config, &air, trace, &pis)
+        }));
+        match attempt {
+            Err(_) => { /* debug: the prover refused to build it at all */ }
+            Ok(proof) => assert!(
+                !verify_binding(
+                    &BindingProof { inner: proof },
+                    action,
+                    round,
+                    leaf_output,
+                    nullifier_output
+                ),
+                "a trace whose two blocks use DIFFERENT secrets produced a proof \
+                 that verified: the shared-secret constraint is not binding"
+            ),
+        }
     }
 
     #[test]
