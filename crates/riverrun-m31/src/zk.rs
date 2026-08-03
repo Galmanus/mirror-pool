@@ -62,10 +62,22 @@
 //!
 //! Witness-hiding alone is half the fix. The leaf is still a public input; the
 //! unlinkability half (commit to the leaf, compose on the commitment) is
-//! separate work tracked in `docs/PRIVACY.md`. And the RNG plugged in by the
-//! test configuration (`SplitMix64`) is NOT cryptographic; a real deployment
-//! must seed from system entropy — the blinding polynomial and the leaf salts
-//! are exactly what an adversary would grind.
+//! separate work tracked in `docs/PRIVACY.md`.
+//!
+//! ## The randomness is part of the construction, not a detail around it
+//!
+//! An earlier version of this module drew its leaf salts and blinding
+//! polynomials from a `SplitMix64` seeded by a `u64`. That is not a
+//! configuration wart, it is a break: the salts are published inside the proof,
+//! `SplitMix64`'s state inverts from a single output, and the two streams were
+//! seeded by values a fixed XOR apart. Recovering one recovered the other, and
+//! subtracting `Z_D · R` from the published openings recovered the witness the
+//! proof was built to hide. See [`Seed`] for the attack as an audit stated it.
+//!
+//! The generator is now ChaCha20 ([`Csprng`]) over a 256-bit [`Seed`], with the
+//! two streams domain-separated through the permutation rather than by a
+//! constant. This is prover-side only: no verifier draws from either generator,
+//! so nothing about it changed on-chain and no contract needed redeploying.
 
 extern crate alloc;
 
@@ -90,8 +102,106 @@ use rand10::{Rng, RngExt};
 use spin::Mutex;
 
 use crate::binding::{public_values_for_hiding, BindingAir, CONTEXT_LEN, SECRET_LEN};
-use crate::hiding::SplitMix64;
 use crate::permutation::{permute, WIDTH};
+
+/// The 256-bit seed behind every hiding value a proof carries.
+///
+/// This type exists because its predecessor was a bare `u64`, and the width of
+/// that argument was the real security parameter of the whole hiding path. An
+/// adversarial audit (`docs/AUDIT-2026-08-03.md`, C1) established the attack:
+/// the leaf salts are *published inside the proof*
+/// (`p3-merkle-tree`'s `BatchOpening::new(openings, (salts, siblings))`), and
+/// the generator drawing them was a `SplitMix64` whose state inverts from a
+/// single output. Recovering the salt stream recovered the blinding stream,
+/// and subtracting `Z_D · R` from the published openings recovered the trace —
+/// which `examples/privacy_audit.rs` shows is overdetermined for interpolation.
+/// The witness came back out of a proof that claimed to hide it.
+///
+/// Replacing the generator without widening the seed would have moved the work
+/// from roughly 2^33 to 2^64 and left the property still unclaimed, so both
+/// changed together. There is deliberately no `From<u64>`: a caller that has
+/// only 64 bits of entropy must say so at the call site, in
+/// [`Seed::reproducible`], rather than have it inferred.
+#[derive(Clone, Copy)]
+pub struct Seed([u8; 32]);
+
+impl Seed {
+    /// A seed from caller-supplied bytes. The caller owns the guarantee that
+    /// they are uniform; [`Seed::from_os`] is the way to get that for free.
+    pub const fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
+    /// A seed stretched from 64 bits, for fixtures and measurements that must
+    /// reproduce byte-for-byte across runs.
+    ///
+    /// **This carries 64 bits of entropy, not 256.** It is sound — soundness
+    /// does not depend on the prover's randomness at all — but it is not
+    /// hiding against an adversary willing to spend 2^64. Never reach for it
+    /// on a path whose output a real counterparty will see.
+    pub const fn reproducible(seed: u64) -> Self {
+        let b = seed.to_le_bytes();
+        Self([
+            b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[0], b[1], b[2], b[3], b[4], b[5],
+            b[6], b[7], b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[0], b[1], b[2], b[3],
+            b[4], b[5], b[6], b[7],
+        ])
+    }
+
+    /// A seed derived from this one by domain separation, so the salt stream
+    /// and the blinding stream are independent rather than related by a
+    /// constant the way `rng_seed` and `rng_seed ^ 0x5A17` were.
+    fn domain(&self, tag: u8) -> Self {
+        let mut bytes = self.0;
+        bytes[31] ^= tag;
+        // One permutation call so the two streams differ everywhere rather
+        // than in a single byte, which a keystream comparison would expose.
+        let mut block = [0u64; WIDTH];
+        for (i, chunk) in bytes.chunks(4).enumerate() {
+            block[i] = u32::from_le_bytes(chunk.try_into().unwrap()) as u64 % ((1 << 31) - 1);
+        }
+        let out = permute(block);
+        let mut derived = [0u8; 32];
+        for (i, v) in out.iter().take(8).enumerate() {
+            derived[i * 4..(i + 1) * 4].copy_from_slice(&(*v as u32).to_le_bytes());
+        }
+        Self(derived)
+    }
+}
+
+/// The cryptographic generator behind the leaf salts and the blinding
+/// polynomials. ChaCha20, from `rand_chacha`, wrapped only to satisfy the
+/// `Rng + Clone + Send` shape `p3-merkle-tree` and `HidingCirclePcs` require.
+///
+/// The predecessor, [`crate::hiding::SplitMix64`], remains in the codebase for
+/// the cost instrument that measures the hiding machinery's price, where
+/// reproducibility matters and secrecy does not. It must never come back here.
+#[derive(Clone)]
+pub struct Csprng(rand_chacha::ChaCha20Rng);
+
+impl Csprng {
+    fn from_seed(seed: Seed) -> Self {
+        use rand10::SeedableRng;
+        Self(rand_chacha::ChaCha20Rng::from_seed(seed.0))
+    }
+}
+
+impl rand10::TryRng for Csprng {
+    type Error = core::convert::Infallible;
+
+    fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
+        Ok(self.0.next_u32())
+    }
+
+    fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
+        Ok(self.0.next_u64())
+    }
+
+    fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), Self::Error> {
+        self.0.fill_bytes(dst);
+        Ok(())
+    }
+}
 
 /// A hiding circle PCS: `CirclePcs` wrapped with the four randomization
 /// mechanisms of `HidingFriPcs`, adapted to circle domains as described in the
@@ -608,14 +718,14 @@ type ZkValMmcs = p3_merkle_tree::MerkleTreeHidingMmcs<
     u8,
     FieldHash,
     Compress,
-    SplitMix64,
+    Csprng,
     2,
     32,
     SALT_ELEMS,
 >;
 type ZkChallengeMmcs = ExtensionMmcs<Val, Challenge, ZkValMmcs>;
 type Challenger = SerializingChallenger32<Val, HashChallenger<u8, ByteHash, 32>>;
-type ZkPcs = HidingCirclePcs<Val, ZkValMmcs, ZkChallengeMmcs, SplitMix64>;
+type ZkPcs = HidingCirclePcs<Val, ZkValMmcs, ZkChallengeMmcs, Csprng>;
 pub(crate) type ZkConfig = StarkConfig<ZkPcs, Challenge, Challenger>;
 
 /// log2 of the quotient-chunk count for [`BindingAir`] under the ZK
@@ -627,12 +737,13 @@ pub(crate) type ZkConfig = StarkConfig<ZkPcs, Challenge, Challenger>;
 /// it and fails if it drifts.
 pub const LOG_NUM_QUOTIENT_CHUNKS_ZK: usize = 3;
 
-/// Build the hiding config. `rng_seed` seeds BOTH the blinding polynomials and
-/// the leaf salts; two proofs of the same statement with different seeds must
-/// differ everywhere. The verifier constructs the same types and never draws
-/// from either RNG, so its seed value is irrelevant to soundness.
-fn make_zk_config(num_queries: usize, rng_seed: u64) -> ZkConfig {
-    make_zk_config_tuned(num_queries, 1, rng_seed)
+/// Build the hiding config. `seed` feeds BOTH the blinding polynomials and the
+/// leaf salts, through two domain-separated streams; two proofs of the same
+/// statement under different seeds must differ everywhere. The verifier
+/// constructs the same types and never draws from either generator, so its
+/// seed value is irrelevant to soundness.
+fn make_zk_config(num_queries: usize, seed: Seed) -> ZkConfig {
+    make_zk_config_tuned(num_queries, 1, seed)
 }
 
 /// Same construction with the FRI blowup exposed. Soundness per query scales
@@ -641,7 +752,11 @@ fn make_zk_config(num_queries: usize, rng_seed: u64) -> ZkConfig {
 /// while the proof carries half the query payloads. That trade is what lets
 /// the hiding proof fit a Stellar transaction envelope; see
 /// `price_the_zk_wire_sizes`.
-pub(crate) fn make_zk_config_tuned(num_queries: usize, log_blowup: usize, rng_seed: u64) -> ZkConfig {
+pub(crate) fn make_zk_config_tuned(
+    num_queries: usize,
+    log_blowup: usize,
+    seed: Seed,
+) -> ZkConfig {
     let byte_hash = ByteHash {};
     let field_hash = FieldHash::new(byte_hash);
     let compress = Compress::new(byte_hash);
@@ -649,7 +764,7 @@ pub(crate) fn make_zk_config_tuned(num_queries: usize, log_blowup: usize, rng_se
         field_hash,
         compress,
         0,
-        SplitMix64::seed_from_u64(rng_seed ^ 0x5A17),
+        Csprng::from_seed(seed.domain(0x01)),
     );
     let challenge_mmcs = ZkChallengeMmcs::new(val_mmcs.clone());
     let fri_params = p3_fri::FriParameters {
@@ -666,7 +781,7 @@ pub(crate) fn make_zk_config_tuned(num_queries: usize, log_blowup: usize, rng_se
         fri_params,
         _phantom: core::marker::PhantomData,
     };
-    let pcs = ZkPcs::new(inner, NUM_RANDOM_CODEWORDS, SplitMix64::seed_from_u64(rng_seed));
+    let pcs = ZkPcs::new(inner, NUM_RANDOM_CODEWORDS, Csprng::from_seed(seed.domain(0x02)));
     StarkConfig::new(pcs, Challenger::from_hasher(Vec::new(), byte_hash))
 }
 
@@ -723,9 +838,9 @@ pub fn prove_binding_zk(
     round: [u64; CONTEXT_LEN],
     num_queries: usize,
     log_rows: usize,
-    rng_seed: u64,
+    seed: Seed,
 ) -> (ZkBindingProof, [u64; WIDTH], [u64; WIDTH]) {
-    prove_binding_zk_tuned(secret, action, round, num_queries, 1, log_rows, rng_seed)
+    prove_binding_zk_tuned(secret, action, round, num_queries, 1, log_rows, seed)
 }
 
 /// Same as [`prove_binding_zk`] with the FRI blowup exposed; see
@@ -738,7 +853,7 @@ pub fn prove_binding_zk_tuned(
     num_queries: usize,
     log_blowup: usize,
     log_rows: usize,
-    rng_seed: u64,
+    seed: Seed,
 ) -> (ZkBindingProof, [u64; WIDTH], [u64; WIDTH]) {
     assert!(log_rows >= 2, "CirclePcs cannot commit to fewer than 4 rows");
     assert!(
@@ -771,7 +886,7 @@ pub fn prove_binding_zk_tuned(
 
     let air = BindingAir::new();
     let pis = public_values_for_hiding(action, round, leaf_output, nullifier_output);
-    let config = make_zk_config_tuned(num_queries, log_blowup, rng_seed);
+    let config = make_zk_config_tuned(num_queries, log_blowup, seed);
     let proof = prove(&config, &air, trace, &pis);
     (ZkBindingProof { inner: proof }, leaf_output, nullifier_output)
 }
@@ -801,7 +916,7 @@ pub fn verify_binding_zk_tuned(
     log_blowup: usize,
 ) -> bool {
     let air = BindingAir::new();
-    let config = make_zk_config_tuned(num_queries, log_blowup, 0);
+    let config = make_zk_config_tuned(num_queries, log_blowup, Seed::reproducible(0));
     let pis = public_values_for_hiding(action, round, leaf, nullifier);
     verify_with_known_quotient_chunks(
         &config,
@@ -847,7 +962,7 @@ mod tests {
         use p3_air::BaseAir;
         use p3_uni_stark::{get_log_num_quotient_chunks, AirLayout, StarkGenericConfig};
         let air = BindingAir::new();
-        let config = make_zk_config(4, 0);
+        let config = make_zk_config(4, Seed::reproducible(0));
         assert_eq!(config.is_zk(), 1, "the hiding PCS must flip the ZK path on");
         let layout = AirLayout {
             preprocessed_width: 0,
@@ -871,7 +986,7 @@ mod tests {
         let action = context(1);
         let round = context(2);
         let (proof, leaf, nullifier) =
-            prove_binding_zk(s, action, round, TEST_QUERIES, TEST_LOG_ROWS, 42);
+            prove_binding_zk(s, action, round, TEST_QUERIES, TEST_LOG_ROWS, Seed::reproducible(42));
         assert!(
             verify_binding_zk(&proof, action, round, leaf, nullifier, TEST_QUERIES),
             "a genuine hiding proof must verify"
@@ -884,7 +999,7 @@ mod tests {
         let action = context(1);
         let round = context(2);
         let (proof, leaf, nullifier) =
-            prove_binding_zk(s, action, round, TEST_QUERIES, TEST_LOG_ROWS, 42);
+            prove_binding_zk(s, action, round, TEST_QUERIES, TEST_LOG_ROWS, Seed::reproducible(42));
         let mut wrong_leaf = leaf;
         wrong_leaf[0] ^= 1;
         assert!(
@@ -899,7 +1014,7 @@ mod tests {
         let action = context(1);
         let round = context(2);
         let (proof, leaf, nullifier) =
-            prove_binding_zk(s, action, round, TEST_QUERIES, TEST_LOG_ROWS, 42);
+            prove_binding_zk(s, action, round, TEST_QUERIES, TEST_LOG_ROWS, Seed::reproducible(42));
         let mut wrong = nullifier;
         wrong[0] ^= 1;
         assert!(
@@ -920,7 +1035,7 @@ mod tests {
         let action = context(1);
         let round = context(2);
         let (proof, _, _) =
-            prove_binding_zk(s, action, round, TEST_QUERIES, TEST_LOG_ROWS, 42);
+            prove_binding_zk(s, action, round, TEST_QUERIES, TEST_LOG_ROWS, Seed::reproducible(42));
         let random_dofs = 1usize << (proof.degree_bits() - 1);
         assert!(
             TEST_QUERIES + 1 < random_dofs,
@@ -939,8 +1054,8 @@ mod tests {
         let action = context(1);
         let round = context(2);
         let (a, leaf, nullifier) =
-            prove_binding_zk(s, action, round, TEST_QUERIES, TEST_LOG_ROWS, 1);
-        let (b, _, _) = prove_binding_zk(s, action, round, TEST_QUERIES, TEST_LOG_ROWS, 2);
+            prove_binding_zk(s, action, round, TEST_QUERIES, TEST_LOG_ROWS, Seed::reproducible(1));
+        let (b, _, _) = prove_binding_zk(s, action, round, TEST_QUERIES, TEST_LOG_ROWS, Seed::reproducible(2));
         assert!(
             verify_binding_zk(&a, action, round, leaf, nullifier, TEST_QUERIES)
                 && verify_binding_zk(&b, action, round, leaf, nullifier, TEST_QUERIES),
@@ -976,7 +1091,7 @@ mod tests {
             (4, 11, 3),
         ] {
             let (proof, leaf, nullifier) =
-                prove_binding_zk_tuned(s, action, round, queries, log_blowup, log_rows, 42);
+                prove_binding_zk_tuned(s, action, round, queries, log_blowup, log_rows, Seed::reproducible(42));
             assert!(
                 verify_binding_zk_tuned(
                     &proof, action, round, leaf, nullifier, queries, log_blowup
@@ -1005,7 +1120,7 @@ mod tests {
         let action = context(1);
         let round = context(2);
         let (proof, leaf, nullifier) =
-            prove_binding_zk(s, action, round, TEST_QUERIES, TEST_LOG_ROWS, 42);
+            prove_binding_zk(s, action, round, TEST_QUERIES, TEST_LOG_ROWS, Seed::reproducible(42));
         let bytes = proof.to_bytes();
         eprintln!("ZkBindingProof serialized size: {} bytes", bytes.len());
         let round_tripped =

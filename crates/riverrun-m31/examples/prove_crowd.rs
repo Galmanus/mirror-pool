@@ -24,7 +24,7 @@
 //! is indifferent to where the siblings came from.
 
 use riverrun_m31::{
-    compress, prove_binding_crowd, prove_membership_crowd, PathStep, BLINDER_LEN, CONTEXT_LEN,
+    compress, prove_binding_crowd, prove_membership_crowd, zk::Seed, PathStep, BLINDER_LEN, CONTEXT_LEN,
     CROWD_DEPTH, DIGEST_LEN, SECRET_LEN,
 };
 
@@ -53,13 +53,17 @@ fn hex_of(vals: &[u64]) -> String {
     s
 }
 
-fn os_entropy() -> u64 {
+/// A full-width seed for the hiding randomness, straight from the OS. The
+/// blinding polynomials and the leaf salts are drawn from this, and the salts
+/// are published inside the proof, so its width is a security parameter: see
+/// `Seed`'s own documentation for the attack that a 64-bit seed leaves open.
+fn os_seed() -> Seed {
     use std::io::Read;
-    let mut buf = [0u8; 8];
+    let mut bytes = [0u8; 32];
     std::fs::File::open("/dev/urandom")
-        .and_then(|mut f| f.read_exact(&mut buf))
+        .and_then(|mut f| f.read_exact(&mut bytes))
         .expect("reading /dev/urandom must succeed");
-    u64::from_le_bytes(buf)
+    Seed::from_bytes(bytes)
 }
 
 /// `N` independent canonical Mersenne-31 limbs, each drawn from the OS.
@@ -116,7 +120,7 @@ fn main() {
         QUERIES,
         LOG_BLOWUP,
         LOG_ROWS,
-        os_entropy(),
+        os_seed(),
     );
 
     // The synthesised authentication path (see the module doc).
@@ -128,7 +132,7 @@ fn main() {
         node_on_right: (tree_seed.wrapping_add(i as u64)) % 3 == 1,
     });
     let (mproof, c2, root) =
-        prove_membership_crowd(leaf_digest, blinder, &path, QUERIES, LOG_BLOWUP, os_entropy());
+        prove_membership_crowd(leaf_digest, blinder, &path, QUERIES, LOG_BLOWUP, os_seed());
     assert_eq!(c, c2, "one (leaf, blinder) pair must commit identically in both relations");
 
     // Sanity: the prover's root is the hand fold of the same path.

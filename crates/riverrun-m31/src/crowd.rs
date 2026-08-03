@@ -77,7 +77,7 @@ use p3_uni_stark::{prove, verify_with_known_quotient_chunks, Proof, SubAirBuilde
 use crate::binding::{CONTEXT_LEN, SECRET_LEN};
 use crate::membership::{compress, PathStep, DIGEST_LEN};
 use crate::permutation::{permute, WIDTH};
-use crate::zk::{make_zk_config_tuned, ZkConfig};
+use crate::zk::{Seed, make_zk_config_tuned, ZkConfig};
 
 const SBOX_DEGREE: u64 = 5;
 const SBOX_REGISTERS: usize = 0;
@@ -253,7 +253,7 @@ pub fn prove_binding_crowd(
     num_queries: usize,
     log_blowup: usize,
     log_rows: usize,
-    rng_seed: u64,
+    seed: Seed,
 ) -> (CrowdBindingProof, [u64; DIGEST_LEN], [u64; DIGEST_LEN], [u64; WIDTH]) {
     assert!(log_rows >= 2, "CirclePcs cannot commit to fewer than 4 rows");
     assert!(
@@ -288,7 +288,7 @@ pub fn prove_binding_crowd(
 
     let air = CrowdBindingAir::new();
     let pis = binding_public_values(action, round, c, nullifier_output);
-    let config = make_zk_config_tuned(num_queries, log_blowup, rng_seed);
+    let config = make_zk_config_tuned(num_queries, log_blowup, seed);
     let proof = prove(&config, &air, trace, &pis);
     (CrowdBindingProof { inner: proof }, c, leaf_digest, nullifier_output)
 }
@@ -305,7 +305,7 @@ pub fn verify_binding_crowd(
     log_blowup: usize,
 ) -> bool {
     let air = CrowdBindingAir::new();
-    let config = make_zk_config_tuned(num_queries, log_blowup, 0);
+    let config = make_zk_config_tuned(num_queries, log_blowup, Seed::reproducible(0));
     let pis = binding_public_values(action, round, c, nullifier);
     verify_with_known_quotient_chunks(
         &config,
@@ -504,7 +504,7 @@ pub fn prove_membership_crowd(
     path: &[PathStep; CROWD_DEPTH],
     num_queries: usize,
     log_blowup: usize,
-    rng_seed: u64,
+    seed: Seed,
 ) -> (CrowdMembershipProof, [u64; DIGEST_LEN], [u64; DIGEST_LEN]) {
     let rows = CROWD_DEPTH + 1;
     assert!(rows.is_power_of_two(), "commit row + CROWD_DEPTH fold rows must fill a power of two");
@@ -544,7 +544,7 @@ pub fn prove_membership_crowd(
 
     let air = CrowdMembershipAir::new();
     let pis = membership_public_values(c, root);
-    let config = make_zk_config_tuned(num_queries, log_blowup, rng_seed);
+    let config = make_zk_config_tuned(num_queries, log_blowup, seed);
     let proof = prove(&config, &air, trace, &pis);
     (CrowdMembershipProof { inner: proof }, c, root)
 }
@@ -559,7 +559,7 @@ pub fn verify_membership_crowd(
     log_blowup: usize,
 ) -> bool {
     let air = CrowdMembershipAir::new();
-    let config = make_zk_config_tuned(num_queries, log_blowup, 0);
+    let config = make_zk_config_tuned(num_queries, log_blowup, Seed::reproducible(0));
     let pis = membership_public_values(c, root);
     verify_with_known_quotient_chunks(
         &config,
@@ -623,6 +623,8 @@ pub fn verify_crowd(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[allow(unused_imports)]
+    use crate::zk::Seed;
 
     const Q: usize = 20;
     const LOG_B: usize = 2;
@@ -659,7 +661,7 @@ mod tests {
     #[test]
     fn the_pinned_crowd_chunk_counts_match_the_symbolic_pass() {
         use p3_uni_stark::{get_log_num_quotient_chunks, AirLayout, StarkGenericConfig};
-        let config = make_zk_config_tuned(4, 1, 0);
+        let config = make_zk_config_tuned(4, 1, Seed::reproducible(0));
         assert_eq!(config.is_zk(), 1);
 
         let air = CrowdBindingAir::new();
@@ -694,9 +696,9 @@ mod tests {
         let round = context(2);
         let b = blinder(1);
         let (bproof, c, leaf_digest, nullifier) =
-            prove_binding_crowd(s, action, round, b, Q, LOG_B, LOG_ROWS, 42);
+            prove_binding_crowd(s, action, round, b, Q, LOG_B, LOG_ROWS, Seed::reproducible(42));
         let (path, _) = sample_path(leaf_digest);
-        let (mproof, c2, root) = prove_membership_crowd(leaf_digest, b, &path, Q, LOG_B, 43);
+        let (mproof, c2, root) = prove_membership_crowd(leaf_digest, b, &path, Q, LOG_B, Seed::reproducible(43));
         assert_eq!(c, c2, "same (leaf, blinder) must commit identically in both relations");
         assert!(
             verify_crowd(&bproof, &mproof, action, round, c, nullifier, root, Q, LOG_B),
@@ -711,9 +713,9 @@ mod tests {
         let round = context(2);
         let b = blinder(1);
         let (bproof, c, leaf_digest, nullifier) =
-            prove_binding_crowd(s, action, round, b, Q, LOG_B, LOG_ROWS, 42);
+            prove_binding_crowd(s, action, round, b, Q, LOG_B, LOG_ROWS, Seed::reproducible(42));
         let (path, _) = sample_path(leaf_digest);
-        let (mproof, _, root) = prove_membership_crowd(leaf_digest, b, &path, Q, LOG_B, 43);
+        let (mproof, _, root) = prove_membership_crowd(leaf_digest, b, &path, Q, LOG_B, Seed::reproducible(43));
         let mut wrong_c = c;
         wrong_c[0] ^= 1;
         assert!(!verify_binding_crowd(&bproof, action, round, wrong_c, nullifier, Q, LOG_B));
@@ -729,10 +731,10 @@ mod tests {
         let action = context(1);
         let round = context(2);
         let (bproof, c_b, leaf_digest, nullifier) =
-            prove_binding_crowd(s, action, round, blinder(1), Q, LOG_B, LOG_ROWS, 42);
+            prove_binding_crowd(s, action, round, blinder(1), Q, LOG_B, LOG_ROWS, Seed::reproducible(42));
         let (path, _) = sample_path(leaf_digest);
         let (mproof, c_m, root) =
-            prove_membership_crowd(leaf_digest, blinder(2), &path, Q, LOG_B, 43);
+            prove_membership_crowd(leaf_digest, blinder(2), &path, Q, LOG_B, Seed::reproducible(43));
         assert_ne!(c_b, c_m);
         assert!(
             !verify_crowd(&bproof, &mproof, action, round, c_b, nullifier, root, Q, LOG_B),
@@ -749,9 +751,9 @@ mod tests {
         let s = secret(1);
         let action = context(1);
         let (b1, c1, _, n1) =
-            prove_binding_crowd(s, action, context(10), blinder(1), Q, LOG_B, LOG_ROWS, 42);
+            prove_binding_crowd(s, action, context(10), blinder(1), Q, LOG_B, LOG_ROWS, Seed::reproducible(42));
         let (b2, c2, _, n2) =
-            prove_binding_crowd(s, action, context(11), blinder(2), Q, LOG_B, LOG_ROWS, 43);
+            prove_binding_crowd(s, action, context(11), blinder(2), Q, LOG_B, LOG_ROWS, Seed::reproducible(43));
         assert_ne!(c1, c2, "fresh blinders must yield different commitments");
         assert_ne!(n1, n2, "different rounds must yield different nullifiers");
         assert!(verify_binding_crowd(&b1, action, context(10), c1, n1, Q, LOG_B));
@@ -770,12 +772,12 @@ mod tests {
         let round = context(2);
         let b = blinder(1);
         let (_, c, leaf_digest, _) =
-            prove_binding_crowd(s, action, round, b, Q, LOG_B, LOG_ROWS, 42);
+            prove_binding_crowd(s, action, round, b, Q, LOG_B, LOG_ROWS, Seed::reproducible(42));
         let other_leaf: [u64; DIGEST_LEN] = core::array::from_fn(|i| 9000 + i as u64);
         assert_ne!(other_leaf, leaf_digest);
         let (path, _) = sample_path(other_leaf);
         let (forged, forged_c, forged_root) =
-            prove_membership_crowd(other_leaf, b, &path, Q, LOG_B, 44);
+            prove_membership_crowd(other_leaf, b, &path, Q, LOG_B, Seed::reproducible(44));
         assert_ne!(forged_c, c);
         assert!(
             !verify_membership_crowd(&forged, c, forged_root, Q, LOG_B),
@@ -787,6 +789,8 @@ mod tests {
 #[cfg(test)]
 mod canonicity {
     use super::*;
+    #[allow(unused_imports)]
+    use crate::zk::Seed;
 
     /// `Val::from_u64` reduces modulo p, so two DIFFERENT byte encodings of
     /// the public values are the SAME field elements and one proof verifies

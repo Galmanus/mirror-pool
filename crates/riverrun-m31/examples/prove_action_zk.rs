@@ -12,7 +12,7 @@
 //! randomness (blinding polynomials, leaf salts) is seeded from the OS
 //! entropy pool, NOT a fixed test seed.
 
-use riverrun_m31::zk::prove_binding_zk_tuned;
+use riverrun_m31::zk::{prove_binding_zk_tuned, Seed};
 use riverrun_m31::{CONTEXT_LEN, SECRET_LEN};
 
 fn parse8(name: &str, hex: &str) -> [u64; 8] {
@@ -34,13 +34,13 @@ fn hex16(vals: &[u64; 16]) -> String {
     s
 }
 
-fn os_entropy_seed() -> u64 {
-    let mut buf = [0u8; 8];
+fn os_entropy_seed() -> Seed {
     use std::io::Read;
+    let mut bytes = [0u8; 32];
     std::fs::File::open("/dev/urandom")
-        .and_then(|mut f| f.read_exact(&mut buf))
+        .and_then(|mut f| f.read_exact(&mut bytes))
         .expect("reading /dev/urandom for the blinding seed must succeed");
-    u64::from_le_bytes(buf)
+    Seed::from_bytes(bytes)
 }
 
 fn main() {

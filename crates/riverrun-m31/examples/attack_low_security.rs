@@ -24,7 +24,7 @@ fn main() {
     let log_rows = ((queries + 2).next_power_of_two().trailing_zeros() as usize).max(2);
 
     let (proof, c, _leaf, nullifier) = prove_binding_crowd(
-        secret, action, round, blinder, queries, log_blowup, log_rows, 999,
+        secret, action, round, blinder, queries, log_blowup, log_rows, riverrun_m31::zk::Seed::reproducible(999),
     );
     let mut pubs = Vec::new();
     for v in action.iter().chain(&round).chain(&c).chain(&nullifier) {

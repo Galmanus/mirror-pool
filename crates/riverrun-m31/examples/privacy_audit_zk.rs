@@ -26,6 +26,7 @@
 //!
 //! Run: cargo run --release --example privacy_audit_zk --features wire-postcard
 
+use riverrun_m31::zk::Seed;
 use riverrun_m31::zk::prove_binding_zk_tuned;
 use riverrun_m31::{
     prove_binding_crowd, prove_binding_tuned, BLINDER_LEN, CONTEXT_LEN, DIGEST_LEN, SECRET_LEN,
@@ -90,7 +91,7 @@ fn main() {
 
     // The hiding configuration measured on-chain: 32 rows, 20 queries,
     // blowup 4. degree_bits records the DOUBLED commitment.
-    let (hiding, _, _) = prove_binding_zk_tuned(secret, action, round, 20, 2, 5, 42);
+    let (hiding, _, _) = prove_binding_zk_tuned(secret, action, round, 20, 2, 5, Seed::reproducible(42));
     let hiding_committed = 1usize << hiding.degree_bits();
     determinacy(
         "hiding binding (20 queries, blowup 4)",
@@ -129,7 +130,7 @@ fn main() {
     let blinder_a: [u64; BLINDER_LEN] = core::array::from_fn(|i| 7000 + i as u64);
     let blinder_b: [u64; BLINDER_LEN] = core::array::from_fn(|i| 8000 + i as u64);
     let (_, c_a, _, n_a) =
-        prove_binding_crowd(secret, action, round, blinder_a, 20, 2, 5, 42);
+        prove_binding_crowd(secret, action, round, blinder_a, 20, 2, 5, Seed::reproducible(42));
     let (_, c_b, _, n_b) = prove_binding_crowd(
         secret,
         action,
@@ -138,7 +139,7 @@ fn main() {
         20,
         2,
         5,
-        43,
+        Seed::reproducible(43),
     );
     println!("crowd binding, two uses of one credential in one context:");
     println!("  commitment identical across uses: {}", c_a == c_b);

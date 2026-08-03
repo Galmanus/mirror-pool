@@ -407,7 +407,7 @@ pub fn prove_membership_zk(
     path: &[PathStep; ZK_DEPTH],
     num_queries: usize,
     log_blowup: usize,
-    rng_seed: u64,
+    seed: crate::zk::Seed,
 ) -> (ZkMembershipProof, [u64; DIGEST_LEN]) {
     assert!(
         ZK_DEPTH >= num_queries + 3,
@@ -428,7 +428,7 @@ pub fn prove_membership_zk(
     let trace = append_bit_column_depth::<ZK_DEPTH>(poseidon_trace, &bits);
 
     let pis = public_values(leaf, root);
-    let config = crate::zk::make_zk_config_tuned(num_queries, log_blowup, rng_seed);
+    let config = crate::zk::make_zk_config_tuned(num_queries, log_blowup, seed);
     let proof = prove(&config, &air, trace, &pis);
     (ZkMembershipProof { inner: proof }, root)
 }
@@ -442,7 +442,7 @@ pub fn verify_membership_zk(
     log_blowup: usize,
 ) -> bool {
     let air = MembershipAir::new();
-    let config = crate::zk::make_zk_config_tuned(num_queries, log_blowup, 0);
+    let config = crate::zk::make_zk_config_tuned(num_queries, log_blowup, crate::zk::Seed::reproducible(0));
     let pis = public_values(leaf, root);
     verify_with_known_quotient_chunks(
         &config,
@@ -490,6 +490,8 @@ fn append_bit_column_depth<const D: usize>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[allow(unused_imports)]
+    use crate::zk::Seed;
 
     #[test]
     fn the_pinned_quotient_chunk_count_matches_the_symbolic_pass() {
@@ -601,7 +603,7 @@ mod tests {
         use p3_air::BaseAir;
         use p3_uni_stark::{get_log_num_quotient_chunks, AirLayout, StarkGenericConfig};
         let air = MembershipAir::new();
-        let config = crate::zk::make_zk_config_tuned(4, 1, 0);
+        let config = crate::zk::make_zk_config_tuned(4, 1, crate::zk::Seed::reproducible(0));
         assert_eq!(config.is_zk(), 1, "the hiding PCS must flip the ZK path on");
         let layout = AirLayout {
             preprocessed_width: 0,
@@ -624,7 +626,7 @@ mod tests {
         let leaf = leaf_value(1);
         let (path, root) = sample_zk_path_and_root(leaf);
         let (proof, proved_root) =
-            prove_membership_zk(leaf, &path, ZK_TEST_QUERIES, ZK_TEST_LOG_BLOWUP, 42);
+            prove_membership_zk(leaf, &path, ZK_TEST_QUERIES, ZK_TEST_LOG_BLOWUP, Seed::reproducible(42));
         assert_eq!(proved_root, root, "the prover's root must match the hand-folded one");
         assert!(
             verify_membership_zk(&proof, leaf, root, ZK_TEST_QUERIES, ZK_TEST_LOG_BLOWUP),
@@ -637,7 +639,7 @@ mod tests {
         let leaf = leaf_value(1);
         let (path, root) = sample_zk_path_and_root(leaf);
         let (proof, _) =
-            prove_membership_zk(leaf, &path, ZK_TEST_QUERIES, ZK_TEST_LOG_BLOWUP, 42);
+            prove_membership_zk(leaf, &path, ZK_TEST_QUERIES, ZK_TEST_LOG_BLOWUP, Seed::reproducible(42));
         let mut wrong_root = root;
         wrong_root[0] ^= 1;
         assert!(
@@ -650,8 +652,8 @@ mod tests {
     fn two_hiding_membership_proofs_of_the_same_path_differ() {
         let leaf = leaf_value(1);
         let (path, root) = sample_zk_path_and_root(leaf);
-        let (a, _) = prove_membership_zk(leaf, &path, ZK_TEST_QUERIES, ZK_TEST_LOG_BLOWUP, 1);
-        let (b, _) = prove_membership_zk(leaf, &path, ZK_TEST_QUERIES, ZK_TEST_LOG_BLOWUP, 2);
+        let (a, _) = prove_membership_zk(leaf, &path, ZK_TEST_QUERIES, ZK_TEST_LOG_BLOWUP, Seed::reproducible(1));
+        let (b, _) = prove_membership_zk(leaf, &path, ZK_TEST_QUERIES, ZK_TEST_LOG_BLOWUP, Seed::reproducible(2));
         assert!(
             verify_membership_zk(&a, leaf, root, ZK_TEST_QUERIES, ZK_TEST_LOG_BLOWUP)
                 && verify_membership_zk(&b, leaf, root, ZK_TEST_QUERIES, ZK_TEST_LOG_BLOWUP),
