@@ -226,6 +226,13 @@ pub struct BindingProof {
 }
 
 impl BindingProof {
+    /// log2 of the committed trace height, as recorded in the proof. Exposed
+    /// for the privacy audit: it is the polynomial degree bound the FRI query
+    /// openings have to beat for the witness to stay hidden.
+    pub fn degree_bits(&self) -> usize {
+        self.inner.degree_bits
+    }
+
     /// Serialize to bytes (`bincode`, over `Proof`'s own `serde` impl), the
     /// wire format an on-chain verifier reads from instruction data.
     #[cfg(feature = "wire")]
@@ -272,11 +279,44 @@ pub fn prove_binding(
 /// production name, a way to measure a different, explicit point on the
 /// size/security tradeoff (e.g. a proof small enough to fit a transaction's
 /// message-size limit, for on-chain verification-cost measurement).
+/// MEASUREMENT ONLY: the same statement proved over a taller trace, by
+/// repeating the (leaf, nullifier) pair `2^(log_rows - 1)` times.
+///
+/// This is **not** a zero-knowledge variant and must never be presented as
+/// one: repeated identical rows carry no entropy and hide nothing. It exists
+/// to price the trace height that a hiding configuration would need. A
+/// non-hiding commitment publishes enough FRI query openings to interpolate a
+/// trace of 4 rows (see `examples/privacy_audit.rs`); hiding requires the
+/// committed polynomial to carry more random degrees of freedom than the
+/// verifier opens, i.e. a trace taller than the query count. Verification
+/// cost at that height is a fact worth measuring before anyone plans on it.
+pub fn prove_binding_tuned_rows(
+    secret: [u64; SECRET_LEN],
+    action: [u64; CONTEXT_LEN],
+    round: [u64; CONTEXT_LEN],
+    num_queries: usize,
+    log_rows: usize,
+) -> (BindingProof, [u64; WIDTH], [u64; WIDTH]) {
+    assert!(log_rows >= 2, "CirclePcs needs at least 4 rows");
+    prove_binding_inner(secret, action, round, num_queries, 1 << (log_rows - 1))
+}
+
 pub fn prove_binding_tuned(
     secret: [u64; SECRET_LEN],
     action: [u64; CONTEXT_LEN],
     round: [u64; CONTEXT_LEN],
     num_queries: usize,
+) -> (BindingProof, [u64; WIDTH], [u64; WIDTH]) {
+    // 4 repeats of the (leaf, nullifier) pair => 8 permutation inputs => 4 rows.
+    prove_binding_inner(secret, action, round, num_queries, 4)
+}
+
+fn prove_binding_inner(
+    secret: [u64; SECRET_LEN],
+    action: [u64; CONTEXT_LEN],
+    round: [u64; CONTEXT_LEN],
+    num_queries: usize,
+    repeats: usize,
 ) -> (BindingProof, [u64; WIDTH], [u64; WIDTH]) {
     let leaf_input = pack(secret, action);
     let nullifier_input = pack(secret, round);
@@ -284,19 +324,15 @@ pub fn prove_binding_tuned(
     let nullifier_output = permute(nullifier_input);
 
     let air = BindingAir::new();
-    // 8 permutation inputs / VECTOR_LEN=2 => 4 rows, the (leaf, nullifier)
-    // pair repeated to satisfy CirclePcs's minimum committable domain size,
-    // the same repeated-statement pattern `permutation.rs` already uses.
-    let inputs: Vec<[Val; WIDTH]> = vec![
-        to_field(leaf_input),
-        to_field(nullifier_input),
-        to_field(leaf_input),
-        to_field(nullifier_input),
-        to_field(leaf_input),
-        to_field(nullifier_input),
-        to_field(leaf_input),
-        to_field(nullifier_input),
-    ];
+    // `repeats` (leaf, nullifier) pairs / VECTOR_LEN=2 => `repeats` rows. The
+    // default 4 is CirclePcs's minimum committable domain size, the same
+    // repeated-statement pattern `permutation.rs` already uses; taller traces
+    // exist only to price a hiding configuration (prove_binding_tuned_rows).
+    let mut inputs: Vec<[Val; WIDTH]> = Vec::with_capacity(2 * repeats);
+    for _ in 0..repeats {
+        inputs.push(to_field(leaf_input));
+        inputs.push(to_field(nullifier_input));
+    }
     let constants: RoundConstants<Val, WIDTH, HALF_FULL_ROUNDS, PARTIAL_ROUNDS> =
         RoundConstants::new(
             MERSENNE31_POSEIDON2_RC_16_EXTERNAL_INITIAL,

@@ -245,6 +245,12 @@ pub struct MembershipProof {
 }
 
 impl MembershipProof {
+    /// log2 of the committed trace height, as recorded in the proof. See
+    /// [`crate::binding::BindingProof::degree_bits`].
+    pub fn degree_bits(&self) -> usize {
+        self.inner.degree_bits
+    }
+
     /// Serialize with `postcard`, the no_std wire format a bare-wasm verifier
     /// (Soroban) reads from its host boundary. Same convention as
     /// [`crate::binding::BindingProof::to_postcard`].
