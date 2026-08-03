@@ -75,6 +75,8 @@ const PARTIAL_ROUNDS: usize = 14;
 
 type Val = Mersenne31;
 type LinearLayers = GenericPoseidon2LinearLayersMersenne31;
+/// Re-export for the hiding-cost instrument, which builds the same trace.
+pub(crate) type LinearLayersPub = GenericPoseidon2LinearLayersMersenne31;
 type InnerAir = VectorizedPoseidon2Air<
     Val,
     LinearLayers,
@@ -104,12 +106,12 @@ type Config = StarkConfig<Pcs, Challenge, Challenger>;
 /// cells equal block 1's secret cells. That last equality is the whole point:
 /// it is the only thing that makes this "the same member's leaf and nullifier"
 /// rather than two unrelated permutation calls.
-struct BindingAir {
+pub(crate) struct BindingAir {
     inner: InnerAir,
 }
 
 impl BindingAir {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         let constants: RoundConstants<Val, WIDTH, HALF_FULL_ROUNDS, PARTIAL_ROUNDS> =
             RoundConstants::new(
                 MERSENNE31_POSEIDON2_RC_16_EXTERNAL_INITIAL,
@@ -356,6 +358,15 @@ fn prove_binding_inner(
     let config = make_config_tuned(num_queries);
     let proof = prove(&config, &air, trace, &pis);
     (BindingProof { inner: proof }, leaf_output, nullifier_output)
+}
+
+pub(crate) fn public_values_for_hiding(
+    action: [u64; CONTEXT_LEN],
+    round: [u64; CONTEXT_LEN],
+    leaf: [u64; WIDTH],
+    nullifier: [u64; WIDTH],
+) -> Vec<Val> {
+    public_values(action, round, leaf, nullifier)
 }
 
 fn public_values(

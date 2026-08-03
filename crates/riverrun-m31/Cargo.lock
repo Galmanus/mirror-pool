@@ -1320,6 +1320,7 @@ dependencies = [
  "p3-symmetric",
  "p3-uni-stark",
  "postcard",
+ "rand 0.10.2",
  "rand 0.9.5",
  "solana-program",
  "soroban-env-common",

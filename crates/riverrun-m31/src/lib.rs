@@ -30,6 +30,7 @@ extern crate alloc;
 
 pub mod binding;
 pub mod keccak;
+pub mod hiding;
 pub mod membership;
 pub mod permutation;
 pub mod relation;
