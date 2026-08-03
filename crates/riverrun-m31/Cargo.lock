@@ -1319,12 +1319,14 @@ dependencies = [
  "p3-poseidon2-air",
  "p3-symmetric",
  "p3-uni-stark",
+ "p3-util",
  "postcard",
  "rand 0.10.2",
  "rand 0.9.5",
  "solana-program",
  "soroban-env-common",
  "soroban-env-guest",
+ "spin",
 ]
 
 [[package]]

@@ -18,12 +18,16 @@ p3-circle = "0.6.2"
 p3-commit = "0.6.2"
 p3-fri = "0.6.2"
 p3-challenger = "0.6.2"
+p3-util = "0.6.2"
 p3-keccak = "0.6.2"
 p3-merkle-tree = "0.6.2"
 rand = { version = "0.9", default-features = false }
 # The salted-MMCS cost instrument in `hiding` must hand p3-merkle-tree an RNG
 # of the exact rand version it compiles against (0.10), not this crate's 0.9.
 rand10 = { package = "rand", version = "0.10", default-features = false }
+# Interior mutability for the ZK wrapper's blinding RNG (`src/zk.rs`), the same
+# mechanism and version p3-fri 0.6.2's own HidingFriPcs uses. no_std-safe.
+spin = { version = "0.12", default-features = false, features = ["mutex", "spin_mutex"] }
 # bincode 1.x pulls serde with default features, i.e. serde/std. On a bare-wasm
 # target (Soroban's wasm32v1-none) that makes serde_core drop its own #![no_std]
 # and fail to find a standard library that does not exist there. It is only used

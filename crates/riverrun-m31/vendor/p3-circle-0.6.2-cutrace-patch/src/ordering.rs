@@ -18,7 +18,10 @@ pub(crate) const fn cfft_permute_index(index: usize, log_n: usize) -> usize {
     )
 }
 
-pub(crate) fn cfft_permute_slice<T: Clone>(xs: &[T]) -> Vec<T> {
+/// Public in this vendored copy (upstream: `pub(crate)`): riverrun-m31's ZK
+/// wrapper permutes vanishing-polynomial evaluations into CFFT row order to
+/// blind committed LDEs pointwise. See PATCH.md.
+pub fn cfft_permute_slice<T: Clone>(xs: &[T]) -> Vec<T> {
     let log_n = log2_strict_usize(xs.len());
     (0..xs.len())
         .map(|i| xs[cfft_permute_index(i, log_n)].clone())

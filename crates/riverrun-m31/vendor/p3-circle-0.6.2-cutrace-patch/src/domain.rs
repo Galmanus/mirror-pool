@@ -70,7 +70,10 @@ impl<F: ComplexExtendable> CircleDomain<F> {
         let g = self.subgroup_generator();
         iterate(g - self.shift, move |&p| p + g).take(1 << (self.log_n - 1))
     }
-    pub(crate) fn points(&self) -> impl Iterator<Item = Point<F>> {
+    /// Public in this vendored copy (upstream: `pub(crate)`): the ZK wrapper in
+    /// riverrun-m31 enumerates domain points to evaluate the blinding term
+    /// `Z_D(P) * R(P)` pointwise. See PATCH.md.
+    pub fn points(&self) -> impl Iterator<Item = Point<F>> {
         self.coset0().interleave(self.coset1())
     }
     /// Same points as [`Self::points`], materialized eagerly. Each half-coset's sequential
@@ -92,7 +95,11 @@ impl<F: ComplexExtendable> CircleDomain<F> {
         }
     }
 
-    pub(crate) fn vanishing_poly<EF: ExtensionField<F>>(&self, at: Point<EF>) -> EF {
+    /// Public in this vendored copy (upstream: `pub(crate)`): the ZK wrapper in
+    /// riverrun-m31 needs `Z_D` evaluations at concrete circle points, which the
+    /// `PolynomialSpace` trait surface (line-coordinate inputs) cannot supply.
+    /// See PATCH.md.
+    pub fn vanishing_poly<EF: ExtensionField<F>>(&self, at: Point<EF>) -> EF {
         at.v_n(self.log_n) - self.shift.v_n(self.log_n)
     }
 
