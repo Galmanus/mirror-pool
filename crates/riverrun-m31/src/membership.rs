@@ -323,9 +323,147 @@ fn build_rows(
     leaf: [u64; DIGEST_LEN],
     path: [PathStep; DEPTH],
 ) -> (Vec<[Val; WIDTH]>, [bool; DEPTH], [u64; DIGEST_LEN]) {
+    build_rows_depth::<DEPTH>(leaf, &path)
+}
+
+fn to_field(input: [u64; WIDTH]) -> [Val; WIDTH] {
+    core::array::from_fn(|i| Val::from_u64(input[i]))
+}
+
+fn append_bit_column(poseidon_trace: RowMajorMatrix<Val>, bits: &[bool; DEPTH]) -> RowMajorMatrix<Val> {
+    append_bit_column_depth::<DEPTH>(poseidon_trace, bits)
+}
+
+// ---------------------------------------------------------------------------
+// The hiding (ZK) membership variant.
+// ---------------------------------------------------------------------------
+
+/// Tree depth of the hiding membership proof: 32 levels, a 2^32-leaf tree.
+///
+/// Not arbitrary, and not just "production-sized": hiding requires the
+/// committed trace to carry more random degrees of freedom than the verifier
+/// opens. This AIR has transition constraints, so the trace is opened at
+/// `zeta` AND `zeta_next` on top of the FRI query rows: `rows >= queries + 3`.
+/// At 20 queries the minimum power of two is 32, and since every trace row of
+/// this AIR is one real fold level, rows ARE the tree depth. The hiding
+/// requirement and a realistic anonymity set (2^32 leaves) meet at the same
+/// number. `DEPTH = 4` stays untouched for the non-hiding path and the
+/// existing contracts.
+pub const ZK_DEPTH: usize = 32;
+
+/// log2 of the quotient-chunk count for [`MembershipAir`] under ZK, pinned
+/// like [`LOG_NUM_QUOTIENT_CHUNKS`] (the ZK path raises the constraint degree
+/// by one). Guarded by
+/// `the_pinned_zk_quotient_chunk_count_matches_the_symbolic_pass`.
+pub const LOG_NUM_QUOTIENT_CHUNKS_ZK: usize = 3;
+
+/// A hiding Circle-STARK proof that `leaf` sits under `root` via a private
+/// 32-level authentication path: blinded trace commitment (`T' = T + Z_D*R`),
+/// salted MMCS, randomized quotient chunks, randomization-polynomial round.
+/// Same construction and same honesty scope as `zk.rs` (statistical ZK; the
+/// leaf itself is still public).
+pub struct ZkMembershipProof {
+    inner: Proof<crate::zk::ZkConfig>,
+}
+
+impl ZkMembershipProof {
+    /// log2 of the committed (doubled) polynomial dimension.
+    pub fn degree_bits(&self) -> usize {
+        self.inner.degree_bits
+    }
+
+    #[cfg(feature = "wire")]
+    pub fn to_bytes(&self) -> Vec<u8> {
+        bincode::serialize(&self.inner).expect("Proof is always serializable")
+    }
+
+    #[cfg(feature = "wire")]
+    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        bincode::deserialize(bytes).ok().map(|inner| Self { inner })
+    }
+
+    #[cfg(feature = "wire-postcard")]
+    pub fn to_postcard(&self) -> Vec<u8> {
+        postcard::to_allocvec(&self.inner).expect("Proof is always serializable")
+    }
+
+    #[cfg(feature = "wire-postcard")]
+    pub fn from_postcard(bytes: &[u8]) -> Option<Self> {
+        postcard::from_bytes(bytes).ok().map(|inner| Self { inner })
+    }
+}
+
+/// Prove membership hiding, over a [`ZK_DEPTH`]-level path. Same trace
+/// construction as [`prove_membership`], taller; the hiding lives entirely in
+/// the PCS. `rng_seed` feeds all prover-side randomness; production callers
+/// MUST derive it from system entropy.
+///
+/// # Panics
+/// If the path does not fold `leaf` to a consistent root (unsatisfiable
+/// trace), or if `ZK_DEPTH < num_queries + 3` (the hiding margin; see
+/// [`ZK_DEPTH`]'s doc for the arithmetic).
+pub fn prove_membership_zk(
+    leaf: [u64; DIGEST_LEN],
+    path: &[PathStep; ZK_DEPTH],
+    num_queries: usize,
+    log_blowup: usize,
+    rng_seed: u64,
+) -> (ZkMembershipProof, [u64; DIGEST_LEN]) {
+    assert!(
+        ZK_DEPTH >= num_queries + 3,
+        "hiding needs more random degrees of freedom than opened evaluations \
+         (queries + zeta + zeta_next): lower num_queries or raise ZK_DEPTH"
+    );
+    let (inputs, bits, root) = build_rows_depth::<ZK_DEPTH>(leaf, path);
+    let air = MembershipAir::new();
+    let poseidon_trace: RowMajorMatrix<Val> = generate_trace_rows::<
+        Val,
+        LinearLayers,
+        WIDTH,
+        SBOX_DEGREE,
+        SBOX_REGISTERS,
+        HALF_FULL_ROUNDS,
+        PARTIAL_ROUNDS,
+    >(inputs, &constants(), 0);
+    let trace = append_bit_column_depth::<ZK_DEPTH>(poseidon_trace, &bits);
+
+    let pis = public_values(leaf, root);
+    let config = crate::zk::make_zk_config_tuned(num_queries, log_blowup, rng_seed);
+    let proof = prove(&config, &air, trace, &pis);
+    (ZkMembershipProof { inner: proof }, root)
+}
+
+/// Verify a [`ZkMembershipProof`] against a claimed `leaf` and `root`.
+pub fn verify_membership_zk(
+    proof: &ZkMembershipProof,
+    leaf: [u64; DIGEST_LEN],
+    root: [u64; DIGEST_LEN],
+    num_queries: usize,
+    log_blowup: usize,
+) -> bool {
+    let air = MembershipAir::new();
+    let config = crate::zk::make_zk_config_tuned(num_queries, log_blowup, 0);
+    let pis = public_values(leaf, root);
+    verify_with_known_quotient_chunks(
+        &config,
+        &air,
+        &proof.inner,
+        &pis,
+        None,
+        LOG_NUM_QUOTIENT_CHUNKS_ZK,
+    )
+    .is_ok()
+}
+
+/// [`build_rows`] generalized over the path depth; the `DEPTH = 4` original
+/// delegates here.
+fn build_rows_depth<const D: usize>(
+    leaf: [u64; DIGEST_LEN],
+    path: &[PathStep; D],
+) -> (Vec<[Val; WIDTH]>, [bool; D], [u64; DIGEST_LEN]) {
     let mut node = leaf;
-    let mut inputs = Vec::with_capacity(DEPTH);
-    let mut bits = [false; DEPTH];
+    let mut inputs = Vec::with_capacity(D);
+    let mut bits = [false; D];
     for (i, step) in path.iter().enumerate() {
         let (left, right) =
             if step.node_on_right { (step.sibling, node) } else { (node, step.sibling) };
@@ -336,13 +474,12 @@ fn build_rows(
     (inputs, bits, node)
 }
 
-fn to_field(input: [u64; WIDTH]) -> [Val; WIDTH] {
-    core::array::from_fn(|i| Val::from_u64(input[i]))
-}
-
-fn append_bit_column(poseidon_trace: RowMajorMatrix<Val>, bits: &[bool; DEPTH]) -> RowMajorMatrix<Val> {
+fn append_bit_column_depth<const D: usize>(
+    poseidon_trace: RowMajorMatrix<Val>,
+    bits: &[bool; D],
+) -> RowMajorMatrix<Val> {
     let width = poseidon_trace.width;
-    let mut values = Vec::with_capacity((width + 1) * DEPTH);
+    let mut values = Vec::with_capacity((width + 1) * D);
     for (row, bit) in poseidon_trace.values.chunks(width).zip(bits.iter()) {
         values.extend_from_slice(row);
         values.push(if *bit { Val::ONE } else { Val::ZERO });
@@ -431,6 +568,99 @@ mod tests {
         assert!(
             !verify_membership(&proof, other_leaf, root),
             "must not verify a different leaf against this root"
+        );
+    }
+
+    /// A genuine ZK_DEPTH-level path with distinct siblings and a mixed
+    /// left/right pattern, hand-folded to its real root.
+    fn sample_zk_path_and_root(
+        leaf: [u64; DIGEST_LEN],
+    ) -> ([PathStep; ZK_DEPTH], [u64; DIGEST_LEN]) {
+        let path: [PathStep; ZK_DEPTH] = core::array::from_fn(|i| PathStep {
+            sibling: sibling(i as u64 + 1),
+            node_on_right: i % 3 == 1,
+        });
+        let mut node = leaf;
+        for step in &path {
+            node = if step.node_on_right {
+                compress(step.sibling, node)
+            } else {
+                compress(node, step.sibling)
+            };
+        }
+        (path, node)
+    }
+
+    /// Fast-but-real hiding parameters: 20 queries at blowup 4 is the
+    /// on-chain candidate; ZK_DEPTH = 32 >= 20 + 3 holds the hiding margin.
+    const ZK_TEST_QUERIES: usize = 20;
+    const ZK_TEST_LOG_BLOWUP: usize = 2;
+
+    #[test]
+    fn the_pinned_zk_quotient_chunk_count_matches_the_symbolic_pass() {
+        use p3_air::BaseAir;
+        use p3_uni_stark::{get_log_num_quotient_chunks, AirLayout, StarkGenericConfig};
+        let air = MembershipAir::new();
+        let config = crate::zk::make_zk_config_tuned(4, 1, 0);
+        assert_eq!(config.is_zk(), 1, "the hiding PCS must flip the ZK path on");
+        let layout = AirLayout {
+            preprocessed_width: 0,
+            main_width: BaseAir::<Val>::width(&air),
+            num_public_values: BaseAir::<Val>::num_public_values(&air),
+            num_periodic_columns: BaseAir::<Val>::num_periodic_columns(&air),
+            ..Default::default()
+        };
+        let recomputed =
+            get_log_num_quotient_chunks::<Val, MembershipAir>(&air, layout, config.is_zk());
+        assert_eq!(
+            LOG_NUM_QUOTIENT_CHUNKS_ZK, recomputed,
+            "the pinned ZK constant must equal what the symbolic pass derives; \
+             if the AIR changed, re-pin it to the recomputed value"
+        );
+    }
+
+    #[test]
+    fn a_hiding_membership_proof_proves_and_verifies() {
+        let leaf = leaf_value(1);
+        let (path, root) = sample_zk_path_and_root(leaf);
+        let (proof, proved_root) =
+            prove_membership_zk(leaf, &path, ZK_TEST_QUERIES, ZK_TEST_LOG_BLOWUP, 42);
+        assert_eq!(proved_root, root, "the prover's root must match the hand-folded one");
+        assert!(
+            verify_membership_zk(&proof, leaf, root, ZK_TEST_QUERIES, ZK_TEST_LOG_BLOWUP),
+            "a genuine hiding membership proof must verify"
+        );
+    }
+
+    #[test]
+    fn a_hiding_membership_proof_rejects_a_tampered_root() {
+        let leaf = leaf_value(1);
+        let (path, root) = sample_zk_path_and_root(leaf);
+        let (proof, _) =
+            prove_membership_zk(leaf, &path, ZK_TEST_QUERIES, ZK_TEST_LOG_BLOWUP, 42);
+        let mut wrong_root = root;
+        wrong_root[0] ^= 1;
+        assert!(
+            !verify_membership_zk(&proof, leaf, wrong_root, ZK_TEST_QUERIES, ZK_TEST_LOG_BLOWUP),
+            "soundness must survive the hiding machinery: tampered root rejected"
+        );
+    }
+
+    #[test]
+    fn two_hiding_membership_proofs_of_the_same_path_differ() {
+        let leaf = leaf_value(1);
+        let (path, root) = sample_zk_path_and_root(leaf);
+        let (a, _) = prove_membership_zk(leaf, &path, ZK_TEST_QUERIES, ZK_TEST_LOG_BLOWUP, 1);
+        let (b, _) = prove_membership_zk(leaf, &path, ZK_TEST_QUERIES, ZK_TEST_LOG_BLOWUP, 2);
+        assert!(
+            verify_membership_zk(&a, leaf, root, ZK_TEST_QUERIES, ZK_TEST_LOG_BLOWUP)
+                && verify_membership_zk(&b, leaf, root, ZK_TEST_QUERIES, ZK_TEST_LOG_BLOWUP),
+            "both seeded proofs must verify"
+        );
+        assert_ne!(
+            a.to_bytes(),
+            b.to_bytes(),
+            "different blinding seeds must produce different proofs of the same path"
         );
     }
 

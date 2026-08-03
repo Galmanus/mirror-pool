@@ -616,7 +616,7 @@ type ZkValMmcs = p3_merkle_tree::MerkleTreeHidingMmcs<
 type ZkChallengeMmcs = ExtensionMmcs<Val, Challenge, ZkValMmcs>;
 type Challenger = SerializingChallenger32<Val, HashChallenger<u8, ByteHash, 32>>;
 type ZkPcs = HidingCirclePcs<Val, ZkValMmcs, ZkChallengeMmcs, SplitMix64>;
-type ZkConfig = StarkConfig<ZkPcs, Challenge, Challenger>;
+pub(crate) type ZkConfig = StarkConfig<ZkPcs, Challenge, Challenger>;
 
 /// log2 of the quotient-chunk count for [`BindingAir`] under the ZK
 /// configuration, pinned for the same reason as
@@ -641,7 +641,7 @@ fn make_zk_config(num_queries: usize, rng_seed: u64) -> ZkConfig {
 /// while the proof carries half the query payloads. That trade is what lets
 /// the hiding proof fit a Stellar transaction envelope; see
 /// `price_the_zk_wire_sizes`.
-fn make_zk_config_tuned(num_queries: usize, log_blowup: usize, rng_seed: u64) -> ZkConfig {
+pub(crate) fn make_zk_config_tuned(num_queries: usize, log_blowup: usize, rng_seed: u64) -> ZkConfig {
     let byte_hash = ByteHash {};
     let field_hash = FieldHash::new(byte_hash);
     let compress = Compress::new(byte_hash);

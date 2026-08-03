@@ -41,7 +41,7 @@ pub use binding::{
     verify_binding_tuned_checkpointed, BindingProof, CONTEXT_LEN, LOG_NUM_QUOTIENT_CHUNKS,
     SECRET_LEN,
 };
-pub use membership::{compress, prove_membership, verify_membership, MembershipProof, PathStep, DEPTH, DIGEST_LEN};
+pub use membership::{compress, prove_membership, prove_membership_zk, verify_membership, verify_membership_zk, MembershipProof, PathStep, ZkMembershipProof, DEPTH, DIGEST_LEN, ZK_DEPTH};
 pub use permutation::{prove_preimage, verify_preimage, PreimageProof, WIDTH};
 pub use relation::{prove_full_relation, verify_full_relation, FullRelationProof};
 pub use zk::{prove_binding_zk, verify_binding_zk, HidingCirclePcs, ZkBindingProof, LOG_NUM_QUOTIENT_CHUNKS_ZK};
