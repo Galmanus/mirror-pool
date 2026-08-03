@@ -783,3 +783,31 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod canonicity {
+    use super::*;
+
+    /// `Val::from_u64` reduces modulo p, so two DIFFERENT byte encodings of
+    /// the public values are the SAME field elements and one proof verifies
+    /// against both. Any verifier that keys storage on the raw bytes — every
+    /// nullifier burn in the Soroban contracts does — must therefore refuse
+    /// non-canonical limbs, or a spent proof replays under a re-encoded
+    /// nullifier. That double spend was confirmed on testnet before the
+    /// contracts gained the check.
+    ///
+    /// This test pins the fact the check depends on. If a future field
+    /// implementation ever rejected out-of-range input instead of reducing,
+    /// this fails and the contract-side check can be revisited.
+    #[test]
+    fn from_u64_reduces_so_noncanonical_encodings_collide() {
+        const P: u64 = (1 << 31) - 1;
+        assert_eq!(
+            Val::from_u64(5),
+            Val::from_u64(5 + P),
+            "v and v + p must be the same field element; the contracts' \
+             canonicity checks exist because of this"
+        );
+        assert_ne!(5u64, 5 + P, "but their byte encodings differ, which is the hole");
+    }
+}
