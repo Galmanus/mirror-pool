@@ -92,9 +92,17 @@ type Cols<T> =
 /// Blinder width: 8 M31 limbs, 248 bits of commitment randomness.
 pub const BLINDER_LEN: usize = DIGEST_LEN;
 
-/// Tree depth of the crowd membership proof: 31 fold levels, because row 0 of
-/// the 32-row trace is the commitment row. A 2^31-leaf tree.
-pub const CROWD_DEPTH: usize = 31;
+/// Tree depth of the crowd membership proof: 63 fold levels, because row 0 of
+/// the 64-row trace is the commitment row. A 2^63-leaf tree.
+///
+/// The height is set by the hiding argument, not by ambition about tree sizes.
+/// This AIR has transition constraints, so the verifier learns `k = Q + 2`
+/// evaluations per column, and Theorem B (`examples/hiding_theory.rs`) makes
+/// surjectivity of the blinding map unconditional exactly when `k <= N/2`. At
+/// the deployed 20 queries that is `N >= 44`, so `N = 64`, so 63 fold rows
+/// after the commitment row. The anonymity set follows from the cryptography
+/// rather than the other way round.
+pub const CROWD_DEPTH: usize = 63;
 
 fn constants() -> RoundConstants<Val, WIDTH, HALF_FULL_ROUNDS, PARTIAL_ROUNDS> {
     RoundConstants::new(
@@ -242,8 +250,20 @@ impl CrowdBindingProof {
 /// [`prove_membership_crowd`]; it appears in no public input.
 ///
 /// # Panics
-/// If `2^log_rows < num_queries + 2` (hiding margin, this AIR has no
-/// transition constraints) or `log_rows < 2`.
+/// If the trace is too short for the unconditional hiding guarantee, or if
+/// `log_rows < 2`.
+///
+/// The margin is `2^log_rows >= 2 * (num_queries + 1)`, not the `+ 2` a naive
+/// count suggests, and the factor of two is Theorem B in
+/// `examples/hiding_theory.rs`: evaluation of the blinder space at `k` points
+/// is surjective **unconditionally** when `k <= N/2`, with no genericity
+/// assumption and no rank computation. Above `N/2` the deficiency is still at
+/// most one (Theorem C), but whether it is zero becomes a property of the
+/// particular points the verifier happens to query, decidable only by
+/// computing a rank. Here `k = num_queries + 1`: one evaluation per FRI query
+/// row plus the out-of-domain point, this AIR having no transition
+/// constraints. Costed before adopting: 3% more CPU and 7% more envelope than
+/// the `+ 2` margin, to trade a computation for a proof.
 #[allow(clippy::type_complexity)]
 pub fn prove_binding_crowd(
     secret: [u64; SECRET_LEN],
@@ -257,8 +277,10 @@ pub fn prove_binding_crowd(
 ) -> (CrowdBindingProof, [u64; DIGEST_LEN], [u64; DIGEST_LEN], [u64; WIDTH]) {
     assert!(log_rows >= 2, "CirclePcs cannot commit to fewer than 4 rows");
     assert!(
-        (1usize << log_rows) >= num_queries + 2,
-        "hiding needs more random degrees of freedom than opened evaluations"
+        (1usize << log_rows) >= 2 * (num_queries + 1),
+        "hiding is unconditional only below half the blinder's dimension: \
+         need 2^log_rows >= 2 * (num_queries + 1), see Theorem B in \
+         examples/hiding_theory.rs"
     );
     let leaf_input = pack(secret, action);
     let nullifier_input = pack(secret, round);
@@ -509,9 +531,11 @@ pub fn prove_membership_crowd(
     let rows = CROWD_DEPTH + 1;
     assert!(rows.is_power_of_two(), "commit row + CROWD_DEPTH fold rows must fill a power of two");
     assert!(
-        rows >= num_queries + 3,
-        "hiding needs more random degrees of freedom than opened evaluations \
-         (queries + zeta + zeta_next)"
+        rows >= 2 * (num_queries + 2),
+        "hiding is unconditional only below half the blinder's dimension: this \
+         AIR has transition constraints so the verifier also sees zeta_next, \
+         giving k = num_queries + 2 and requiring rows >= 2k. See Theorem B in \
+         examples/hiding_theory.rs"
     );
 
     let c = compress(leaf, blinder);
@@ -628,7 +652,9 @@ mod tests {
 
     const Q: usize = 20;
     const LOG_B: usize = 2;
-    const LOG_ROWS: usize = 5;
+    /// 64 rows, not 32: Theorem B's unconditional band needs `N >= 2k` and
+    /// this AIR opens `k = Q + 1`. See `examples/hiding_theory.rs`.
+    const LOG_ROWS: usize = 6;
 
     fn secret(byte: u64) -> [u64; SECRET_LEN] {
         core::array::from_fn(|i| byte * 1000 + i as u64)

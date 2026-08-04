@@ -28,11 +28,15 @@ use riverrun_m31::{
     CROWD_DEPTH, DIGEST_LEN, SECRET_LEN,
 };
 
-/// The on-chain-measured configuration: 20 queries at blowup 4, 32 rows.
-/// See docs/PRIVACY.md for why this point and not 40 queries at blowup 2.
+/// The on-chain-measured configuration: 20 queries at blowup 4, 64 rows.
+/// See docs/PRIVACY.md for why this query point and not 40 at blowup 2, and
+/// Theorem B in `examples/hiding_theory.rs` for why 64 rows and not 32: below
+/// half the blinder's dimension the hiding is unconditional, above it the
+/// guarantee depends on a rank computation over the points the verifier
+/// happens to query.
 const QUERIES: usize = 20;
 const LOG_BLOWUP: usize = 2;
-const LOG_ROWS: usize = 5;
+const LOG_ROWS: usize = 6;
 
 fn parse8(name: &str, hex: &str) -> [u64; 8] {
     let bytes = (0..hex.len())
