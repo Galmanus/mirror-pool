@@ -46,6 +46,7 @@ use p3_poseidon2_air::{generate_vectorized_trace_rows, num_cols, Poseidon2Cols, 
 use p3_symmetric::{CompressionFunctionFromHasher, SerializingHasher};
 use p3_uni_stark::{prove, verify_with_known_quotient_chunks, Proof, StarkConfig};
 
+use crate::membership::DIGEST_LEN;
 use crate::permutation::{permute, WIDTH};
 
 /// Two permutations packed per row: block 0 is the leaf, block 1 the nullifier.
@@ -128,7 +129,7 @@ impl BaseAir<Val> for BindingAir {
     }
 
     fn num_public_values(&self) -> usize {
-        2 * CONTEXT_LEN + 2 * WIDTH
+        2 * CONTEXT_LEN + 2 * DIGEST_LEN
     }
 }
 
@@ -146,11 +147,16 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for BindingAir {
         let block1: &Cols<AB::Var> = full[single_width..2 * single_width].borrow();
 
         let pis: Vec<AB::PublicVar> = builder.public_values().to_vec();
-        // pis layout: action(CONTEXT_LEN) | round(CONTEXT_LEN) | leaf(WIDTH) | nullifier(WIDTH)
+        // pis layout: action | round | leaf(DIGEST_LEN) | nullifier(DIGEST_LEN)
+        //
+        // Both are permutation outputs TRUNCATED to a digest. Publishing the
+        // full sixteen-limb state published the witness: pi is a bijection and
+        // the context sits public beside it, so inverting on the published
+        // value returned the secret. See docs/NULLIFIER-BREAK.md.
         let action = &pis[0..CONTEXT_LEN];
         let round = &pis[CONTEXT_LEN..2 * CONTEXT_LEN];
-        let leaf = &pis[2 * CONTEXT_LEN..2 * CONTEXT_LEN + WIDTH];
-        let nullifier = &pis[2 * CONTEXT_LEN + WIDTH..2 * CONTEXT_LEN + 2 * WIDTH];
+        let leaf = &pis[2 * CONTEXT_LEN..2 * CONTEXT_LEN + DIGEST_LEN];
+        let nullifier = &pis[2 * CONTEXT_LEN + DIGEST_LEN..2 * CONTEXT_LEN + 2 * DIGEST_LEN];
 
         let block0_output = &block0.ending_full_rounds[HALF_FULL_ROUNDS - 1].post;
         let block1_output = &block1.ending_full_rounds[HALF_FULL_ROUNDS - 1].post;
@@ -159,7 +165,7 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for BindingAir {
             builder.assert_eq(block0.inputs[SECRET_LEN + i].into(), action[i].into());
             builder.assert_eq(block1.inputs[SECRET_LEN + i].into(), round[i].into());
         }
-        for i in 0..WIDTH {
+        for i in 0..DIGEST_LEN {
             builder.assert_eq(block0_output[i].into(), leaf[i].into());
             builder.assert_eq(block1_output[i].into(), nullifier[i].into());
         }
@@ -272,7 +278,7 @@ pub fn prove_binding(
     secret: [u64; SECRET_LEN],
     action: [u64; CONTEXT_LEN],
     round: [u64; CONTEXT_LEN],
-) -> (BindingProof, [u64; WIDTH], [u64; WIDTH]) {
+) -> (BindingProof, [u64; DIGEST_LEN], [u64; DIGEST_LEN]) {
     prove_binding_tuned(secret, action, round, 40)
 }
 
@@ -298,7 +304,7 @@ pub fn prove_binding_tuned_rows(
     round: [u64; CONTEXT_LEN],
     num_queries: usize,
     log_rows: usize,
-) -> (BindingProof, [u64; WIDTH], [u64; WIDTH]) {
+) -> (BindingProof, [u64; DIGEST_LEN], [u64; DIGEST_LEN]) {
     assert!(log_rows >= 2, "CirclePcs needs at least 4 rows");
     // Each row holds VECTOR_LEN = 2 permutations, and each repeat contributes
     // one (leaf, nullifier) pair, so rows == repeats.
@@ -310,7 +316,7 @@ pub fn prove_binding_tuned(
     action: [u64; CONTEXT_LEN],
     round: [u64; CONTEXT_LEN],
     num_queries: usize,
-) -> (BindingProof, [u64; WIDTH], [u64; WIDTH]) {
+) -> (BindingProof, [u64; DIGEST_LEN], [u64; DIGEST_LEN]) {
     // 4 repeats of the (leaf, nullifier) pair => 8 permutation inputs => 4 rows.
     prove_binding_inner(secret, action, round, num_queries, 4)
 }
@@ -321,11 +327,15 @@ fn prove_binding_inner(
     round: [u64; CONTEXT_LEN],
     num_queries: usize,
     repeats: usize,
-) -> (BindingProof, [u64; WIDTH], [u64; WIDTH]) {
+) -> (BindingProof, [u64; DIGEST_LEN], [u64; DIGEST_LEN]) {
     let leaf_input = pack(secret, action);
     let nullifier_input = pack(secret, round);
-    let leaf_output = permute(leaf_input);
-    let nullifier_output = permute(nullifier_input);
+    // Truncated to digests. The full permutation state IS the witness once
+    // pi is inverted, and the context is public beside it.
+    let leaf_full = permute(leaf_input);
+    let nullifier_full = permute(nullifier_input);
+    let leaf_output: [u64; DIGEST_LEN] = core::array::from_fn(|i| leaf_full[i]);
+    let nullifier_output: [u64; DIGEST_LEN] = core::array::from_fn(|i| nullifier_full[i]);
 
     let air = BindingAir::new();
     // `repeats` (leaf, nullifier) pairs / VECTOR_LEN=2 => `repeats` rows. The
@@ -363,8 +373,8 @@ fn prove_binding_inner(
 pub(crate) fn public_values_for_hiding(
     action: [u64; CONTEXT_LEN],
     round: [u64; CONTEXT_LEN],
-    leaf: [u64; WIDTH],
-    nullifier: [u64; WIDTH],
+    leaf: [u64; DIGEST_LEN],
+    nullifier: [u64; DIGEST_LEN],
 ) -> Vec<Val> {
     public_values(action, round, leaf, nullifier)
 }
@@ -372,14 +382,14 @@ pub(crate) fn public_values_for_hiding(
 fn public_values(
     action: [u64; CONTEXT_LEN],
     round: [u64; CONTEXT_LEN],
-    leaf: [u64; WIDTH],
-    nullifier: [u64; WIDTH],
+    leaf: [u64; DIGEST_LEN],
+    nullifier: [u64; DIGEST_LEN],
 ) -> Vec<Val> {
-    let mut pis = Vec::with_capacity(2 * CONTEXT_LEN + 2 * WIDTH);
+    let mut pis = Vec::with_capacity(2 * CONTEXT_LEN + 2 * DIGEST_LEN);
     pis.extend_from_slice(&ctx_to_field(action));
     pis.extend_from_slice(&ctx_to_field(round));
-    pis.extend_from_slice(&to_field(leaf));
-    pis.extend_from_slice(&to_field(nullifier));
+    pis.extend_from_slice(&ctx_to_field(leaf));
+    pis.extend_from_slice(&ctx_to_field(nullifier));
     pis
 }
 
@@ -390,8 +400,8 @@ pub fn verify_binding(
     proof: &BindingProof,
     action: [u64; CONTEXT_LEN],
     round: [u64; CONTEXT_LEN],
-    leaf: [u64; WIDTH],
-    nullifier: [u64; WIDTH],
+    leaf: [u64; DIGEST_LEN],
+    nullifier: [u64; DIGEST_LEN],
 ) -> bool {
     verify_binding_tuned(proof, action, round, leaf, nullifier, 40)
 }
@@ -402,8 +412,8 @@ pub fn verify_binding_tuned(
     proof: &BindingProof,
     action: [u64; CONTEXT_LEN],
     round: [u64; CONTEXT_LEN],
-    leaf: [u64; WIDTH],
-    nullifier: [u64; WIDTH],
+    leaf: [u64; DIGEST_LEN],
+    nullifier: [u64; DIGEST_LEN],
     num_queries: usize,
 ) -> bool {
     verify_binding_tuned_checkpointed(proof, action, round, leaf, nullifier, num_queries, || {})
@@ -418,8 +428,8 @@ pub fn verify_binding_tuned_checkpointed(
     proof: &BindingProof,
     action: [u64; CONTEXT_LEN],
     round: [u64; CONTEXT_LEN],
-    leaf: [u64; WIDTH],
-    nullifier: [u64; WIDTH],
+    leaf: [u64; DIGEST_LEN],
+    nullifier: [u64; DIGEST_LEN],
     num_queries: usize,
     checkpoint: impl FnOnce(),
 ) -> bool {
@@ -569,8 +579,10 @@ mod tests {
 
         let leaf_input = pack(alice, action);
         let nullifier_input = pack(bob, round); // deliberately the WRONG secret
-        let leaf_output = permute(leaf_input);
-        let nullifier_output = permute(nullifier_input);
+        let leaf_full = permute(leaf_input);
+        let nullifier_full = permute(nullifier_input);
+        let leaf_output: [u64; DIGEST_LEN] = core::array::from_fn(|i| leaf_full[i]);
+        let nullifier_output: [u64; DIGEST_LEN] = core::array::from_fn(|i| nullifier_full[i]);
 
         let air = BindingAir::new();
         let inputs: Vec<[Val; WIDTH]> = vec![

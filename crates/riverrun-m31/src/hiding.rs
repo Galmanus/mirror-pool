@@ -101,6 +101,7 @@ impl rand10::TryRng for SplitMix64 {
 use crate::binding::{
     public_values_for_hiding, BindingAir, CONTEXT_LEN, LOG_NUM_QUOTIENT_CHUNKS, SECRET_LEN,
 };
+use crate::membership::DIGEST_LEN;
 use crate::permutation::{permute, WIDTH};
 
 type Val = Mersenne31;
@@ -182,12 +183,16 @@ pub fn prove_binding_hiding_cost(
     num_queries: usize,
     log_rows: usize,
     random_cols: usize,
-) -> (HidingCostProof, [u64; WIDTH], [u64; WIDTH]) {
+) -> (HidingCostProof, [u64; DIGEST_LEN], [u64; DIGEST_LEN]) {
     assert!(log_rows >= 2, "CirclePcs cannot commit to fewer than 4 rows");
     let leaf_input = pack(secret, action);
     let nullifier_input = pack(secret, round);
-    let leaf_output = permute(leaf_input);
-    let nullifier_output = permute(nullifier_input);
+    // Truncated to digests: the full permutation state IS the witness once
+    // pi is inverted, and the context is public beside it.
+    let leaf_full = permute(leaf_input);
+    let nullifier_full = permute(nullifier_input);
+    let leaf_output: [u64; DIGEST_LEN] = core::array::from_fn(|i| leaf_full[i]);
+    let nullifier_output: [u64; DIGEST_LEN] = core::array::from_fn(|i| nullifier_full[i]);
 
     let repeats = 1usize << log_rows;
     let mut inputs: Vec<[Val; WIDTH]> = Vec::with_capacity(2 * repeats);
@@ -222,8 +227,8 @@ pub fn verify_binding_hiding_cost(
     proof: &HidingCostProof,
     action: [u64; CONTEXT_LEN],
     round: [u64; CONTEXT_LEN],
-    leaf: [u64; WIDTH],
-    nullifier: [u64; WIDTH],
+    leaf: [u64; DIGEST_LEN],
+    nullifier: [u64; DIGEST_LEN],
     num_queries: usize,
 ) -> bool {
     let air = BindingAir::new();

@@ -45,8 +45,8 @@ pub struct FullRelationProof {
     pub membership: MembershipProof,
     pub action: [u64; CONTEXT_LEN],
     pub round: [u64; CONTEXT_LEN],
-    pub leaf: [u64; WIDTH],
-    pub nullifier: [u64; WIDTH],
+    pub leaf: [u64; DIGEST_LEN],
+    pub nullifier: [u64; DIGEST_LEN],
     pub root: [u64; DIGEST_LEN],
 }
 
@@ -62,8 +62,7 @@ pub fn prove_full_relation(
     path: [PathStep; DEPTH],
 ) -> FullRelationProof {
     let (binding_proof, leaf, nullifier) = binding::prove_binding(secret, action, round);
-    let leaf_digest = truncate(leaf);
-    let (membership_proof, root) = membership::prove_membership(leaf_digest, path);
+    let (membership_proof, root) = membership::prove_membership(leaf, path);
     FullRelationProof {
         binding: binding_proof,
         membership: membership_proof,
@@ -87,7 +86,7 @@ pub fn verify_full_relation(proof: &FullRelationProof) -> bool {
         proof.leaf,
         proof.nullifier,
     );
-    let leaf_digest = truncate(proof.leaf);
+    let leaf_digest = proof.leaf;
     let membership_ok = membership::verify_membership(&proof.membership, leaf_digest, proof.root);
     binding_ok && membership_ok
 }
@@ -153,7 +152,7 @@ mod tests {
             "sanity: alice's own binding proof verifies"
         );
 
-        let bob_leaf_digest = truncate(bob_leaf);
+        let bob_leaf_digest = bob_leaf;
         let (bob_membership, bob_root) = membership::prove_membership(bob_leaf_digest, path);
         assert!(
             membership::verify_membership(&bob_membership, bob_leaf_digest, bob_root),
