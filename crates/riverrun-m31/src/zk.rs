@@ -714,7 +714,16 @@ fn get_zp_cis<D: PolynomialSpace>(qc_domains: &[D]) -> Vec<p3_commit::Val<D>> {
 // ---------------------------------------------------------------------------
 
 type Val = Mersenne31;
-type Challenge = BinomialExtensionField<Val, 3>;
+/// The challenge field: the degree-4 extension `M31[i][u]` with `i² = -1` and
+/// `u² = 2 + i`, 124 bits.
+///
+/// It was degree 3 (93 bits) until the soundness accounting showed the field
+/// was the ceiling rather than the protocol: the additive error terms are
+/// `domain / |E|`, the domain grows with the blowup, and at blowup 128 the
+/// round-by-round error floored at `2^-74` while the query phase was offering
+/// 84 bits. Ten bits thrown away by a type alias. See
+/// `examples/qm31_ceiling.rs` for what each configuration recovers.
+type Challenge = p3_mersenne_31::QM31;
 type ByteHash = crate::keccak::SolKeccak256;
 type FieldHash = p3_symmetric::SerializingHasher<ByteHash>;
 type Compress = p3_symmetric::CompressionFunctionFromHasher<ByteHash, 2, 32>;
