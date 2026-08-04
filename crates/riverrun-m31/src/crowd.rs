@@ -159,7 +159,7 @@ impl BaseAir<Val> for CrowdBindingAir {
     }
 
     fn num_public_values(&self) -> usize {
-        2 * CONTEXT_LEN + DIGEST_LEN + WIDTH
+        2 * CONTEXT_LEN + DIGEST_LEN + DIGEST_LEN
     }
 }
 
@@ -175,11 +175,17 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for CrowdBindingAir {
         let block2: &Cols<AB::Var> = full[2 * w..3 * w].borrow();
 
         let pis: Vec<AB::PublicVar> = builder.public_values().to_vec();
-        // pis layout: action | round | C(8) | nullifier(16)
+        // pis layout: action | round | C(8) | nullifier(8)
+        //
+        // The nullifier is the permutation output TRUNCATED to a digest, for
+        // the same reason the leaf is. Publishing all sixteen limbs published
+        // the witness: pi is a bijection and `round` is public beside it, so
+        // (secret || round) = pi^-1(nullifier) recovered the secret outright.
+        // See docs/NULLIFIER-BREAK.md.
         let action = &pis[0..CONTEXT_LEN];
         let round = &pis[CONTEXT_LEN..2 * CONTEXT_LEN];
         let c = &pis[2 * CONTEXT_LEN..2 * CONTEXT_LEN + DIGEST_LEN];
-        let nullifier = &pis[2 * CONTEXT_LEN + DIGEST_LEN..2 * CONTEXT_LEN + DIGEST_LEN + WIDTH];
+        let nullifier = &pis[2 * CONTEXT_LEN + DIGEST_LEN..2 * CONTEXT_LEN + 2 * DIGEST_LEN];
 
         let block0_output = &block0.ending_full_rounds[HALF_FULL_ROUNDS - 1].post;
         let block1_output = &block1.ending_full_rounds[HALF_FULL_ROUNDS - 1].post;
@@ -194,7 +200,7 @@ impl<AB: AirBuilder<F = Val>> Air<AB> for CrowdBindingAir {
             builder.assert_eq(block0.inputs[i].into(), block1.inputs[i].into());
         }
         // The nullifier stays public: consensus burns it.
-        for i in 0..WIDTH {
+        for i in 0..DIGEST_LEN {
             builder.assert_eq(block1_output[i].into(), nullifier[i].into());
         }
         // The commitment block: its input is the (private) leaf digest, its
@@ -274,7 +280,7 @@ pub fn prove_binding_crowd(
     log_blowup: usize,
     log_rows: usize,
     seed: Seed,
-) -> (CrowdBindingProof, [u64; DIGEST_LEN], [u64; DIGEST_LEN], [u64; WIDTH]) {
+) -> (CrowdBindingProof, [u64; DIGEST_LEN], [u64; DIGEST_LEN], [u64; DIGEST_LEN]) {
     assert!(log_rows >= 2, "CirclePcs cannot commit to fewer than 4 rows");
     assert!(
         (1usize << log_rows) >= 2 * (num_queries + 1),
@@ -286,7 +292,10 @@ pub fn prove_binding_crowd(
     let nullifier_input = pack(secret, round);
     let leaf_output = permute(leaf_input);
     let leaf_digest: [u64; DIGEST_LEN] = core::array::from_fn(|i| leaf_output[i]);
-    let nullifier_output = permute(nullifier_input);
+    let nullifier_full = permute(nullifier_input);
+    // Truncated for the same reason the leaf is: the full state IS the
+    // witness once pi is inverted. See docs/NULLIFIER-BREAK.md.
+    let nullifier_output: [u64; DIGEST_LEN] = core::array::from_fn(|i| nullifier_full[i]);
     let commit_input = pack_digest(leaf_digest, blinder);
     let c = compress(leaf_digest, blinder);
 
@@ -322,7 +331,7 @@ pub fn verify_binding_crowd(
     action: [u64; CONTEXT_LEN],
     round: [u64; CONTEXT_LEN],
     c: [u64; DIGEST_LEN],
-    nullifier: [u64; WIDTH],
+    nullifier: [u64; DIGEST_LEN],
     num_queries: usize,
     log_blowup: usize,
 ) -> bool {
@@ -344,13 +353,13 @@ fn binding_public_values(
     action: [u64; CONTEXT_LEN],
     round: [u64; CONTEXT_LEN],
     c: [u64; DIGEST_LEN],
-    nullifier: [u64; WIDTH],
+    nullifier: [u64; DIGEST_LEN],
 ) -> Vec<Val> {
-    let mut pis = Vec::with_capacity(2 * CONTEXT_LEN + DIGEST_LEN + WIDTH);
+    let mut pis = Vec::with_capacity(2 * CONTEXT_LEN + 2 * DIGEST_LEN);
     pis.extend((0..CONTEXT_LEN).map(|i| Val::from_u64(action[i])));
     pis.extend((0..CONTEXT_LEN).map(|i| Val::from_u64(round[i])));
     pis.extend((0..DIGEST_LEN).map(|i| Val::from_u64(c[i])));
-    pis.extend((0..WIDTH).map(|i| Val::from_u64(nullifier[i])));
+    pis.extend((0..DIGEST_LEN).map(|i| Val::from_u64(nullifier[i])));
     pis
 }
 
@@ -635,7 +644,7 @@ pub fn verify_crowd(
     action: [u64; CONTEXT_LEN],
     round: [u64; CONTEXT_LEN],
     c: [u64; DIGEST_LEN],
-    nullifier: [u64; WIDTH],
+    nullifier: [u64; DIGEST_LEN],
     root: [u64; DIGEST_LEN],
     num_queries: usize,
     log_blowup: usize,
