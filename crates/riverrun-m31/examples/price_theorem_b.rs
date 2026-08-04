@@ -20,11 +20,9 @@ fn main() {
     // higher blowup, against both the envelope and the bit target.
     for (log_rows, q, lb) in [
         (6usize, 20usize, 2usize),
-        (6, 14, 5),
-        (6, 12, 6),
-        (6, 12, 7),
-        (6, 10, 8),
-        (6, 16, 6),
+        (7, 20, 2),
+        (7, 16, 6),
+        (7, 12, 7),
     ] {
         let n = 1usize << log_rows;
         let k = q + 1;
