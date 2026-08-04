@@ -1,9 +1,23 @@
 //! Prove, as one Circle-STARK proof, that a leaf digest sits under a public
-//! Merkle root, without revealing which leaf or its position. This is
-//! riverrun's §1b relation (`docs/M31_CIRCLE_STARK.md`): a Poseidon2
-//! compression function folded `DEPTH` times, each level's node fed into the
-//! next, with a private per-level bit choosing left/right order so the
-//! authentication path stays hidden.
+//! Merkle root. This is riverrun's §1b relation
+//! (`docs/M31_CIRCLE_STARK.md`): a Poseidon2 compression function folded
+//! `DEPTH` times, each level's node fed into the next, with a per-level bit
+//! choosing left/right order.
+//!
+//! **The path is out of the PUBLIC INPUTS, which is not the same as hidden.**
+//! `prove_membership` commits with a non-hiding MMCS over `CirclePcs`, whose
+//! `ZK` flag is `false`. The siblings and the direction bits are trace cells,
+//! and the FRI openings at 40 queries over a short trace interpolate that
+//! trace — the same measurement `examples/privacy_audit.rs` makes for the
+//! binding relation applies here. An observer who reads the proof recovers the
+//! path.
+//!
+//! Only [`prove_membership_zk`] and the crowd variants in `crowd.rs` actually
+//! hide it, by committing under `HidingCirclePcs`. This distinction was
+//! documented backwards until an adversarial audit caught it
+//! (`docs/AUDIT-2026-08-03.md`, M5), and the wording here is the correction,
+//! not a softening: a reader who took "the authentication path stays hidden"
+//! at face value for this function was misled.
 //!
 //! **Not yet fused with §1a/§1c** (`binding.rs`): this proves membership of a
 //! given leaf digest independently. Combining "the leaf comes from this
