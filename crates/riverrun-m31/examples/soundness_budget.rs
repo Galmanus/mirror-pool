@@ -50,6 +50,33 @@
 //!    figure reported, and it is the reason the grinding bits are added rather
 //!    than multiplied in.
 //!
+//! ## The quantum column, which halves everything
+//!
+//! "Post-quantum" for a hash-based STARK means there is no Shor-style break:
+//! no discrete logarithm, no factoring, nothing an algebraic quantum algorithm
+//! dismantles outright. It does NOT mean a quantum adversary is no better off.
+//! Grover applies twice here, and both times to the number that matters:
+//!
+//!  - **The Fiat-Shamir search.** Forging is a search for a transcript whose
+//!    derived challenges happen to be favourable. Classically that costs about
+//!    `ε⁻¹` attempts; Grover turns an unstructured search of size `S` into
+//!    `√S`, so it costs about `ε^{-1/2}`. **The bits halve.**
+//!  - **The grinding.** Proof-of-work on the query challenge is exactly the
+//!    search Grover was built for, so `w` grinding bits are worth `w/2`.
+//!
+//! Both effects are the same square root, so the whole work figure halves:
+//! `2^k` classical becomes about `2^{k/2}` quantum. This file therefore
+//! reports both, and the quantum column is the one a system whose entire pitch
+//! is post-quantum should be judged on.
+//!
+//! The caveat that keeps this from being alarmism: Grover's speedup is
+//! quadratic and notoriously hard to realise at these depths — the circuit is
+//! sequential and does not parallelise the way classical search does, so a
+//! 2^46 Grover search is not 2^46 seconds of anything. It is still the right
+//! conservative accounting, and a system claiming post-quantum security should
+//! quote it rather than quote the classical figure and let the word do the
+//! work.
+//!
 //! ## What this file is not
 //!
 //! It is an accounting, not a security proof. It assembles published bounds
@@ -102,6 +129,18 @@ fn additive_error(log_committed: usize, log_blowup: usize) -> f64 {
     batching + deep + folding
 }
 
+fn verdict(bits: f64) -> &'static str {
+    if bits >= 128.0 {
+        "at or above 128"
+    } else if bits >= 100.0 {
+        "100 to 128"
+    } else if bits >= 80.0 {
+        "80 to 100, below production"
+    } else {
+        "BELOW 80, a demonstration figure"
+    }
+}
+
 fn report(c: &Config) {
     println!("{}", c.name);
     println!(
@@ -125,21 +164,19 @@ fn report(c: &Config) {
             "  {label:<24} round-by-round error 2^-{:.1} (query {:.0}, additive terms are 2^-{:.0} and do not bind)",
             rbr, q_bits, add_bits
         );
+        let quantum = work / 2.0;
         println!(
-            "      forging work: about 2^{:.0} attempts x 2^{} grinding = 2^{:.0} hashes",
+            "      classical work: about 2^{:.0} attempts x 2^{} grinding = 2^{:.0} hashes",
             rbr, c.pow_bits, work
         );
         println!(
-            "      verdict: {}",
-            if work >= 128.0 {
-                "at or above the 128-bit target"
-            } else if work >= 100.0 {
-                "between 100 and 128 bits"
-            } else if work >= 80.0 {
-                "between 80 and 100 bits: below any production target"
-            } else {
-                "BELOW 80 bits: a demonstration figure, not a production one"
-            }
+            "      QUANTUM work (Grover on the Fiat-Shamir search and the grind): 2^{:.0}",
+            quantum
+        );
+        println!(
+            "      verdict: {} classically, {} against a quantum adversary",
+            verdict(work),
+            verdict(quantum)
         );
     }
     if let Some(b) = c.measured_bytes {
@@ -183,11 +220,19 @@ fn main() {
 
     let configs = [
         Config {
-            name: "crowd binding (deployed): 64 rows, 20 queries, blowup 4",
+            name: "crowd binding (ADOPTED): 128 rows, 12 queries, blowup 128",
+            queries: 12,
+            log_blowup: 7,
+            pow_bits: 8,
+            log_committed: 8, // ZK commits 2N = 256
+            measured_bytes: Some(106_491),
+        },
+        Config {
+            name: "crowd binding (superseded): 64 rows, 20 queries, blowup 4",
             queries: 20,
             log_blowup: 2,
             pow_bits: 8,
-            log_committed: 7, // ZK commits 2N = 128
+            log_committed: 7,
             measured_bytes: Some(123_422),
         },
         Config {
@@ -237,6 +282,20 @@ fn main() {
             transaction bytes. That is the direction to push, and it is unmeasured.\n\
          3. At blowup 4 the envelope caps the achievable level near 50 conjectured\n\
             bits. Reaching 128 in ONE transaction is an open question for this\n\
-            envelope, and belongs in the limitations section as one."
+            envelope, and belongs in the limitations section as one.\n\
+         4. And the figure to quote is the QUANTUM one, because post-quantum is this\n\
+            project's entire pitch. Grover halves it: the adopted configuration is\n\
+            2^82 classically and about 2^41 against a quantum adversary. Being\n\
+            immune to Shor is not the same as being unaffected, and a system that\n\
+            leads with the word owes the reader the halved number.\n\
+         5. The additive terms BIND at high blowup, which the mnemonic could never\n\
+            have shown. They are domain size over |E|, the domain grows with the\n\
+            blowup, and |E| = 2^93 does not. At blowup 128 the round-by-round error\n\
+            floors at 2^-74 no matter how many queries are added: the query phase\n\
+            offers 84 bits and the field only lets 74 of them through. The naive\n\
+            Q x log_blowup + grind formula overstated the adopted configuration by\n\
+            ten bits. Raising the extension from degree 3 to degree 4 moves |E| from\n\
+            2^93 to 2^124 and lifts the ceiling; it is the next parameter to test,\n\
+            and it is a change to the field rather than to the protocol."
     );
 }
