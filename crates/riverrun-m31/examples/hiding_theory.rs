@@ -19,9 +19,24 @@
 //!     L_N = { a(x) + y·b(x)  :  deg a < N/2,  deg b < N/2 }
 //! ```
 //!
-//! Both sides have dimension `N`, so it suffices that one contains the other,
-//! and `main` checks the two spans coincide as subspaces of `F^|L|` by
-//! comparing ranks of the two generator matrices and of their concatenation.
+//! *Proof of the normal form.* Let `R = F[x,y]/(x² + y² − 1)` be the
+//! coordinate ring of the circle. The defining relation gives `y² = 1 − x²`,
+//! so every occurrence of `y²` rewrites into `F[x]`: by induction every
+//! monomial `y^k` equals a polynomial in `x` when `k` is even and `y` times
+//! one when `k` is odd. Hence `R = F[x] ⊕ y·F[x]` as an `F[x]`-module, free of
+//! rank two on the basis `{1, y}`, and every element of `R` is `a(x) + y·b(x)`
+//! for a UNIQUE pair `(a, b)`: uniqueness because `a + yb = a' + yb'` forces
+//! `(a − a') = y(b' − b)`, and comparing the free-module components gives
+//! `a = a'`, `b = b'`. ∎
+//!
+//! What that argument does NOT settle is which `(a, b)` degree bounds cut out
+//! the particular `N`-dimensional subspace that `CircleEvaluations`
+//! interpolates into. That is a fact about the CFFT construction rather than
+//! about the ring, and it is settled here by computation: `main` checks the two
+//! spans coincide as subspaces of `F^|L|` by comparing the ranks of both
+//! generator matrices and of their concatenation. So the normal form is
+//! proved, the degree bounds are verified, and the difference between the two
+//! is stated rather than blurred.
 //!
 //! Two consequences used below, both immediate:
 //!
