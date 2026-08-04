@@ -33,6 +33,7 @@ pub mod keccak;
 pub mod hiding;
 pub mod membership;
 pub mod permutation;
+pub mod asp_history;
 pub mod crowd;
 pub mod relation;
 pub mod zk;
