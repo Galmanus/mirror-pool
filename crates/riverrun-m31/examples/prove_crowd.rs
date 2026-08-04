@@ -28,15 +28,20 @@ use riverrun_m31::{
     CROWD_DEPTH, DIGEST_LEN, SECRET_LEN,
 };
 
-/// The on-chain-measured configuration: 20 queries at blowup 4, 64 rows.
-/// See docs/PRIVACY.md for why this query point and not 40 at blowup 2, and
-/// Theorem B in `examples/hiding_theory.rs` for why 64 rows and not 32: below
-/// half the blinder's dimension the hiding is unconditional, above it the
-/// guarantee depends on a rank computation over the points the verifier
-/// happens to query.
-const QUERIES: usize = 20;
-const LOG_BLOWUP: usize = 2;
-const LOG_ROWS: usize = 6;
+/// The configuration that clears every budget at once, each of them computed
+/// rather than assumed: 128 rows, 12 queries, blowup 128.
+///
+///  - soundness 2^92 conjectured, 2^50 proved (`examples/soundness_budget.rs`)
+///  - hiding unconditional, `k <= N/2` (Theorem B, `examples/hiding_theory.rs`)
+///  - FRI zero-knowledge margin +204 (`examples/fri_zk_budget.rs`)
+///  - 206.3M verifier instructions (52% of cap), 106,491 B (81% of envelope)
+///
+/// It beats the previous 64-row, 20-query, blowup-4 point on every one of
+/// those axes simultaneously. The earlier point was not a tradeoff; it was the
+/// wrong corner of a parameter space nobody had mapped.
+const QUERIES: usize = 12;
+const LOG_BLOWUP: usize = 7;
+const LOG_ROWS: usize = 7;
 
 fn parse8(name: &str, hex: &str) -> [u64; 8] {
     let bytes = (0..hex.len())

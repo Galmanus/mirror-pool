@@ -92,17 +92,29 @@ type Cols<T> =
 /// Blinder width: 8 M31 limbs, 248 bits of commitment randomness.
 pub const BLINDER_LEN: usize = DIGEST_LEN;
 
-/// Tree depth of the crowd membership proof: 63 fold levels, because row 0 of
-/// the 64-row trace is the commitment row. A 2^63-leaf tree.
+/// Tree depth of the crowd membership proof: 127 fold levels, because row 0 of
+/// the 128-row trace is the commitment row. A 2^127-leaf tree.
 ///
-/// The height is set by the hiding argument, not by ambition about tree sizes.
-/// This AIR has transition constraints, so the verifier learns `k = Q + 2`
-/// evaluations per column, and Theorem B (`examples/hiding_theory.rs`) makes
-/// surjectivity of the blinding map unconditional exactly when `k <= N/2`. At
-/// the deployed 20 queries that is `N >= 44`, so `N = 64`, so 63 fold rows
-/// after the commitment row. The anonymity set follows from the cryptography
-/// rather than the other way round.
-pub const CROWD_DEPTH: usize = 63;
+/// The height is set by TWO arguments, not by ambition about tree sizes, and
+/// the second of them is why this is 128 rather than 64.
+///
+/// Theorem B (`examples/hiding_theory.rs`) makes surjectivity of the blinding
+/// map unconditional exactly when the verifier learns at most `N/2`
+/// evaluations per column. This AIR has transition constraints, so
+/// `k = Q + 2`, and at 12 queries that needs only `N >= 28`.
+///
+/// The binding constraint is the FRI phase (`examples/fri_zk_budget.rs`).
+/// Folding is linear, so every scalar the verifier sees there is a linear
+/// functional of the batch polynomial, and the blinding available to hide them
+/// is `3N` — the per-column blinders collapse to `N` under the alpha
+/// reduction, plus `2N` from the randomisation polynomial. The observations
+/// are `Q * (log2(2N) + log_blowup)`. At 64 rows and this configuration the
+/// margin is thin; at 128 it is `384 - 180 = 204`. A NEGATIVE margin is
+/// conclusive in the bad direction: fewer blinding dimensions than observed
+/// scalars means a functional of the witness survives into the transcript.
+///
+/// The 2^127-leaf anonymity set is a consequence of that count, not a target.
+pub const CROWD_DEPTH: usize = 127;
 
 fn constants() -> RoundConstants<Val, WIDTH, HALF_FULL_ROUNDS, PARTIAL_ROUNDS> {
     RoundConstants::new(
@@ -659,11 +671,13 @@ mod tests {
     #[allow(unused_imports)]
     use crate::zk::Seed;
 
-    const Q: usize = 20;
-    const LOG_B: usize = 2;
-    /// 64 rows, not 32: Theorem B's unconditional band needs `N >= 2k` and
-    /// this AIR opens `k = Q + 1`. See `examples/hiding_theory.rs`.
-    const LOG_ROWS: usize = 6;
+    const Q: usize = 12;
+    const LOG_B: usize = 7;
+    /// 128 rows and 12 queries at blowup 128: the configuration that clears
+    /// BOTH budgets at once. Theorem B wants `N >= 2k`; the FRI dimension
+    /// count wants `3N >= Q * (log2(2N) + log_blowup)`. See
+    /// `examples/hiding_theory.rs` and `examples/fri_zk_budget.rs`.
+    const LOG_ROWS: usize = 7;
 
     fn secret(byte: u64) -> [u64; SECRET_LEN] {
         core::array::from_fn(|i| byte * 1000 + i as u64)
