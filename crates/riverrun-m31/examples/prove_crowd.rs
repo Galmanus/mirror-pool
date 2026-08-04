@@ -104,10 +104,12 @@ fn os_entropy_limbs<const N: usize>() -> [u64; N] {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    if args.len() != 6 {
-        eprintln!("usage: prove_crowd <secret_hex> <action_hex> <round_hex> <tree_seed> <outdir>");
+    if args.len() != 6 && args.len() != 8 {
+        eprintln!("usage: prove_crowd <secret_hex> <action_hex> <round_hex> <tree_seed> <outdir> [queries] [log_blowup]");
         std::process::exit(2);
     }
+    let queries: usize = if args.len() == 8 { args[6].parse().unwrap() } else { QUERIES };
+    let log_blowup: usize = if args.len() == 8 { args[7].parse().unwrap() } else { LOG_BLOWUP };
     let secret: [u64; SECRET_LEN] = parse8("secret", &args[1]);
     let action: [u64; CONTEXT_LEN] = parse8("action", &args[2]);
     let round: [u64; CONTEXT_LEN] = parse8("round", &args[3]);
@@ -126,8 +128,8 @@ fn main() {
         action,
         round,
         blinder,
-        QUERIES,
-        LOG_BLOWUP,
+        queries,
+        log_blowup,
         LOG_ROWS,
         os_seed(),
     );
@@ -141,7 +143,7 @@ fn main() {
         node_on_right: (tree_seed.wrapping_add(i as u64)) % 3 == 1,
     });
     let (mproof, c2, root) =
-        prove_membership_crowd(leaf_digest, blinder, &path, QUERIES, LOG_BLOWUP, os_seed());
+        prove_membership_crowd(leaf_digest, blinder, &path, queries, log_blowup, os_seed());
     assert_eq!(c, c2, "one (leaf, blinder) pair must commit identically in both relations");
 
     // Sanity: the prover's root is the hand fold of the same path.
@@ -176,7 +178,7 @@ fn main() {
     std::fs::write(&mpp, &mpub).unwrap();
 
     println!(
-        "{{\"binding_proof\":\"{bp}\",\"binding_publics\":\"{bpp}\",\"membership_proof\":\"{mp}\",\"membership_publics\":\"{mpp}\",\"binding_bytes\":{},\"membership_bytes\":{},\"commitment\":\"{}\",\"nullifier\":\"{}\",\"root\":\"{}\",\"queries\":{QUERIES},\"log_blowup\":{LOG_BLOWUP}}}",
+        "{{\"binding_proof\":\"{bp}\",\"binding_publics\":\"{bpp}\",\"membership_proof\":\"{mp}\",\"membership_publics\":\"{mpp}\",\"binding_bytes\":{},\"membership_bytes\":{},\"commitment\":\"{}\",\"nullifier\":\"{}\",\"root\":\"{}\",\"queries\":{queries},\"log_blowup\":{log_blowup}}}",
         bbytes.len(),
         mbytes.len(),
         hex_of(&c),
