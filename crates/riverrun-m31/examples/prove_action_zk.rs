@@ -24,7 +24,10 @@ fn parse8(name: &str, hex: &str) -> [u64; 8] {
     core::array::from_fn(|i| u64::from_le_bytes(bytes[i * 8..(i + 1) * 8].try_into().unwrap()))
 }
 
-fn hex16(vals: &[u64; 16]) -> String {
+/// Hex of the little-endian bytes of `vals`. A slice, not a fixed `[u64; 16]`:
+/// the leaf and nullifier are truncated digests now, because publishing a
+/// permutation's full output let anyone invert it and recover the secret.
+fn hex_limbs(vals: &[u64]) -> String {
     let mut s = String::new();
     for v in vals {
         for b in v.to_le_bytes() {
@@ -85,7 +88,7 @@ fn main() {
     println!(
         "{{\"proof\":\"{proof_path}\",\"publics\":\"{publics_path}\",\"proof_bytes\":{},\"leaf\":\"{}\",\"nullifier\":\"{}\"}}",
         proof_bytes.len(),
-        hex16(&leaf),
-        hex16(&nullifier)
+        hex_limbs(&leaf),
+        hex_limbs(&nullifier)
     );
 }
