@@ -21,3 +21,4 @@ pub use ordering::*;
 pub use pcs::*;
 pub use periodic::*;
 pub use proof::*;
+pub use verifier::FriSetup;

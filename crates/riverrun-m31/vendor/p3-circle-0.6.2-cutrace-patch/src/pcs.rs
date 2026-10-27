@@ -24,6 +24,7 @@ use tracing::{debug_span, info_span};
 
 use crate::deep_quotient::{
     VanishingParts, accumulate_deep_quotient, compute_vanishing_parts, deep_quotient_reduce_row,
+    deep_quotient_vanishing_part,
     extract_lambda,
 };
 use crate::domain::CircleDomain;
@@ -32,7 +33,6 @@ use crate::folding::{
 };
 use crate::point::{Point, compute_lagrange_den_batched};
 use crate::prover::prove;
-use crate::verifier::verify;
 use crate::{
     CfftPerm, CfftPermutable, CircleEvaluations, CircleFriProof, build_periodic_lde_table_circle,
     cfft_permute_index, cfft_permute_slice,
@@ -518,6 +518,11 @@ where
         )
     }
 
+    /// [staged-patch] The monolithic verifier, now literally
+    /// [`CirclePcs::verify_staged_setup`] followed by
+    /// [`CirclePcs::verify_staged_query`] for every query in order. The staged
+    /// on-chain path calls the same two functions across several
+    /// transactions, so both accept exactly the same proofs.
     fn verify(
         &self,
         // For each round:
@@ -539,6 +544,860 @@ where
         proof: &Self::Proof,
         challenger: &mut Challenger,
     ) -> Result<(), Self::Error> {
+        let setup =
+            self.verify_staged_setup(&rounds, proof, proof.fri_proof.query_proofs.len(), challenger)?;
+        let tables = CircleAlphaTables::new(&rounds, setup.alpha);
+        for (query, qp) in proof.fri_proof.query_proofs.iter().enumerate() {
+            self.verify_staged_query::<Challenge, Challenger>(&rounds, proof, &setup, &tables, query, qp)?;
+        }
+        Ok(())
+    }
+}
+
+/// [staged-patch] One opened round as the PCS verifier receives it: a
+/// commitment, and for each committed matrix its domain plus the claimed
+/// evaluations at each opening point.
+pub type CircleOpeningRound<Val, Challenge, Commitment> = (
+    Commitment,
+    Vec<(CircleDomain<Val>, Vec<(Challenge, Vec<Challenge>)>)>,
+);
+
+/// [staged-patch] All of the circle PCS verifier's Fiat-Shamir state: the
+/// batch-combination challenge, the first-layer (bivariate) fold challenge,
+/// and the FRI betas plus every query index. Produced once by
+/// [`CirclePcs::verify_staged_setup`]; every query check is a pure function of
+/// it, so it is what a staged verifier persists between transactions.
+#[derive(Clone, Debug)]
+pub struct CircleStagedSetup<Challenge> {
+    pub alpha: Challenge,
+    pub bivariate_beta: Challenge,
+    pub log_global_max_height: usize,
+    pub fri: crate::verifier::FriSetup<Challenge>,
+    /// One per claimed evaluation, in (batch, matrix, point) order:
+    /// `S = sum_k alpha^k * p_zeta[k]`, the query-independent half of every
+    /// DEEP row reduction (see [`CirclePcs::open_input_at`]).
+    pub claim_sums: Vec<Challenge>,
+}
+
+/// `alpha^k` is split as `alpha^(8a + b)` so a base-field row reduction needs
+/// 8 + ceil(width / 8) extension powers instead of `width` of them.
+const ALPHA_SPLIT: usize = 8;
+
+/// [staged-patch] The per-transaction tables of the optimized DEEP reduction,
+/// all derived from `alpha`, the claimed widths and the opening points:
+/// per-(batch, matrix) `alpha^width` and `alpha^(2*width)` (as upstream), the
+/// split powers `alpha^b` (b < 8) and `(alpha^8)^a`, and each claim's opening
+/// point lifted to the circle (`Point::from_projective_line`, one extension
+/// inversion per DISTINCT point, where upstream did one per matrix, point and
+/// query).
+pub struct CircleAlphaTables<Challenge> {
+    pub matrix_alpha_pows: Vec<Vec<(Challenge, Challenge)>>,
+    alpha_low: Vec<Challenge>,
+    alpha_high: Vec<Challenge>,
+    zeta_points: Vec<Vec<Vec<Point<Challenge>>>>,
+}
+
+impl<Challenge: Field> CircleAlphaTables<Challenge> {
+    pub fn new<Val, Commitment>(
+        rounds: &[CircleOpeningRound<Val, Challenge, Commitment>],
+        alpha: Challenge,
+    ) -> Self
+    where
+        Val: ComplexExtendable,
+        Challenge: ExtensionField<Val>,
+    {
+        let mut by_width: Vec<(usize, (Challenge, Challenge))> = Vec::new();
+        let matrix_alpha_pows: Vec<Vec<(Challenge, Challenge)>> = rounds
+            .iter()
+            .map(|(_, mats)| {
+                mats.iter()
+                    .map(|(_, points_and_values)| {
+                        let width = points_and_values.first().map_or(0, |(_, v)| v.len());
+                        if let Some(&(_, pows)) = by_width.iter().find(|(w, _)| *w == width) {
+                            return pows;
+                        }
+                        let alpha_pow_width = alpha.exp_u64(width as u64);
+                        let pows = (alpha_pow_width, alpha_pow_width.square());
+                        by_width.push((width, pows));
+                        pows
+                    })
+                    .collect()
+            })
+            .collect();
+        let max_width = rounds
+            .iter()
+            .flat_map(|(_, mats)| mats.iter())
+            .flat_map(|(_, points_and_values)| points_and_values.iter().map(|(_, v)| v.len()))
+            .max()
+            .unwrap_or(0);
+        let alpha_low: Vec<Challenge> = alpha.powers().collect_n(ALPHA_SPLIT);
+        let alpha_high: Vec<Challenge> = alpha
+            .exp_u64(ALPHA_SPLIT as u64)
+            .powers()
+            .collect_n(max_width.div_ceil(ALPHA_SPLIT));
+        let mut lifted: Vec<(Challenge, Point<Challenge>)> = Vec::new();
+        let zeta_points = rounds
+            .iter()
+            .map(|(_, mats)| {
+                mats.iter()
+                    .map(|(_, points_and_values)| {
+                        points_and_values
+                            .iter()
+                            .map(|(zeta_uni, _)| {
+                                if let Some(&(_, p)) = lifted.iter().find(|(z, _)| z == zeta_uni) {
+                                    return p;
+                                }
+                                let p = Point::from_projective_line(*zeta_uni);
+                                lifted.push((*zeta_uni, p));
+                                p
+                            })
+                            .collect()
+                    })
+                    .collect()
+            })
+            .collect();
+        Self { matrix_alpha_pows, alpha_low, alpha_high, zeta_points }
+    }
+
+    /// `sum_k alpha^k * row[k]` for a base-field row, as
+    /// `sum_a (alpha^8)^a * sum_b alpha^b * row[8a + b]`: the inner products are
+    /// extension-by-base multiplications. `None` if the row is wider than the
+    /// tables (wider than every claim).
+    fn dot_base<Val: Field>(&self, row: &[Val]) -> Option<Challenge>
+    where
+        Challenge: ExtensionField<Val>,
+    {
+        if row.len().div_ceil(ALPHA_SPLIT) > self.alpha_high.len() {
+            return None;
+        }
+        let mut acc = Challenge::ZERO;
+        for (chunk, &high) in row.chunks(ALPHA_SPLIT).zip(&self.alpha_high) {
+            let mut inner = Challenge::ZERO;
+            for (&v, &low) in chunk.iter().zip(&self.alpha_low) {
+                inner += low * v;
+            }
+            acc += high * inner;
+        }
+        Some(acc)
+    }
+}
+
+/// [staged-patch] `S = sum_k alpha^k * values[k]` for every claimed evaluation,
+/// in (batch, matrix, point) order, by Horner. Exact: the same sum upstream's
+/// per-query dot product folds in, computed once instead of once per query.
+fn claim_sums<Val: Field, Challenge: Field, Commitment>(
+    rounds: &[CircleOpeningRound<Val, Challenge, Commitment>],
+    alpha: Challenge,
+) -> Vec<Challenge> {
+    rounds
+        .iter()
+        .flat_map(|(_, mats)| mats.iter())
+        .flat_map(|(_, points_and_values)| points_and_values.iter())
+        .map(|(_, values)| {
+            values
+                .iter()
+                .rev()
+                .fold(Challenge::ZERO, |acc, &v| acc * alpha + v)
+        })
+        .collect()
+}
+
+impl<Val, InputMmcs, FriMmcs> CirclePcs<Val, InputMmcs, FriMmcs>
+where
+    Val: ComplexExtendable,
+    InputMmcs: Mmcs<Val>,
+{
+    /// [staged-patch] The transcript half of `Pcs::verify`: observe every
+    /// claimed evaluation, sample the batch challenge, observe the first-layer
+    /// commitment, sample the bivariate beta, check the global height, then
+    /// run the FRI transcript ([`crate::verifier::verify_setup`]) through to
+    /// the last query index. Upstream code, unchanged in order and content;
+    /// only the per-query work moved out.
+    ///
+    /// `num_query_proofs` is `proof.fri_proof.query_proofs.len()` for a whole
+    /// proof; a staged caller that split the query proofs off passes their
+    /// count.
+    #[allow(clippy::type_complexity)]
+    pub fn verify_staged_setup<Challenge, Challenger>(
+        &self,
+        rounds: &[CircleOpeningRound<Val, Challenge, InputMmcs::Commitment>],
+        proof: &CirclePcsProof<Val, Challenge, InputMmcs, FriMmcs, Challenger::Witness>,
+        num_query_proofs: usize,
+        challenger: &mut Challenger,
+    ) -> Result<
+        CircleStagedSetup<Challenge>,
+        FriError<FriMmcs::Error, InputError<InputMmcs::Error, FriMmcs::Error>>,
+    >
+    where
+        Challenge: ExtensionField<Val>,
+        FriMmcs: Mmcs<Challenge>,
+        Challenger: FieldChallenger<Val> + GrindingChallenger + CanObserve<FriMmcs::Commitment>,
+    {
+        // Write evaluations to challenger
+        for (_, round) in rounds {
+            for (_, mat) in round {
+                for (_, point) in mat {
+                    challenger.observe_algebra_slice(point);
+                }
+            }
+        }
+
+        // Batch combination challenge
+        let alpha: Challenge = challenger.sample_algebra_element();
+
+        challenger.observe(proof.first_layer_commitment.clone());
+        let bivariate_beta: Challenge = challenger.sample_algebra_element();
+
+        // +1 to account for first layer
+        let log_global_max_height =
+            proof.fri_proof.commit_phase_commits.len() + self.fri_params.log_blowup + 1;
+
+        // Guard the query-phase height subtraction against an under-reported
+        // round count (upstream comment and check, unchanged).
+        let expected_log_global_max_height = rounds
+            .iter()
+            .flat_map(|(_, mats)| {
+                mats.iter()
+                    .map(|(domain, _)| domain.log_n + self.fri_params.log_blowup)
+            })
+            .max();
+        if let Some(expected) = expected_log_global_max_height
+            && log_global_max_height < expected
+        {
+            return Err(FriError::GlobalMaxHeightMismatch {
+                expected,
+                got: log_global_max_height,
+            });
+        }
+
+        let folding: CircleFriFoldingForMmcs<Val, Challenge, InputMmcs, FriMmcs> =
+            CircleFriFolding(PhantomData);
+        let fri = crate::verifier::verify_setup(
+            &folding,
+            &self.fri_params,
+            &proof.fri_proof,
+            num_query_proofs,
+            challenger,
+        )?;
+        let claim_sums = claim_sums(rounds, alpha);
+        Ok(CircleStagedSetup {
+            alpha,
+            bivariate_beta,
+            log_global_max_height,
+            fri,
+            claim_sums,
+        })
+    }
+
+    /// [staged-patch] The per-query half of `Pcs::verify`, for query number
+    /// `query` (its index is `setup.fri.indices[query]`): input MMCS openings,
+    /// DEEP reduction, first-layer fold and opening, then the FRI fold chain
+    /// and final-polynomial check. `qp` need not come from
+    /// `proof.fri_proof.query_proofs` (a staged caller deserializes it on its
+    /// own); every other proof field read here is header data.
+    #[allow(clippy::type_complexity)]
+    pub fn verify_staged_query<Challenge, Challenger>(
+        &self,
+        rounds: &[CircleOpeningRound<Val, Challenge, InputMmcs::Commitment>],
+        proof: &CirclePcsProof<Val, Challenge, InputMmcs, FriMmcs, Challenger::Witness>,
+        setup: &CircleStagedSetup<Challenge>,
+        tables: &CircleAlphaTables<Challenge>,
+        query: usize,
+        qp: &crate::CircleQueryProof<
+            Challenge,
+            FriMmcs,
+            CircleInputProof<Val, Challenge, InputMmcs, FriMmcs>,
+        >,
+    ) -> Result<(), FriError<FriMmcs::Error, InputError<InputMmcs::Error, FriMmcs::Error>>>
+    where
+        Challenge: ExtensionField<Val>,
+        FriMmcs: Mmcs<Challenge>,
+        Challenger: GrindingChallenger,
+    {
+        let Some(&index) = setup.fri.indices.get(query) else {
+            return Err(FriError::QueryProofCountMismatch {
+                expected: setup.fri.indices.len(),
+                got: query + 1,
+            });
+        };
+        let folding: CircleFriFoldingForMmcs<Val, Challenge, InputMmcs, FriMmcs> =
+            CircleFriFolding(PhantomData);
+        crate::verifier::verify_one_query(
+            &folding,
+            &self.fri_params,
+            &proof.fri_proof.commit_phase_commits,
+            proof.fri_proof.final_poly,
+            &setup.fri,
+            query,
+            index,
+            qp,
+            |index, input_proof| {
+                self.open_input_at(
+                    rounds,
+                    tables,
+                    &setup.claim_sums,
+                    setup.bivariate_beta,
+                    setup.log_global_max_height,
+                    &proof.lambdas,
+                    &proof.first_layer_commitment,
+                    index,
+                    input_proof,
+                )
+            },
+        )
+    }
+
+    /// [staged-patch] Upstream's `open_input` closure body with the DEEP row
+    /// reduction rearranged, exactly, for cost. Shared by the monolithic and
+    /// staged paths. Upstream adds, per (matrix, point),
+    ///
+    /// ```text
+    ///     alpha_offset * (vp_num / vp_denom) * sum_k alpha^k (p_x[k] - p_zeta[k])
+    /// ```
+    ///
+    /// Here the sum is `B - S` with `B = sum_k alpha^k p_x[k]` (once per
+    /// matrix, extension-by-base products through the split power tables) and
+    /// `S = sum_k alpha^k p_zeta[k]` (query-independent, from
+    /// `CircleStagedSetup::claim_sums`); the opening point's circle lift comes
+    /// from the tables; and every `vp_denom` of the query is inverted in one
+    /// batch. Each is a field identity, so every reduced opening is the same
+    /// element upstream computes ([`CirclePcs::compare_open_input`] checks it).
+    /// A zero denominator, where upstream's division would panic, is an error.
+    /// Measured on SBF (`cu-trace`): upstream's form spent ~840K CU of a crowd
+    /// binding query here, mostly extension inversions and
+    /// extension-by-extension products.
+    #[doc(hidden)]
+    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
+    pub fn open_input_at<Challenge>(
+        &self,
+        rounds: &[CircleOpeningRound<Val, Challenge, InputMmcs::Commitment>],
+        tables: &CircleAlphaTables<Challenge>,
+        claim_sums: &[Challenge],
+        bivariate_beta: Challenge,
+        log_global_max_height: usize,
+        lambdas: &[Challenge],
+        first_layer_commitment: &FriMmcs::Commitment,
+        index: usize,
+        input_proof: &CircleInputProof<Val, Challenge, InputMmcs, FriMmcs>,
+    ) -> Result<Vec<(usize, Challenge)>, InputError<InputMmcs::Error, FriMmcs::Error>>
+    where
+        Challenge: ExtensionField<Val>,
+        FriMmcs: Mmcs<Challenge>,
+    {
+        // log_height -> (alpha_offset, ro)
+        let mut reduced_openings: BTreeMap<usize, (Challenge, Challenge)> = BTreeMap::new();
+        // (log_height, alpha_offset * vp_num * (B - S), vp_denom), inverted in one batch below.
+        let mut pending: Vec<(usize, Challenge, Challenge)> = Vec::new();
+        let mut claim = 0usize;
+        let mut lifted_x: Vec<(usize, Point<Val>)> = Vec::new();
+
+        let CircleInputProof {
+            input_openings,
+            first_layer_siblings,
+            first_layer_proof,
+        } = input_proof;
+
+        for (batch, (batch_opening, (batch_commit, mats))) in
+            zip_eq(input_openings, rounds, InputError::InputShapeError)?.enumerate()
+        {
+            let batch_heights: Vec<usize> = mats
+                .iter()
+                .map(|(domain, _)| domain.size() << self.fri_params.log_blowup)
+                .collect_vec();
+            // The opened rows must pair one-to-one with the committed matrices.
+            let batch_dims: Vec<Dimensions> = zip_eq(
+                batch_heights.iter().zip(mats),
+                &batch_opening.opened_values,
+                InputError::InputShapeError,
+            )?
+            .map(
+                |((&height, (_, points_and_values)), opened_row)| Dimensions {
+                    // Invariant: the commitment layer rejects opened rows that differ from this width.
+                    //
+                    //     some points → width = claimed evaluation count
+                    //     no points   → width = opened row length (no claim to enforce)
+                    width: points_and_values
+                        .first()
+                        .map_or(opened_row.len(), |(_, values)| values.len()),
+                    height,
+                },
+            )
+            .collect_vec();
+
+            let (dims, idx) = batch_heights
+                .iter()
+                .max()
+                .map(|x| log2_strict_usize(*x))
+                .map_or_else(
+                    ||
+                    // Empty batch?
+                    (&[][..], 0),
+                    |log_batch_max_height| {
+                        (
+                            &batch_dims[..],
+                            index >> (log_global_max_height - log_batch_max_height),
+                        )
+                    },
+                );
+
+            self.mmcs
+                .verify_batch(batch_commit, dims, idx, batch_opening.into())
+                .map_err(InputError::InputMmcsError)?;
+
+            for (matrix, (ps_at_x, (mat_domain, mat_points_and_values))) in zip_eq(
+                &batch_opening.opened_values,
+                mats,
+                InputError::InputShapeError,
+            )?
+            .enumerate()
+            {
+                let log_height = mat_domain.log_n + self.fri_params.log_blowup;
+                let bits_reduced = log_global_max_height - log_height;
+                let orig_idx = cfft_permute_index(index >> bits_reduced, log_height);
+
+                // Same point upstream computes; one scalar multiplication per
+                // distinct height instead of per matrix.
+                let x = match lifted_x.iter().find(|(h, _)| *h == log_height) {
+                    Some(&(_, x)) => x,
+                    None => {
+                        let x = CircleDomain::<Val>::standard(log_height).nth_point(orig_idx);
+                        lifted_x.push((log_height, x));
+                        x
+                    }
+                };
+
+                let (alpha_offset, _) = reduced_openings
+                    .entry(log_height)
+                    .or_insert((Challenge::ONE, Challenge::ZERO));
+                let (alpha_pow_width, alpha_pow_width_2) = tables.matrix_alpha_pows[batch][matrix];
+
+                let mut row_sum: Option<Challenge> = None;
+                for (point, (_, ps_at_zeta)) in mat_points_and_values.iter().enumerate() {
+                    // The claimed opening must have exactly as many
+                    // values as the committed row has columns.
+                    if ps_at_zeta.len() != ps_at_x.len() {
+                        return Err(InputError::InputShapeError);
+                    }
+                    let b = match row_sum {
+                        Some(b) => b,
+                        None => {
+                            let b = tables.dot_base(ps_at_x).ok_or(InputError::InputShapeError)?;
+                            row_sum = Some(b);
+                            b
+                        }
+                    };
+                    let s = *claim_sums.get(claim).ok_or(InputError::InputShapeError)?;
+                    claim += 1;
+                    let zeta = tables.zeta_points[batch][matrix][point];
+                    let (vp_num, vp_denom) = deep_quotient_vanishing_part(x, zeta, alpha_pow_width);
+                    if vp_denom.is_zero() {
+                        return Err(InputError::InputShapeError);
+                    }
+                    pending.push((log_height, *alpha_offset * vp_num * (b - s), vp_denom));
+
+                    *alpha_offset *= alpha_pow_width_2;
+                }
+            }
+        }
+
+        if claim != claim_sums.len() {
+            return Err(InputError::InputShapeError);
+        }
+        let denominators_inv =
+            batch_multiplicative_inverse(&pending.iter().map(|&(_, _, d)| d).collect_vec());
+        for (&(log_height, term, _), inv) in pending.iter().zip(denominators_inv) {
+            reduced_openings
+                .get_mut(&log_height)
+                .expect("every pending term's height was inserted above")
+                .1 += term * inv;
+        }
+
+        // Verify bivariate fold and lambda correction
+
+        // First pass: derive the lambda-corrected leaf values and each height's
+        // first-layer (y) twiddle, without folding yet. The fold pairs a point with
+        // its negation, so the canonical (b=0) twiddle is `p.y` (sign-flipped when
+        // this query landed on the b=1 member) - the same point `p` already computed
+        // for the lambda correction, with no separate `nth_y_twiddle` scalar
+        // multiplication. All these per-height twiddles are then inverted in a single
+        // batch instead of one inversion per height.
+        let per_height: Vec<_> = zip_eq(
+            zip_eq(
+                reduced_openings,
+                first_layer_siblings,
+                InputError::InputShapeError,
+            )?,
+            lambdas,
+            InputError::InputShapeError,
+        )?
+        .map(|(((log_height, (_, ro)), &fl_sib), &lambda)| {
+            assert!(log_height > 0);
+
+            let orig_size = log_height - self.fri_params.log_blowup;
+            let bits_reduced = log_global_max_height - log_height;
+            let b = (index >> bits_reduced) & 1;
+            let orig_idx = cfft_permute_index(index >> bits_reduced, log_height);
+
+            let lde_domain = CircleDomain::standard(log_height);
+            let p: Point<Val> = lde_domain.nth_point(orig_idx);
+
+            let lambda_corrected = ro - lambda * p.v_n(orig_size);
+
+            let mut fl_values = vec![lambda_corrected; 2];
+            fl_values[b ^ 1] = fl_sib;
+
+            let y_twiddle = if b == 0 { p.y } else { -p.y };
+
+            let fl_dims = Dimensions {
+                // First-layer leaves hold the queried value and its sibling.
+                width: 2,
+                height: 1 << (log_height - 1),
+            };
+
+            (log_height, y_twiddle, fl_values, fl_dims)
+        })
+        .collect();
+
+        let y_twiddles_inv = batch_multiplicative_inverse(
+            &per_height.iter().map(|&(_, t, _, _)| t).collect_vec(),
+        );
+
+        let (mut fri_input, fl_dims, fl_leaves): (Vec<_>, Vec<_>, Vec<_>) = per_height
+            .into_iter()
+            .zip(y_twiddles_inv)
+            .map(|((log_height, _, fl_values, fl_dims), y_twiddle_inv)| {
+                let fri_input = (
+                    // - 1 here is because we have already folded a layer.
+                    log_height - 1,
+                    fold_row_with_inv_twiddle(
+                        y_twiddle_inv,
+                        bivariate_beta,
+                        fl_values.iter().copied(),
+                    ),
+                );
+                (fri_input, fl_dims, fl_values)
+            })
+            .multiunzip();
+
+        // sort descending
+        fri_input.reverse();
+
+        self.fri_params
+            .mmcs
+            .verify_batch(
+                first_layer_commitment,
+                &fl_dims,
+                index >> 1,
+                BatchOpeningRef::new(&fl_leaves, first_layer_proof),
+            )
+            .map_err(InputError::FirstLayerMmcsError)?;
+
+        Ok(fri_input)
+    }
+
+    /// [staged-patch] Upstream's `open_input` closure body, verbatim, with the
+    /// tables upstream computed before its query loop (`alpha_powers` up to the
+    /// widest matrix, `alpha^width` per matrix) computed here from `alpha`.
+    /// Not used by any verification path: it is the reference
+    /// [`CirclePcs::open_input_at`] is tested against value by value
+    /// ([`CirclePcs::compare_open_input`]).
+    #[doc(hidden)]
+    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
+    pub fn open_input_at_reference<Challenge>(
+        &self,
+        rounds: &[CircleOpeningRound<Val, Challenge, InputMmcs::Commitment>],
+        alpha: Challenge,
+        bivariate_beta: Challenge,
+        log_global_max_height: usize,
+        lambdas: &[Challenge],
+        first_layer_commitment: &FriMmcs::Commitment,
+        index: usize,
+        input_proof: &CircleInputProof<Val, Challenge, InputMmcs, FriMmcs>,
+    ) -> Result<Vec<(usize, Challenge)>, InputError<InputMmcs::Error, FriMmcs::Error>>
+    where
+        Challenge: ExtensionField<Val>,
+        FriMmcs: Mmcs<Challenge>,
+    {
+        let matrix_alpha_pows: Vec<Vec<(Challenge, Challenge)>> = rounds
+            .iter()
+            .map(|(_, mats)| {
+                mats.iter()
+                    .map(|(_, points_and_values)| {
+                        let width = points_and_values.first().map_or(0, |(_, v)| v.len());
+                        let alpha_pow_width = alpha.exp_u64(width as u64);
+                        (alpha_pow_width, alpha_pow_width.square())
+                    })
+                    .collect()
+            })
+            .collect();
+        let max_width = rounds
+            .iter()
+            .flat_map(|(_, mats)| mats.iter())
+            .flat_map(|(_, points_and_values)| points_and_values.iter().map(|(_, v)| v.len()))
+            .max()
+            .unwrap_or(0);
+        let alpha_powers: Vec<Challenge> = alpha.powers().collect_n(max_width);
+
+        // log_height -> (alpha_offset, ro)
+        let mut reduced_openings = BTreeMap::new();
+
+        let CircleInputProof {
+            input_openings,
+            first_layer_siblings,
+            first_layer_proof,
+        } = input_proof;
+
+        for (batch, (batch_opening, (batch_commit, mats))) in
+            zip_eq(input_openings, rounds, InputError::InputShapeError)?.enumerate()
+        {
+            let batch_heights: Vec<usize> = mats
+                .iter()
+                .map(|(domain, _)| domain.size() << self.fri_params.log_blowup)
+                .collect_vec();
+            // The opened rows must pair one-to-one with the committed matrices.
+            let batch_dims: Vec<Dimensions> = zip_eq(
+                batch_heights.iter().zip(mats),
+                &batch_opening.opened_values,
+                InputError::InputShapeError,
+            )?
+            .map(
+                |((&height, (_, points_and_values)), opened_row)| Dimensions {
+                    // Invariant: the commitment layer rejects opened rows that differ from this width.
+                    //
+                    //     some points → width = claimed evaluation count
+                    //     no points   → width = opened row length (no claim to enforce)
+                    width: points_and_values
+                        .first()
+                        .map_or(opened_row.len(), |(_, values)| values.len()),
+                    height,
+                },
+            )
+            .collect_vec();
+
+            let (dims, idx) = batch_heights
+                .iter()
+                .max()
+                .map(|x| log2_strict_usize(*x))
+                .map_or_else(
+                    ||
+                    // Empty batch?
+                    (&[][..], 0),
+                    |log_batch_max_height| {
+                        (
+                            &batch_dims[..],
+                            index >> (log_global_max_height - log_batch_max_height),
+                        )
+                    },
+                );
+
+            self.mmcs
+                .verify_batch(batch_commit, dims, idx, batch_opening.into())
+                .map_err(InputError::InputMmcsError)?;
+
+            for (matrix, (ps_at_x, (mat_domain, mat_points_and_values))) in zip_eq(
+                &batch_opening.opened_values,
+                mats,
+                InputError::InputShapeError,
+            )?
+            .enumerate()
+            {
+                let log_height = mat_domain.log_n + self.fri_params.log_blowup;
+                let bits_reduced = log_global_max_height - log_height;
+                let orig_idx = cfft_permute_index(index >> bits_reduced, log_height);
+
+                let committed_domain = CircleDomain::standard(log_height);
+                let x = committed_domain.nth_point(orig_idx);
+
+                let (alpha_offset, ro) = reduced_openings
+                    .entry(log_height)
+                    .or_insert((Challenge::ONE, Challenge::ZERO));
+                let (alpha_pow_width, alpha_pow_width_2) = matrix_alpha_pows[batch][matrix];
+
+                for (zeta_uni, ps_at_zeta) in mat_points_and_values {
+                    // The claimed opening must have exactly as many
+                    // values as the committed row has columns.
+                    if ps_at_zeta.len() != ps_at_x.len() {
+                        return Err(InputError::InputShapeError);
+                    }
+                    let zeta = Point::from_projective_line(*zeta_uni);
+
+                    *ro += *alpha_offset
+                        * deep_quotient_reduce_row(
+                            alpha_pow_width,
+                            &alpha_powers,
+                            x,
+                            zeta,
+                            ps_at_x,
+                            ps_at_zeta,
+                        );
+
+                    *alpha_offset *= alpha_pow_width_2;
+                }
+            }
+        }
+
+        // Verify bivariate fold and lambda correction
+
+        // First pass: derive the lambda-corrected leaf values and each height's
+        // first-layer (y) twiddle, without folding yet. The fold pairs a point with
+        // its negation, so the canonical (b=0) twiddle is `p.y` (sign-flipped when
+        // this query landed on the b=1 member) - the same point `p` already computed
+        // for the lambda correction, with no separate `nth_y_twiddle` scalar
+        // multiplication. All these per-height twiddles are then inverted in a single
+        // batch instead of one inversion per height.
+        let per_height: Vec<_> = zip_eq(
+            zip_eq(
+                reduced_openings,
+                first_layer_siblings,
+                InputError::InputShapeError,
+            )?,
+            lambdas,
+            InputError::InputShapeError,
+        )?
+        .map(|(((log_height, (_, ro)), &fl_sib), &lambda)| {
+            assert!(log_height > 0);
+
+            let orig_size = log_height - self.fri_params.log_blowup;
+            let bits_reduced = log_global_max_height - log_height;
+            let b = (index >> bits_reduced) & 1;
+            let orig_idx = cfft_permute_index(index >> bits_reduced, log_height);
+
+            let lde_domain = CircleDomain::standard(log_height);
+            let p: Point<Val> = lde_domain.nth_point(orig_idx);
+
+            let lambda_corrected = ro - lambda * p.v_n(orig_size);
+
+            let mut fl_values = vec![lambda_corrected; 2];
+            fl_values[b ^ 1] = fl_sib;
+
+            let y_twiddle = if b == 0 { p.y } else { -p.y };
+
+            let fl_dims = Dimensions {
+                // First-layer leaves hold the queried value and its sibling.
+                width: 2,
+                height: 1 << (log_height - 1),
+            };
+
+            (log_height, y_twiddle, fl_values, fl_dims)
+        })
+        .collect();
+
+        let y_twiddles_inv = batch_multiplicative_inverse(
+            &per_height.iter().map(|&(_, t, _, _)| t).collect_vec(),
+        );
+
+        let (mut fri_input, fl_dims, fl_leaves): (Vec<_>, Vec<_>, Vec<_>) = per_height
+            .into_iter()
+            .zip(y_twiddles_inv)
+            .map(|((log_height, _, fl_values, fl_dims), y_twiddle_inv)| {
+                let fri_input = (
+                    // - 1 here is because we have already folded a layer.
+                    log_height - 1,
+                    fold_row_with_inv_twiddle(
+                        y_twiddle_inv,
+                        bivariate_beta,
+                        fl_values.iter().copied(),
+                    ),
+                );
+                (fri_input, fl_dims, fl_values)
+            })
+            .multiunzip();
+
+        // sort descending
+        fri_input.reverse();
+
+        self.fri_params
+            .mmcs
+            .verify_batch(
+                first_layer_commitment,
+                &fl_dims,
+                index >> 1,
+                BatchOpeningRef::new(&fl_leaves, first_layer_proof),
+            )
+            .map_err(InputError::FirstLayerMmcsError)?;
+
+        Ok(fri_input)
+    }
+
+    /// [staged-patch] Test hook: the optimized and the verbatim-upstream input
+    /// opening for one query, side by side, so a caller can assert they agree
+    /// value for value. Not used by any verification path.
+    #[doc(hidden)]
+    #[allow(clippy::type_complexity)]
+    pub fn compare_open_input<Challenge, Witness>(
+        &self,
+        rounds: &[CircleOpeningRound<Val, Challenge, InputMmcs::Commitment>],
+        proof: &CirclePcsProof<Val, Challenge, InputMmcs, FriMmcs, Witness>,
+        setup: &CircleStagedSetup<Challenge>,
+        query: usize,
+        qp: &crate::CircleQueryProof<Challenge, FriMmcs, CircleInputProof<Val, Challenge, InputMmcs, FriMmcs>>,
+    ) -> (
+        Result<Vec<(usize, Challenge)>, InputError<InputMmcs::Error, FriMmcs::Error>>,
+        Result<Vec<(usize, Challenge)>, InputError<InputMmcs::Error, FriMmcs::Error>>,
+    )
+    where
+        Challenge: ExtensionField<Val>,
+        FriMmcs: Mmcs<Challenge>,
+    {
+        let index = setup.fri.indices[query];
+        let tables = CircleAlphaTables::new(rounds, setup.alpha);
+        let optimized = self.open_input_at(
+            rounds,
+            &tables,
+            &setup.claim_sums,
+            setup.bivariate_beta,
+            setup.log_global_max_height,
+            &proof.lambdas,
+            &proof.first_layer_commitment,
+            index,
+            &qp.input_proof,
+        );
+        let reference = self.open_input_at_reference(
+            rounds,
+            setup.alpha,
+            setup.bivariate_beta,
+            setup.log_global_max_height,
+            &proof.lambdas,
+            &proof.first_layer_commitment,
+            index,
+            &qp.input_proof,
+        );
+        (optimized, reference)
+    }
+
+    /// [staged-patch] Upstream's `Pcs::verify` body, verbatim (only the
+    /// associated types spelled out), kept as the reference the split
+    /// verifier is regression-tested against in riverrun-m31
+    /// (`staged_tests::the_split_pcs_agrees_with_upstream`). Not used by
+    /// any verification path.
+    #[doc(hidden)]
+    #[allow(clippy::type_complexity)]
+    pub fn verify_upstream_reference<Challenge, Challenger>(
+        &self,
+        // For each round:
+        rounds: Vec<(
+            InputMmcs::Commitment,
+            // for each matrix:
+            Vec<(
+                // its domain,
+                CircleDomain<Val>,
+                // for each point:
+                Vec<(
+                    // the point,
+                    Challenge,
+                    // values at the point
+                    Vec<Challenge>,
+                )>,
+            )>,
+        )>,
+        proof: &CirclePcsProof<Val, Challenge, InputMmcs, FriMmcs, Challenger::Witness>,
+        challenger: &mut Challenger,
+    ) -> Result<(), FriError<FriMmcs::Error, InputError<InputMmcs::Error, FriMmcs::Error>>>
+    where
+        Challenge: ExtensionField<Val>,
+        FriMmcs: Mmcs<Challenge>,
+        Challenger: FieldChallenger<Val> + GrindingChallenger + CanObserve<FriMmcs::Commitment>,
+    {
         // Write evaluations to challenger
         for (_, round) in &rounds {
             for (_, mat) in round {
@@ -614,7 +1473,7 @@ where
         let folding: CircleFriFoldingForMmcs<Val, Challenge, InputMmcs, FriMmcs> =
             CircleFriFolding(PhantomData);
 
-        verify(
+        crate::verifier::verify_upstream_reference(
             &folding,
             &self.fri_params,
             &proof.fri_proof,
@@ -800,6 +1659,20 @@ where
 
                 Ok(fri_input)
             },
+        )
+    }
+
+    /// [staged-patch] Read access to the proof fields a staged caller needs to
+    /// size its work (the commit-phase round count and the query-proof count).
+    pub fn proof_shape<Challenge: Field, Witness>(
+        proof: &CirclePcsProof<Val, Challenge, InputMmcs, FriMmcs, Witness>,
+    ) -> (usize, usize)
+    where
+        FriMmcs: Mmcs<Challenge>,
+    {
+        (
+            proof.fri_proof.commit_phase_commits.len(),
+            proof.fri_proof.query_proofs.len(),
         )
     }
 }

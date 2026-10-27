@@ -3,7 +3,7 @@
 //! honesty: the real Circle-STARK verifier, run inside LiteSVM's simulated
 //! Solana runtime, priced, not asserted.
 use litesvm::LiteSVM;
-use riverrun_m31::{prove_binding_tuned, prove_preimage, CONTEXT_LEN, SECRET_LEN, WIDTH};
+use riverrun_m31::{prove_binding_tuned, prove_preimage, CONTEXT_LEN, DIGEST_LEN, SECRET_LEN, WIDTH};
 use solana_sdk::{
     instruction::Instruction, message::Message, pubkey::Pubkey, signature::{Keypair, Signer},
     transaction::Transaction,
@@ -27,6 +27,10 @@ fn ctx_bytes(v: [u64; CONTEXT_LEN]) -> Vec<u8> {
     v.iter().flat_map(|x| x.to_le_bytes()).collect()
 }
 
+fn digest_bytes(v: [u64; DIGEST_LEN]) -> Vec<u8> {
+    v.iter().flat_map(|x| x.to_le_bytes()).collect()
+}
+
 fn wide_bytes(v: [u64; WIDTH]) -> Vec<u8> {
     v.iter().flat_map(|x| x.to_le_bytes()).collect()
 }
@@ -42,8 +46,8 @@ fn instruction_data() -> Vec<u8> {
     d.extend_from_slice(&MEASURED_QUERIES.to_le_bytes());
     d.extend_from_slice(&ctx_bytes(action));
     d.extend_from_slice(&ctx_bytes(round));
-    d.extend_from_slice(&wide_bytes(leaf));
-    d.extend_from_slice(&wide_bytes(nullifier));
+    d.extend_from_slice(&digest_bytes(leaf));
+    d.extend_from_slice(&digest_bytes(nullifier));
     d.extend_from_slice(&proof.to_bytes());
     d
 }
@@ -74,6 +78,15 @@ fn preimage_instruction_data() -> Vec<u8> {
 // because this needs the `cargo build-sbf` artifact to exist first; run
 // `cargo build-sbf`, then
 // `cargo test --release --test cu -- --ignored --nocapture`.
+//
+// Re-measured 2026-10-27 (platform-tools v1.57, after the [staged-patch]
+// rearrangements of the quotient recomposition and the DEEP reduction, which
+// this monolithic path shares with tests/staged.rs): 15,001 B proof at 4
+// queries, 1,544,819 CU, ACCEPTED. Still over 1.4M in one transaction; the
+// product's crowd proofs no longer need this path, they verify staged
+// (tests/staged.rs). The leaf/nullifier are 8-limb digests now (they were 16
+// before the nullifier-break fix), which is also why this file and the
+// program's layout changed.
 #[test]
 #[ignore = "needs target/deploy/riverrun_m31_verifier.so: run cargo build-sbf first, then --ignored"]
 fn measure_on_chain_binding_verification_cost() {
@@ -87,7 +100,7 @@ fn measure_on_chain_binding_verification_cost() {
     svm.airdrop(&payer.pubkey(), 1_000_000_000).unwrap();
 
     let data = instruction_data();
-    let proof_bytes = data.len() - (1 + 2 + 2 * CONTEXT_LEN * 8 + 2 * WIDTH * 8);
+    let proof_bytes = data.len() - (1 + 2 + 2 * CONTEXT_LEN * 8 + 2 * DIGEST_LEN * 8);
     let heap_ix = solana_sdk::compute_budget::ComputeBudgetInstruction::request_heap_frame(256 * 1024);
     let ix = Instruction { program_id: PROGRAM_ID, accounts: vec![], data };
     let msg = Message::new(&[heap_ix, ix], Some(&payer.pubkey()));
@@ -127,7 +140,7 @@ fn a_tampered_proof_is_rejected_on_chain() {
     let mut data = instruction_data();
     // Flip one byte inside the claimed nullifier (a public value, not the
     // proof itself): the on-chain verifier must reject it.
-    let nullifier_offset = 1 + 2 + 2 * CONTEXT_LEN * 8 + WIDTH * 8;
+    let nullifier_offset = 1 + 2 + 2 * CONTEXT_LEN * 8 + DIGEST_LEN * 8;
     data[nullifier_offset] ^= 1;
     let heap_ix = solana_sdk::compute_budget::ComputeBudgetInstruction::request_heap_frame(256 * 1024);
     let ix = Instruction { program_id: PROGRAM_ID, accounts: vec![], data };
@@ -158,7 +171,8 @@ fn a_tampered_proof_is_rejected_on_chain() {
 /// security point completing on-chain** — a 40-FRI-query, 48,749 B
 /// `PreimageProof`, ACCEPTED at 9,457,190 CU inside the 256 KB heap. That CU
 /// figure is the measured size of the remaining per-query cost problem the
-/// binding test's comment names.
+/// binding test's comment names. Re-measured 2026-10-27 (v1.57, with the
+/// [staged-patch] rearrangements): 48,749 B proof, 4,691,332 CU, ACCEPTED.
 #[test]
 #[ignore = "needs target/deploy/riverrun_m31_verifier.so: run cargo build-sbf first, then --ignored"]
 fn measure_on_chain_preimage_verification_cost() {

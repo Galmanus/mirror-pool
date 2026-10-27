@@ -1,3 +1,8 @@
+# Standalone workspace root: this package is excluded from the repo workspace,
+# and without this table cargo keeps walking up the directory tree (e.g. from a
+# worktree checked out inside another checkout) and fails workspace discovery.
+[workspace]
+
 [package]
 name = "riverrun-m31"
 version = "0.1.0"

@@ -62,6 +62,47 @@ quotient recompose ~97k CU, `verify_constraints` ~398k CU, total 2,384,277 CU).
 The `[target.'cfg(target_os = "solana")'.dependencies]` on `solana-program`
 exists only for these calls.
 
+## Third change, `[staged-patch]`: the verifier as four public pieces
+
+`verify_with_known_quotient_chunks` is now the composition of:
+
+- `verifier_shape`: everything derived from the instance and the proof's shape
+  (degree, domains, preprocessed commitment, opened-values shape checks);
+- `verifier_transcript`: observe the instance, sample `alpha`, observe the
+  quotient/random commitments, sample `zeta`, reject `zeta` on the trace
+  domain; returns the challenger exactly where upstream hands it to the PCS;
+- `opening_claims`: the `coms_to_verify` for a given `zeta`;
+- `pcs.verify`, then `verify_ood`: periodic columns, quotient recomposition and
+  the out-of-domain constraint check.
+
+The body of each piece is upstream code, unchanged. One reordering: upstream
+evaluated periodic columns before `pcs.verify` and the constraint check after;
+both now run after. Neither touches the other's state, so the accepted set is
+the same; only which error a doubly-bad proof reports first can differ.
+
+A staged (multi-transaction) verifier calls the same pieces with the PCS check
+split by the circle PCS (see the p3-circle patch), persisting `alpha`, `zeta`
+and the PCS's challenges between transactions (`riverrun_m31::staged`). The
+previous body is kept verbatim as `#[doc(hidden)]
+verify_with_known_quotient_chunks_upstream_reference`, used only by
+riverrun-m31's regression test against it.
+
+## Fourth change, `[staged-patch]`: quotient recomposition without 168 inversions
+
+`recompose_quotient_from_chunks` computed, for each ordered pair `i != j` of
+the 8 quotient chunks, `Z_j(zeta) * Z_j(first_point(D_i))^{-1}` in the
+extension field: 56 evaluations of `Z_j(zeta)` (each re-lifting zeta, one
+extension inversion) and 56 extension inversions of what is a base-field
+constant. Measured on SBF: ~2.5M CU, more than a transaction. It now evaluates
+`Z_j(zeta)` once per chunk and the denominators in the base field with one
+batch inversion (the base-to-extension embedding is a ring homomorphism, so
+the elements are identical). Measured after: 676,216 CU. `verify_ood` is also
+split into `ood_quotient` + `verify_ood_against` so a staged verifier can run
+the recomposition and the constraint check in separate transactions. The
+upstream function is kept as `recompose_quotient_from_chunks_upstream_reference`
+(used by the hidden upstream-reference verifier and by riverrun-m31's equality
+test at the real zeta of both crowd proofs plus 64 other points).
+
 ## Exit condition
 
 Remove this vendored copy when upstream Plonky3 exposes an equivalent entry

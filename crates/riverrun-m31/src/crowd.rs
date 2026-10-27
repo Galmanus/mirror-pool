@@ -77,7 +77,9 @@ use p3_uni_stark::{prove, verify_with_known_quotient_chunks, Proof, SubAirBuilde
 use crate::binding::{CONTEXT_LEN, SECRET_LEN};
 use crate::membership::{compress, PathStep, DIGEST_LEN};
 use crate::permutation::{permute, WIDTH};
-use crate::zk::{Seed, make_zk_config_tuned, ZkConfig};
+use crate::zk::{Seed, make_zk_config_bound, ZkConfig};
+#[cfg(test)]
+use crate::zk::make_zk_config_tuned;
 
 const SBOX_DEGREE: u64 = 5;
 const SBOX_REGISTERS: usize = 0;
@@ -155,12 +157,12 @@ type CrowdInnerAir = VectorizedPoseidon2Air<
 /// block 2 the commitment `permute(leaf_out[0..8] ‖ blinder)`. Public inputs:
 /// `action ‖ round ‖ C(8) ‖ nullifier(16)`. The leaf and the blinder are
 /// private witness only.
-struct CrowdBindingAir {
+pub(crate) struct CrowdBindingAir {
     inner: CrowdInnerAir,
 }
 
 impl CrowdBindingAir {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self { inner: CrowdInnerAir::new(constants()) }
     }
 }
@@ -233,7 +235,7 @@ pub const CROWD_BINDING_LOG_NUM_QUOTIENT_CHUNKS: usize = 3;
 
 /// A hiding binding proof whose leaf is behind the commitment `C`.
 pub struct CrowdBindingProof {
-    inner: Proof<ZkConfig>,
+    pub(crate) inner: Proof<ZkConfig>,
 }
 
 impl CrowdBindingProof {
@@ -293,6 +295,39 @@ pub fn prove_binding_crowd(
     log_rows: usize,
     seed: Seed,
 ) -> (CrowdBindingProof, [u64; DIGEST_LEN], [u64; DIGEST_LEN], [u64; DIGEST_LEN]) {
+    prove_binding_crowd_inner(secret, action, round, blinder, num_queries, log_blowup, log_rows, seed, None)
+}
+
+/// [`prove_binding_crowd`], bound to `recipient`: the proof verifies only
+/// through [`verify_binding_crowd_for`] with the same recipient. See
+/// `zk::make_zk_config_bound` for the mechanism and the race it closes.
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+pub fn prove_binding_crowd_for(
+    recipient: &[u8; 32],
+    secret: [u64; SECRET_LEN],
+    action: [u64; CONTEXT_LEN],
+    round: [u64; CONTEXT_LEN],
+    blinder: [u64; BLINDER_LEN],
+    num_queries: usize,
+    log_blowup: usize,
+    log_rows: usize,
+    seed: Seed,
+) -> (CrowdBindingProof, [u64; DIGEST_LEN], [u64; DIGEST_LEN], [u64; DIGEST_LEN]) {
+    prove_binding_crowd_inner(secret, action, round, blinder, num_queries, log_blowup, log_rows, seed, Some(recipient))
+}
+
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+fn prove_binding_crowd_inner(
+    secret: [u64; SECRET_LEN],
+    action: [u64; CONTEXT_LEN],
+    round: [u64; CONTEXT_LEN],
+    blinder: [u64; BLINDER_LEN],
+    num_queries: usize,
+    log_blowup: usize,
+    log_rows: usize,
+    seed: Seed,
+    recipient: Option<&[u8; 32]>,
+) -> (CrowdBindingProof, [u64; DIGEST_LEN], [u64; DIGEST_LEN], [u64; DIGEST_LEN]) {
     assert!(log_rows >= 2, "CirclePcs cannot commit to fewer than 4 rows");
     assert!(
         (1usize << log_rows) >= 2 * (num_queries + 1),
@@ -331,7 +366,7 @@ pub fn prove_binding_crowd(
 
     let air = CrowdBindingAir::new();
     let pis = binding_public_values(action, round, c, nullifier_output);
-    let config = make_zk_config_tuned(num_queries, log_blowup, seed);
+    let config = make_zk_config_bound(num_queries, log_blowup, seed, recipient);
     let proof = prove(&config, &air, trace, &pis);
     (CrowdBindingProof { inner: proof }, c, leaf_digest, nullifier_output)
 }
@@ -347,8 +382,37 @@ pub fn verify_binding_crowd(
     num_queries: usize,
     log_blowup: usize,
 ) -> bool {
+    verify_binding_crowd_inner(proof, action, round, c, nullifier, num_queries, log_blowup, None)
+}
+
+/// [`verify_binding_crowd`] for a proof bound to `recipient`.
+#[allow(clippy::too_many_arguments)]
+pub fn verify_binding_crowd_for(
+    recipient: &[u8; 32],
+    proof: &CrowdBindingProof,
+    action: [u64; CONTEXT_LEN],
+    round: [u64; CONTEXT_LEN],
+    c: [u64; DIGEST_LEN],
+    nullifier: [u64; DIGEST_LEN],
+    num_queries: usize,
+    log_blowup: usize,
+) -> bool {
+    verify_binding_crowd_inner(proof, action, round, c, nullifier, num_queries, log_blowup, Some(recipient))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn verify_binding_crowd_inner(
+    proof: &CrowdBindingProof,
+    action: [u64; CONTEXT_LEN],
+    round: [u64; CONTEXT_LEN],
+    c: [u64; DIGEST_LEN],
+    nullifier: [u64; DIGEST_LEN],
+    num_queries: usize,
+    log_blowup: usize,
+    recipient: Option<&[u8; 32]>,
+) -> bool {
     let air = CrowdBindingAir::new();
-    let config = make_zk_config_tuned(num_queries, log_blowup, Seed::reproducible(0));
+    let config = make_zk_config_bound(num_queries, log_blowup, Seed::reproducible(0), recipient);
     let pis = binding_public_values(action, round, c, nullifier);
     verify_with_known_quotient_chunks(
         &config,
@@ -361,7 +425,7 @@ pub fn verify_binding_crowd(
     .is_ok()
 }
 
-fn binding_public_values(
+pub(crate) fn binding_public_values(
     action: [u64; CONTEXT_LEN],
     round: [u64; CONTEXT_LEN],
     c: [u64; DIGEST_LEN],
@@ -411,12 +475,12 @@ type MemInnerAir = Poseidon2Air<
 /// first-row link to row 1's selected node. Rows 1..=CROWD_DEPTH fold to the
 /// public root; the fold-continuity constraint is masked on the commitment
 /// row by `(1 - is_commit)`.
-struct CrowdMembershipAir {
+pub(crate) struct CrowdMembershipAir {
     inner: MemInnerAir,
 }
 
 impl CrowdMembershipAir {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self { inner: MemInnerAir::new(constants()) }
     }
 }
@@ -504,7 +568,7 @@ pub const CROWD_MEMBERSHIP_LOG_NUM_QUOTIENT_CHUNKS: usize = 3;
 
 /// A hiding membership proof whose leaf is behind the commitment `C`.
 pub struct CrowdMembershipProof {
-    inner: Proof<ZkConfig>,
+    pub(crate) inner: Proof<ZkConfig>,
 }
 
 impl CrowdMembershipProof {
@@ -549,6 +613,32 @@ pub fn prove_membership_crowd(
     log_blowup: usize,
     seed: Seed,
 ) -> (CrowdMembershipProof, [u64; DIGEST_LEN], [u64; DIGEST_LEN]) {
+    prove_membership_crowd_inner(leaf, blinder, path, num_queries, log_blowup, seed, None)
+}
+
+/// [`prove_membership_crowd`], bound to `recipient` (see
+/// [`prove_binding_crowd_for`]).
+pub fn prove_membership_crowd_for(
+    recipient: &[u8; 32],
+    leaf: [u64; DIGEST_LEN],
+    blinder: [u64; BLINDER_LEN],
+    path: &[PathStep; CROWD_DEPTH],
+    num_queries: usize,
+    log_blowup: usize,
+    seed: Seed,
+) -> (CrowdMembershipProof, [u64; DIGEST_LEN], [u64; DIGEST_LEN]) {
+    prove_membership_crowd_inner(leaf, blinder, path, num_queries, log_blowup, seed, Some(recipient))
+}
+
+fn prove_membership_crowd_inner(
+    leaf: [u64; DIGEST_LEN],
+    blinder: [u64; BLINDER_LEN],
+    path: &[PathStep; CROWD_DEPTH],
+    num_queries: usize,
+    log_blowup: usize,
+    seed: Seed,
+    recipient: Option<&[u8; 32]>,
+) -> (CrowdMembershipProof, [u64; DIGEST_LEN], [u64; DIGEST_LEN]) {
     let rows = CROWD_DEPTH + 1;
     assert!(rows.is_power_of_two(), "commit row + CROWD_DEPTH fold rows must fill a power of two");
     assert!(
@@ -589,7 +679,7 @@ pub fn prove_membership_crowd(
 
     let air = CrowdMembershipAir::new();
     let pis = membership_public_values(c, root);
-    let config = make_zk_config_tuned(num_queries, log_blowup, seed);
+    let config = make_zk_config_bound(num_queries, log_blowup, seed, recipient);
     let proof = prove(&config, &air, trace, &pis);
     (CrowdMembershipProof { inner: proof }, c, root)
 }
@@ -603,8 +693,31 @@ pub fn verify_membership_crowd(
     num_queries: usize,
     log_blowup: usize,
 ) -> bool {
+    verify_membership_crowd_inner(proof, c, root, num_queries, log_blowup, None)
+}
+
+/// [`verify_membership_crowd`] for a proof bound to `recipient`.
+pub fn verify_membership_crowd_for(
+    recipient: &[u8; 32],
+    proof: &CrowdMembershipProof,
+    c: [u64; DIGEST_LEN],
+    root: [u64; DIGEST_LEN],
+    num_queries: usize,
+    log_blowup: usize,
+) -> bool {
+    verify_membership_crowd_inner(proof, c, root, num_queries, log_blowup, Some(recipient))
+}
+
+fn verify_membership_crowd_inner(
+    proof: &CrowdMembershipProof,
+    c: [u64; DIGEST_LEN],
+    root: [u64; DIGEST_LEN],
+    num_queries: usize,
+    log_blowup: usize,
+    recipient: Option<&[u8; 32]>,
+) -> bool {
     let air = CrowdMembershipAir::new();
-    let config = make_zk_config_tuned(num_queries, log_blowup, Seed::reproducible(0));
+    let config = make_zk_config_bound(num_queries, log_blowup, Seed::reproducible(0), recipient);
     let pis = membership_public_values(c, root);
     verify_with_known_quotient_chunks(
         &config,
@@ -617,7 +730,7 @@ pub fn verify_membership_crowd(
     .is_ok()
 }
 
-fn membership_public_values(c: [u64; DIGEST_LEN], root: [u64; DIGEST_LEN]) -> Vec<Val> {
+pub(crate) fn membership_public_values(c: [u64; DIGEST_LEN], root: [u64; DIGEST_LEN]) -> Vec<Val> {
     let mut pis = Vec::with_capacity(2 * DIGEST_LEN);
     pis.extend((0..DIGEST_LEN).map(|i| Val::from_u64(c[i])));
     pis.extend((0..DIGEST_LEN).map(|i| Val::from_u64(root[i])));
@@ -663,6 +776,25 @@ pub fn verify_crowd(
 ) -> bool {
     verify_binding_crowd(binding, action, round, c, nullifier, num_queries, log_blowup)
         && verify_membership_crowd(membership, c, root, num_queries, log_blowup)
+}
+
+/// [`verify_crowd`] for proofs bound to `recipient`: both proofs must be
+/// bound to the same recipient and publish the same `C`.
+#[allow(clippy::too_many_arguments)]
+pub fn verify_crowd_for(
+    recipient: &[u8; 32],
+    binding: &CrowdBindingProof,
+    membership: &CrowdMembershipProof,
+    action: [u64; CONTEXT_LEN],
+    round: [u64; CONTEXT_LEN],
+    c: [u64; DIGEST_LEN],
+    nullifier: [u64; DIGEST_LEN],
+    root: [u64; DIGEST_LEN],
+    num_queries: usize,
+    log_blowup: usize,
+) -> bool {
+    verify_binding_crowd_for(recipient, binding, action, round, c, nullifier, num_queries, log_blowup)
+        && verify_membership_crowd_for(recipient, membership, c, root, num_queries, log_blowup)
 }
 
 #[cfg(test)]

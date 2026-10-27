@@ -571,43 +571,7 @@ where
         challenger: &mut Challenger,
     ) -> Result<(), Self::Error> {
         let (opened_values_for_rand_cws, inner_proof) = proof;
-
-        // Re-join the public and hidden halves of every opening, with the same
-        // three-level shape checks as upstream's HidingFriPcs.
-        if opened_values_for_rand_cws.len() != rounds.len() {
-            return Err(FriError::HidingRandomOpeningRoundCountMismatch {
-                expected: rounds.len(),
-                got: opened_values_for_rand_cws.len(),
-            });
-        }
-        for (round_idx, (round, rand_round)) in rounds
-            .iter_mut()
-            .zip(opened_values_for_rand_cws.iter())
-            .enumerate()
-        {
-            if rand_round.len() != round.1.len() {
-                return Err(FriError::HidingRandomOpeningMatrixCountMismatch {
-                    round: round_idx,
-                    expected: round.1.len(),
-                    got: rand_round.len(),
-                });
-            }
-            for (matrix_idx, (mat, rand_mat)) in
-                round.1.iter_mut().zip(rand_round.iter()).enumerate()
-            {
-                if rand_mat.len() != mat.1.len() {
-                    return Err(FriError::HidingRandomOpeningPointCountMismatch {
-                        round: round_idx,
-                        matrix: matrix_idx,
-                        expected: mat.1.len(),
-                        got: rand_mat.len(),
-                    });
-                }
-                for (point, rand_point) in mat.1.iter_mut().zip(rand_mat.iter()) {
-                    point.1.extend(rand_point);
-                }
-            }
-        }
+        rejoin_random_openings(&mut rounds, opened_values_for_rand_cws)?;
         <CirclePcs<Val, InputMmcs, FriMmcs> as Pcs<Challenge, Challenger>>::verify(
             &self.inner,
             rounds,
@@ -659,6 +623,51 @@ where
         self.inner
             .maybe_build_periodic_lde_table_fast(periodic_cols, trace_domain, quotient_domain)
     }
+}
+
+/// Re-join the public and hidden halves of every opening, with the same
+/// three-level shape checks as upstream's HidingFriPcs. Shared by
+/// [`HidingCirclePcs`]'s monolithic `verify` and the staged verifier
+/// (`crate::staged`), so the two cannot drift.
+pub(crate) fn rejoin_random_openings<Com, Domain, Challenge: Clone, E1: core::fmt::Debug, E2: core::fmt::Debug>(
+    rounds: &mut [(Com, Vec<(Domain, Vec<(Challenge, Vec<Challenge>)>)>)],
+    opened_values_for_rand_cws: &OpenedValues<Challenge>,
+) -> Result<(), FriError<E1, E2>> {
+    if opened_values_for_rand_cws.len() != rounds.len() {
+        return Err(FriError::HidingRandomOpeningRoundCountMismatch {
+            expected: rounds.len(),
+            got: opened_values_for_rand_cws.len(),
+        });
+    }
+    for (round_idx, (round, rand_round)) in rounds
+        .iter_mut()
+        .zip(opened_values_for_rand_cws.iter())
+        .enumerate()
+    {
+        if rand_round.len() != round.1.len() {
+            return Err(FriError::HidingRandomOpeningMatrixCountMismatch {
+                round: round_idx,
+                expected: round.1.len(),
+                got: rand_round.len(),
+            });
+        }
+        for (matrix_idx, (mat, rand_mat)) in
+            round.1.iter_mut().zip(rand_round.iter()).enumerate()
+        {
+            if rand_mat.len() != mat.1.len() {
+                return Err(FriError::HidingRandomOpeningPointCountMismatch {
+                    round: round_idx,
+                    matrix: matrix_idx,
+                    expected: mat.1.len(),
+                    got: rand_mat.len(),
+                });
+            }
+            for (point, rand_point) in mat.1.iter_mut().zip(rand_mat.iter()) {
+                point.1.extend(rand_point.iter().cloned());
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Append `n` random columns to every row, drawn from `rng`.
@@ -713,7 +722,7 @@ fn get_zp_cis<D: PolynomialSpace>(qc_domains: &[D]) -> Vec<p3_commit::Val<D>> {
 // The binding relation, proved hiding.
 // ---------------------------------------------------------------------------
 
-type Val = Mersenne31;
+pub(crate) type Val = Mersenne31;
 /// The challenge field: the degree-4 extension `M31[i][u]` with `i² = -1` and
 /// `u² = 2 + i`, 124 bits.
 ///
@@ -723,7 +732,7 @@ type Val = Mersenne31;
 /// round-by-round error floored at `2^-74` while the query phase was offering
 /// 84 bits. Ten bits thrown away by a type alias. See
 /// `examples/qm31_ceiling.rs` for what each configuration recovers.
-type Challenge = p3_mersenne_31::QM31;
+pub(crate) type Challenge = p3_mersenne_31::QM31;
 type ByteHash = crate::keccak::SolKeccak256;
 type FieldHash = p3_symmetric::SerializingHasher<ByteHash>;
 type Compress = p3_symmetric::CompressionFunctionFromHasher<ByteHash, 2, 32>;
@@ -733,7 +742,7 @@ const SALT_ELEMS: usize = 4;
 /// Random codeword columns per committed matrix, following upstream's tests.
 const NUM_RANDOM_CODEWORDS: usize = 2;
 
-type ZkValMmcs = p3_merkle_tree::MerkleTreeHidingMmcs<
+pub(crate) type ZkValMmcs = p3_merkle_tree::MerkleTreeHidingMmcs<
     <Val as p3_field::Field>::Packing,
     u8,
     FieldHash,
@@ -743,9 +752,9 @@ type ZkValMmcs = p3_merkle_tree::MerkleTreeHidingMmcs<
     32,
     SALT_ELEMS,
 >;
-type ZkChallengeMmcs = ExtensionMmcs<Val, Challenge, ZkValMmcs>;
-type Challenger = SerializingChallenger32<Val, HashChallenger<u8, ByteHash, 32>>;
-type ZkPcs = HidingCirclePcs<Val, ZkValMmcs, ZkChallengeMmcs, Csprng>;
+pub(crate) type ZkChallengeMmcs = ExtensionMmcs<Val, Challenge, ZkValMmcs>;
+pub(crate) type Challenger = SerializingChallenger32<Val, HashChallenger<u8, ByteHash, 32>>;
+pub(crate) type ZkPcs = HidingCirclePcs<Val, ZkValMmcs, ZkChallengeMmcs, Csprng>;
 pub(crate) type ZkConfig = StarkConfig<ZkPcs, Challenge, Challenger>;
 
 /// log2 of the quotient-chunk count for [`BindingAir`] under the ZK
@@ -777,6 +786,33 @@ pub(crate) fn make_zk_config_tuned(
     log_blowup: usize,
     seed: Seed,
 ) -> ZkConfig {
+    make_zk_config_bound(num_queries, log_blowup, seed, None)
+}
+
+/// Domain tag of the recipient binding: the transcript of a recipient-bound
+/// proof starts with `RECIPIENT_DOMAIN ‖ recipient`, an unbound one with
+/// nothing, so the two families can never share a transcript prefix.
+pub const RECIPIENT_DOMAIN: &[u8] = b"riverrun-m31/recipient-bound/v1";
+
+/// [`make_zk_config_tuned`], optionally binding the proof to a 32-byte
+/// recipient by seeding the Fiat-Shamir challenger with
+/// `RECIPIENT_DOMAIN ‖ recipient`.
+///
+/// `HashChallenger` hashes its initial state together with everything observed
+/// before the first sample, so every challenge (alpha, zeta, the PCS and FRI
+/// challenges, the query indices) depends on the recipient. A proof made for
+/// recipient A is a proof of a different instance than the same statement for
+/// recipient B: re-targeting it means producing a fresh accepting transcript,
+/// i.e. a new proof, which needs the witness. This is how the committee-free
+/// path stops a watcher from copying an uploaded proof and racing it to a
+/// payout address of their own. It changes no AIR, no public-value layout and
+/// no proof size; only who the proof is for.
+pub(crate) fn make_zk_config_bound(
+    num_queries: usize,
+    log_blowup: usize,
+    seed: Seed,
+    recipient: Option<&[u8; 32]>,
+) -> ZkConfig {
     let byte_hash = ByteHash {};
     let field_hash = FieldHash::new(byte_hash);
     let compress = Compress::new(byte_hash);
@@ -802,7 +838,11 @@ pub(crate) fn make_zk_config_tuned(
         _phantom: core::marker::PhantomData,
     };
     let pcs = ZkPcs::new(inner, NUM_RANDOM_CODEWORDS, Csprng::from_seed(seed, STREAM_BLINDING));
-    StarkConfig::new(pcs, Challenger::from_hasher(Vec::new(), byte_hash))
+    let initial_state = match recipient {
+        Some(r) => [RECIPIENT_DOMAIN, &r[..]].concat(),
+        None => Vec::new(),
+    };
+    StarkConfig::new(pcs, Challenger::from_hasher(initial_state, byte_hash))
 }
 
 /// A hiding proof of the binding relation.

@@ -18,8 +18,12 @@
 //! `binding` and `membership` into the full relation via a shared public leaf
 //! value, real, verified end to end, though as two separately-verified proofs
 //! rather than one monolithic trace (see `relation`'s module doc for exactly
-//! what that does and does not claim). No on-chain (SBF) verification of any
-//! of this exists yet.
+//! what that does and does not claim). `crowd` hides the leaf behind a
+//! commitment and composes the two relations over it; `staged` cuts the crowd
+//! verifier at its Fiat-Shamir seams (transcript, quotient, out-of-domain
+//! check, per-query checks) so `programs/riverrun-m31-verifier` can run it
+//! across Solana transactions, each under the 1.4M CU cap, accepting exactly
+//! what the monolithic verifier accepts (pinned by `staged`'s tests).
 
 // Bare-wasm targets (Soroban's `wasm32v1-none`) have no standard library at
 // all, so the crate root must not pull one in. Every module here already runs
@@ -37,6 +41,8 @@ pub mod asp_history;
 pub mod crowd;
 pub mod relation;
 pub mod zk;
+#[cfg(feature = "wire")]
+pub mod staged;
 
 pub use binding::{
     prove_binding, prove_binding_tuned, prove_binding_tuned_rows, verify_binding, verify_binding_tuned,
@@ -46,5 +52,5 @@ pub use binding::{
 pub use membership::{compress, prove_membership, prove_membership_zk, verify_membership, verify_membership_zk, MembershipProof, PathStep, ZkMembershipProof, DEPTH, DIGEST_LEN, ZK_DEPTH};
 pub use permutation::{permute, prove_preimage, verify_preimage, PreimageProof, WIDTH};
 pub use relation::{prove_full_relation, verify_full_relation, FullRelationProof};
-pub use crowd::{prove_binding_crowd, prove_membership_crowd, verify_binding_crowd, verify_crowd, verify_membership_crowd, CrowdBindingProof, CrowdMembershipProof, BLINDER_LEN, CROWD_DEPTH};
+pub use crowd::{prove_binding_crowd, prove_binding_crowd_for, prove_membership_crowd, prove_membership_crowd_for, verify_binding_crowd, verify_binding_crowd_for, verify_crowd, verify_crowd_for, verify_membership_crowd, verify_membership_crowd_for, CrowdBindingProof, CrowdMembershipProof, BLINDER_LEN, CROWD_DEPTH};
 pub use zk::{prove_binding_zk, verify_binding_zk, HidingCirclePcs, ZkBindingProof, LOG_NUM_QUOTIENT_CHUNKS_ZK};

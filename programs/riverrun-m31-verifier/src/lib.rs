@@ -25,12 +25,48 @@
 //! than u16"` even with no packet-size enforcement, at any query count that
 //! keeps real security. A real deployment needs the buffer-account staging
 //! `docs/M31_CIRCLE_STARK.md` already specifies (write the proof into an
-//! account across several transactions, verify by reading it back); that
-//! staging is not built here. `prove_binding_tuned`/`verify_binding_tuned`
+//! account across several transactions, verify by reading it back). That
+//! staging now exists for the crowd proofs the product uses ([`staged`], see
+//! the 2026-10-27 status below); this legacy `BindingProof` path
+//! (discriminator `0`) remains the inline, reduced-query measurement it was.
+//! `prove_binding_tuned`/`verify_binding_tuned`
 //! (an explicit FRI-query-count parameter, always separate from the
 //! production `prove_binding`/`verify_binding`) exist so this program's own
 //! tests can measure a reduced-security point that fits inline, without ever
 //! silently weakening the production path.
+//!
+//! **Status (2026-10-27): the production CROWD proofs verify on-chain, staged
+//! across transactions, under the real 1.4M CU cap.** See [`staged`] for the
+//! buffer protocol and `tests/staged.rs` for the measurements, all in LiteSVM
+//! with an explicit `set_compute_unit_limit(1_400_000)`, the 256 KB heap frame,
+//! and every transaction's serialized size checked against 1232 bytes, at the
+//! parameters the product uses (12 FRI queries, blowup 128, 128 rows):
+//!
+//! - crowd binding (109,377 B proof): 108 WRITE txs, then SEAL 96,150 CU,
+//!   TRANSCRIPT 1,029,063, QUOTIENT 803,862, OOD 1,001,136, and six QUERIES
+//!   transactions of two queries each, 1,207,804 to 1,209,296 CU (or twelve of
+//!   one query each, 705,633 to 707,300: the batch is the client's choice);
+//! - crowd membership (84,257 B): 84 WRITE txs, TRANSCRIPT 455,607, QUOTIENT
+//!   740,661, OOD 404,179, six QUERIES transactions at 912,562 to 915,172;
+//! - the composition (both proofs, one `C`, one buffer of 196,066 B, rent
+//!   1,365,510,240 lamports, refundable by CLOSE): 192 WRITE txs, 20
+//!   verification transactions, the largest 1,209,296 CU (86.4% of the cap);
+//!   recipient-bound, it finalizes settleable and the real
+//!   `programs/mirror-pool` `execute_verified` pays out from it at 16,983 CU
+//!   (`tests/staged.rs::a_finalized_buffer_settles_in_the_real_pool`).
+//!
+//! Getting there took two exact rearrangements in the vendored verifier, both
+//! pinned value-for-value against the upstream code they replace
+//! (`riverrun_m31::staged` tests): the quotient recomposition did 168
+//! extension-field inversions where 8 plus one base-field batch suffice
+//! (2,546,640 CU → 676,216 measured), and the DEEP input reduction did 22
+//! inversions and 958 extension products per binding query where one batch
+//! inversion and extension-by-base products suffice (841,167 → 354,505 CU per
+//! query). The monolithic verifier runs the same code, so it got cheaper too:
+//! `tests/cu.rs` now measures the 4-query legacy binding proof at 1,544,819 CU
+//! and the 40-query preimage proof at 4,691,332 CU (the July figures below were
+//! 2,384,277 and 9,457,190 on platform-tools v1.54; these are v1.57, and the
+//! toolchain's share of the difference was not separately measured).
 //!
 //! **Status (2026-07-29): VERIFIES ON-CHAIN.** The 256 KB heap wall described
 //! below is closed. Native heap profiling with a tracking allocator (plus a
@@ -115,7 +151,12 @@ use solana_program::{
     pubkey::Pubkey,
 };
 
-use riverrun_m31::{BindingProof, PreimageProof, CONTEXT_LEN, WIDTH};
+use riverrun_m31::{BindingProof, PreimageProof, CONTEXT_LEN, DIGEST_LEN, WIDTH};
+
+pub mod staged;
+/// Host-side instruction builders for [`staged`] (not compiled into the program).
+#[cfg(not(target_os = "solana"))]
+pub mod client;
 
 // A real Circle-STARK verification allocates well past SBF's default 32 KB
 // heap (same reason programs/stark-verifier needs this for Winterfell): a
@@ -203,12 +244,16 @@ const U64S: usize = 8;
 const QUERIES_BYTES: usize = 2; // u16 LE
 const CTX_BYTES: usize = CONTEXT_LEN * U64S; // 64
 const WIDTH_BYTES: usize = WIDTH * U64S; // 128
-const HEAD: usize = QUERIES_BYTES + CTX_BYTES + CTX_BYTES + WIDTH_BYTES + WIDTH_BYTES; // queries | action | round | leaf | nullifier
+// The leaf and nullifier are DIGEST_LEN-limb truncations of the permutation
+// output since the nullifier-break fix (docs/NULLIFIER-BREAK.md); this layout
+// still read WIDTH limbs and no longer compiled against riverrun-m31.
+const DIGEST_BYTES: usize = DIGEST_LEN * U64S; // 64
+const HEAD: usize = QUERIES_BYTES + CTX_BYTES + CTX_BYTES + DIGEST_BYTES + DIGEST_BYTES; // queries | action | round | leaf | nullifier
 
 /// Instruction data layout: a 1-byte discriminator, then per-instruction data.
 ///
 /// - `0`: verify a `BindingProof` (§1a+§1c). `num_queries(2, u16) | action(64)
-///   | round(64) | leaf(128) | nullifier(128) | proof(rest, bincode)`.
+///   | round(64) | leaf(64) | nullifier(64) | proof(rest, bincode)`.
 ///   `num_queries` must match whatever FRI query count the proof was produced
 ///   with (`prove_binding_tuned`), exposed rather than assumed by the program.
 /// - `1`: verify a `PreimageProof` (the simpler, single-block, non-vectorized
@@ -217,13 +262,18 @@ const HEAD: usize = QUERIES_BYTES + CTX_BYTES + CTX_BYTES + WIDTH_BYTES + WIDTH_
 ///   smaller/simpler AIR's peak `verify()` memory against `BindingProof`'s
 ///   two-block vectorized one isolates whether AIR complexity is what drives
 ///   it. `output(128) | proof(rest, bincode)`.
-pub fn process_instruction(_id: &Pubkey, _accts: &[AccountInfo], data: &[u8]) -> ProgramResult {
+///
+/// - `10..=18`: the staged buffer protocol for the crowd proofs, see
+///   [`staged`] (INIT, WRITE, SEAL, TRANSCRIPT, OOD, QUERIES, FINALIZE, CLOSE,
+///   QUOTIENT).
+pub fn process_instruction(id: &Pubkey, accts: &[AccountInfo], data: &[u8]) -> ProgramResult {
     let Some((&discriminator, rest)) = data.split_first() else {
         return Err(ProgramError::InvalidInstructionData);
     };
     match discriminator {
         0 => process_binding(rest),
         1 => process_preimage(rest),
+        10..=18 => staged::process(id, accts, discriminator, rest),
         _ => Err(ProgramError::InvalidInstructionData),
     }
 }
@@ -235,8 +285,8 @@ fn process_binding(data: &[u8]) -> ProgramResult {
     let num_queries = u16::from_le_bytes([data[0], data[1]]) as usize;
     let action = ctx_at(&data[QUERIES_BYTES..QUERIES_BYTES + CTX_BYTES]);
     let round = ctx_at(&data[QUERIES_BYTES + CTX_BYTES..QUERIES_BYTES + 2 * CTX_BYTES]);
-    let leaf = wide_at(&data[QUERIES_BYTES + 2 * CTX_BYTES..QUERIES_BYTES + 2 * CTX_BYTES + WIDTH_BYTES]);
-    let nullifier = wide_at(&data[QUERIES_BYTES + 2 * CTX_BYTES + WIDTH_BYTES..HEAD]);
+    let leaf = digest_at(&data[QUERIES_BYTES + 2 * CTX_BYTES..QUERIES_BYTES + 2 * CTX_BYTES + DIGEST_BYTES]);
+    let nullifier = digest_at(&data[QUERIES_BYTES + 2 * CTX_BYTES + DIGEST_BYTES..HEAD]);
     let proof_bytes = &data[HEAD..];
     msg!("heap: {} B before deserialize", heap_used());
 
@@ -282,6 +332,10 @@ fn process_preimage(data: &[u8]) -> ProgramResult {
 }
 
 fn ctx_at(b: &[u8]) -> [u64; CONTEXT_LEN] {
+    core::array::from_fn(|i| u64::from_le_bytes(b[i * U64S..(i + 1) * U64S].try_into().unwrap()))
+}
+
+fn digest_at(b: &[u8]) -> [u64; DIGEST_LEN] {
     core::array::from_fn(|i| u64::from_le_bytes(b[i * U64S..(i + 1) * U64S].try_into().unwrap()))
 }
 

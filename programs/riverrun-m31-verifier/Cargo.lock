@@ -2459,6 +2459,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "rand_chacha"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e6af7f3e25ded52c41df4e0b1af2d047e45896c2f3281792ed68a1c243daedb"
+dependencies = [
+ "ppv-lite86",
+ "rand_core 0.10.1",
+]
+
+[[package]]
 name = "rand_core"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2611,14 +2621,19 @@ dependencies = [
  "p3-poseidon2-air",
  "p3-symmetric",
  "p3-uni-stark",
+ "p3-util",
+ "rand 0.10.2",
  "rand 0.9.5",
+ "rand_chacha 0.10.0",
  "solana-program",
+ "spin",
 ]
 
 [[package]]
 name = "riverrun-m31-verifier"
 version = "0.1.0"
 dependencies = [
+ "bincode",
  "litesvm",
  "riverrun-m31",
  "solana-compute-budget",

@@ -278,6 +278,68 @@ Design rules the pool program enforces when it reads this buffer:
 Everything the buffer carries is a hash or a field element — the on-chain state
 stays post-quantum, exactly as the committee path already was.
 
+### As built (2026-10-27): `programs/riverrun-m31-verifier`, staged
+
+The buffer above is implemented for the crowd proofs (`crates/riverrun-m31/src/
+crowd.rs`) by `programs/riverrun-m31-verifier/src/staged.rs`, with the
+verification itself in `crates/riverrun-m31/src/staged.rs`. Byte-level layout of
+the pool-facing prefix is exactly the table above (plus `[153, 185)` recipient,
+which `programs/mirror-pool` already reads); limb-valued fields are eight
+canonical M31 limbs as u32 LE, and `round` is carried in the proof as four
+16-bit limbs so it decodes to the u64 the pool compares (`round_u64`).
+
+Protocol, every instruction signed by the buffer's authority:
+
+```
+INIT (buffer signs too) ─▶ WRITE* (≤1015 B each) ─▶ SEAL (keccak + index)
+  per proof slot: TRANSCRIPT ─▶ QUOTIENT ─▶ OOD,  TRANSCRIPT ─▶ QUERIES(2 positions)*
+  ─▶ FINALIZE (all slots: transcript, quotient, OOD, all 12 query bits)
+```
+
+- TRANSCRIPT derives every Fiat-Shamir value (alpha, zeta, PCS alpha,
+  bivariate beta, FRI betas, both PoW checks, all 12 query indices) plus the
+  query-independent DEEP claim sums, and persists them in the account. Nothing
+  later accepts a challenge from the client.
+- A per-slot bitmap makes each query position verifiable exactly once;
+  FINALIZE needs all of them. Writes stop at SEAL; the public inputs are fixed
+  at INIT.
+- `KIND_CROWD` holds both proofs over ONE stored `C` (the composition of
+  `verify_crowd`). `KIND_BOUND` (item 3 below) additionally seeds both proofs'
+  transcripts with `recipient_domain ‖ B_RECIPIENT`, so the recipient field
+  of a finalized bound buffer is a verified public input.
+
+Measured in LiteSVM at the production crowd parameters (12 queries, blowup
+128, 128 rows), real 1.4M CU cap, 256 KB heap, 1232-byte packets
+(`tests/staged.rs`):
+
+| | proof | WRITE txs | verification txs | max CU / tx |
+|---|---|---|---|---|
+| crowd binding | 109,377 B | 108 | SEAL + 9 + FINALIZE | 1,209,296 (2 queries/tx); 1,029,063 at 1 query/tx |
+| crowd membership | 84,257 B | 84 | SEAL + 9 + FINALIZE | 915,172 |
+| composition (one buffer, 196,066 B, rent 1.3655 SOL refundable) | both | 192 | SEAL + 18 + FINALIZE | 1,209,296 (86.4% of cap) |
+
+The bound composition then settles through the real `programs/mirror-pool`
+`execute_verified` (16,983 CU, payout received; a replay is refused by the
+nullifier PDA), in `tests/staged.rs::a_finalized_buffer_settles_in_the_real_pool`.
+
+**Front-running, and what closes it.** Without the recipient in the proof, the
+uploaded bytes are public transaction data: anyone can upload the same proof
+into a buffer of their own, declare their own recipient, finalize, and settle
+first. `prove_*_crowd_for(recipient, …)` binds the proof's whole transcript to
+the recipient (no AIR change, no size change), and a `KIND_BOUND` buffer
+verifies against its own `B_RECIPIENT`; `tests/staged.rs::
+a_copied_bound_proof_cannot_be_redirected` uploads a bound proof under an
+attacker's recipient and it is refused at TRANSCRIPT.
+
+**Only a bound composition authorizes a payout.** `programs/mirror-pool`
+checks owner, `FINALIZED == 1` and the public inputs, not the buffer's kind.
+So the verifier writes `FINALIZED = 1` only for `KIND_CROWD | KIND_BOUND`, and
+`2` ("verified, not a settlement") for everything else: a single-relation
+buffer leaves pool-facing fields at zero (a finalized membership-only buffer
+would otherwise settle with nullifier = action = 0 in round 0), and an unbound
+composition is the front-runnable one. `a_finalized_buffer_settles_in_the_real_pool`
+runs the real pool against both.
+
 ---
 
 ## 3. On-chain integration — replacing the committee with the buffer

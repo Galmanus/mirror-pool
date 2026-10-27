@@ -95,7 +95,74 @@ pub fn validate_degree_bits(
 ///
 /// Given quotient chunks and their domains, this computes the Lagrange
 /// interpolation coefficients (zps) and reconstructs quotient(zeta).
+///
+/// [staged-patch] Same value as upstream (kept below as
+/// [`recompose_quotient_from_chunks_upstream_reference`]), computed with far
+/// fewer extension-field inversions. Upstream evaluates, for every ordered
+/// pair `i != j`, `Z_j(zeta) * Z_j(first_point(D_i))^{-1}` in the extension:
+/// `n(n-1)` evaluations of `Z_j(zeta)` and `n(n-1)` extension inversions. But
+/// `Z_j(zeta)` does not depend on `i` (n evaluations suffice), and
+/// `Z_j(first_point(D_i))` is a BASE-field constant of the domain geometry
+/// (the embedding into the extension is a ring homomorphism, so evaluating it
+/// in the base field and lifting gives the same element), so
+///
+/// ```text
+///     zps[i] = (prod_{j != i} Z_j(zeta)) * (prod_{j != i} Z_j(first_point(D_i)))^{-1}
+/// ```
+///
+/// with all `n` base-field products inverted in one batch. Field arithmetic is
+/// exact, so this is the identical element, not an approximation; a native
+/// test in riverrun-m31 checks equality against the upstream function. On
+/// Solana SBF the upstream form cost ~2.5M CU for 8 chunks (measured with the
+/// `cu-trace` probes), more than a whole transaction.
 pub fn recompose_quotient_from_chunks<SC>(
+    quotient_chunks_domains: &[Domain<SC>],
+    quotient_chunks: &[Vec<SC::Challenge>],
+    zeta: SC::Challenge,
+) -> SC::Challenge
+where
+    SC: StarkGenericConfig,
+{
+    let n = quotient_chunks_domains.len();
+    let z_at_zeta: Vec<SC::Challenge> = quotient_chunks_domains
+        .iter()
+        .map(|domain| domain.vanishing_poly_at_point(zeta))
+        .collect();
+    let denominators: Vec<Val<SC>> = (0..n)
+        .map(|i| {
+            let first = quotient_chunks_domains[i].first_point();
+            (0..n)
+                .filter(|&j| j != i)
+                .map(|j| quotient_chunks_domains[j].vanishing_poly_at_point(first))
+                .product::<Val<SC>>()
+        })
+        .collect();
+    let denominators_inv = p3_field::batch_multiplicative_inverse(&denominators);
+    let zps = (0..n)
+        .map(|i| {
+            (0..n)
+                .filter(|&j| j != i)
+                .map(|j| z_at_zeta[j])
+                .product::<SC::Challenge>()
+                * denominators_inv[i]
+        })
+        .collect_vec();
+
+    quotient_chunks
+        .iter()
+        .enumerate()
+        .map(|(ch_i, ch)| {
+            zps[ch_i]
+                * SC::Challenge::from_ext_basis_coefficients(ch)
+                    .expect("quotient chunk length checked in valid_shape")
+        })
+        .sum::<SC::Challenge>()
+}
+
+/// [staged-patch] Upstream's `recompose_quotient_from_chunks`, verbatim, kept
+/// only as the reference the optimized form is tested against.
+#[doc(hidden)]
+pub fn recompose_quotient_from_chunks_upstream_reference<SC>(
     quotient_chunks_domains: &[Domain<SC>],
     quotient_chunks: &[Vec<SC::Challenge>],
     zeta: SC::Challenge,
@@ -322,12 +389,451 @@ where
     )
 }
 
+/// [staged-patch] The opening claims handed to `Pcs::verify`: per committed
+/// round, the commitment and, per matrix, its domain and the claimed values at
+/// each opening point.
+pub type OpeningClaims<SC> = Vec<(
+    <<SC as StarkGenericConfig>::Pcs as Pcs<
+        <SC as StarkGenericConfig>::Challenge,
+        <SC as StarkGenericConfig>::Challenger,
+    >>::Commitment,
+    Vec<(
+        Domain<SC>,
+        Vec<(
+            <SC as StarkGenericConfig>::Challenge,
+            Vec<<SC as StarkGenericConfig>::Challenge>,
+        )>,
+    )>,
+)>;
+
+/// [staged-patch] Everything the verifier derives from the instance and the
+/// proof's SHAPE alone, before any Fiat-Shamir work: validated degree, domains,
+/// the preprocessed commitment, and the opened-values shape checks.
+///
+/// Computing this is cheap and deterministic, so a staged verifier recomputes
+/// it in every transaction instead of persisting it.
+pub struct VerifierShape<SC: StarkGenericConfig> {
+    pub degree_bits: usize,
+    pub base_degree_bits: usize,
+    pub trace_domain: Domain<SC>,
+    pub init_trace_domain: Domain<SC>,
+    pub quotient_chunks_domains: Vec<Domain<SC>>,
+    pub randomized_quotient_chunks_domains: Vec<Domain<SC>>,
+    pub preprocessed_width: usize,
+    pub preprocessed_commit:
+        Option<<SC::Pcs as Pcs<SC::Challenge, SC::Challenger>>::Commitment>,
+    pub main_next: bool,
+    pub pre_next: bool,
+    pub air_width: usize,
+}
+
+/// [staged-patch] The shape half of `verify_with_known_quotient_chunks`
+/// (upstream code, unchanged in content and order).
+pub fn verifier_shape<SC, A>(
+    config: &SC,
+    air: &A,
+    proof: &Proof<SC>,
+    public_values: &[Val<SC>],
+    preprocessed_vk: Option<&PreprocessedVerifierKey<SC>>,
+    log_num_quotient_chunks: usize,
+) -> Result<VerifierShape<SC>, VerificationError<PcsError<SC>>>
+where
+    SC: StarkGenericConfig,
+    A: for<'a> Air<VerifierConstraintFolder<'a, SC>>,
+{
+    let Proof {
+        commitments,
+        opened_values,
+        opening_proof: _,
+        degree_bits,
+    } = proof;
+    let degree_bits = *degree_bits;
+
+    let pcs = config.pcs();
+    let (base_degree_bits, degree) =
+        validate_degree_bits(None, degree_bits, config.is_zk(), pcs.log_max_lde_height())?;
+    let trace_domain = pcs.natural_domain_for_degree(degree);
+    // TODO: allow moving preprocessed commitment to preprocess time, if known in advance
+    let (preprocessed_width, preprocessed_commit) =
+        process_preprocessed_trace::<SC, A>(air, opened_values, preprocessed_vk)?;
+
+    // Ensure the preprocessed trace and main trace have the same height.
+    if let Some(vk) = preprocessed_vk
+        && preprocessed_width > 0
+        && vk.degree_bits != degree_bits
+    {
+        return Err(InvalidProofShapeError::PreprocessedDegreeMismatch {
+            vk_degree_bits: vk.degree_bits,
+            proof_degree_bits: degree_bits,
+        }
+        .into());
+    }
+
+    // [heap-patch] the symbolic AirLayout/get_log_num_quotient_chunks
+    // computation that stood here moved to `verify_with_preprocessed`;
+    // `log_num_quotient_chunks` is this function's parameter.
+    let (_, num_quotient_chunks) = checked_log_size_sum(log_num_quotient_chunks, config.is_zk())
+        .ok_or_else(|| InvalidProofShapeError::QuotientDomainTooLarge {
+            air: None,
+            maximum: usize::BITS as usize - 1,
+            got: log_num_quotient_chunks.saturating_add(config.is_zk()),
+        })?;
+    let init_trace_domain = pcs.natural_domain_for_degree(degree >> config.is_zk());
+
+    let (_, quotient_domain_size) = checked_log_size_sum(degree_bits, log_num_quotient_chunks)
+        .ok_or_else(|| InvalidProofShapeError::QuotientDomainTooLarge {
+            air: None,
+            maximum: usize::BITS as usize - 1,
+            got: degree_bits.saturating_add(log_num_quotient_chunks),
+        })?;
+    let quotient_domain = trace_domain.create_disjoint_domain(quotient_domain_size);
+    let quotient_chunks_domains = quotient_domain.split_domains(num_quotient_chunks);
+
+    let randomized_quotient_chunks_domains = quotient_chunks_domains
+        .iter()
+        .map(|domain| pcs.natural_domain_for_degree(domain.size() << (config.is_zk())))
+        .collect_vec();
+    // Check that the random commitments are/are not present depending on the ZK setting.
+    if (opened_values.random.is_some() != SC::Pcs::ZK)
+        || (commitments.random.is_some() != SC::Pcs::ZK)
+    {
+        return Err(VerificationError::RandomizationError);
+    }
+
+    let air_width = A::width(air);
+    let expected_public_values_len = air.num_public_values();
+    if public_values.len() != expected_public_values_len {
+        return Err(InvalidProofShapeError::PublicValuesLengthMismatch {
+            expected: expected_public_values_len,
+            got: public_values.len(),
+        }
+        .into());
+    }
+
+    let main_next = !air.main_next_row_columns().is_empty();
+    let pre_next = !air.preprocessed_next_row_columns().is_empty();
+    let trace_next_ok = if main_next {
+        opened_values
+            .trace_next
+            .as_ref()
+            .is_some_and(|v| v.len() == air_width)
+    } else {
+        opened_values.trace_next.is_none()
+    };
+    let valid_shape = opened_values.trace_local.len() == air_width
+        && trace_next_ok
+        && opened_values.quotient_chunks.len() == num_quotient_chunks
+        && opened_values
+            .quotient_chunks
+            .iter()
+            .all(|qc| qc.len() == SC::Challenge::DIMENSION)
+        // We've already checked that opened_values.random is present if and only if ZK is enabled.
+        && opened_values.random.as_ref().is_none_or(|r_comm| r_comm.len() == SC::Challenge::DIMENSION);
+    if !valid_shape {
+        return Err(InvalidProofShapeError::OpenedValuesDimensionMismatch.into());
+    }
+
+    Ok(VerifierShape {
+        degree_bits,
+        base_degree_bits,
+        trace_domain,
+        init_trace_domain,
+        quotient_chunks_domains,
+        randomized_quotient_chunks_domains,
+        preprocessed_width,
+        preprocessed_commit,
+        main_next,
+        pre_next,
+        air_width,
+    })
+}
+
+/// [staged-patch] The transcript half before the PCS: observe the instance,
+/// sample `alpha`, observe the quotient (and random) commitments, sample
+/// `zeta`, reject a `zeta` on the trace domain. Returns the challenger
+/// positioned exactly where upstream hands it to `pcs.verify`.
+pub fn verifier_transcript<SC>(
+    config: &SC,
+    proof: &Proof<SC>,
+    shape: &VerifierShape<SC>,
+    public_values: &[Val<SC>],
+) -> Result<(SC::Challenger, SC::Challenge, SC::Challenge), VerificationError<PcsError<SC>>>
+where
+    SC: StarkGenericConfig,
+{
+    let commitments = &proof.commitments;
+    let mut challenger = config.initialise_challenger();
+
+    // Observe the instance.
+    challenger.observe(Val::<SC>::from_usize(shape.degree_bits));
+    challenger.observe(Val::<SC>::from_usize(shape.base_degree_bits));
+    challenger.observe(Val::<SC>::from_usize(shape.preprocessed_width));
+    // TODO (upstream): Might be best practice to include other instance data
+    // here in the transcript, like some encoding of the AIR.
+    challenger.observe(commitments.trace.clone());
+    if shape.preprocessed_width > 0 {
+        challenger.observe(shape.preprocessed_commit.as_ref().unwrap().clone());
+    }
+    challenger.observe_slice(public_values);
+
+    // Get the first Fiat Shamir challenge which will be used to combine all constraint polynomials
+    // into a single polynomial.
+    //
+    // Soundness Error: n/|EF| where n is the number of constraints.
+    let alpha = challenger.sample_algebra_element();
+    challenger.observe(commitments.quotient_chunks.clone());
+
+    // We've already checked that commitments.random is present if and only if ZK is enabled.
+    // Observe the random commitment if it is present.
+    if let Some(r_commit) = commitments.random.clone() {
+        challenger.observe(r_commit);
+    }
+
+    // Get an out-of-domain point to open our values at.
+    //
+    // Soundness Error: dN/|EF| where `N` is the trace length and our constraint polynomial has degree `d`.
+    let zeta: SC::Challenge = challenger.sample_algebra_element();
+
+    // The opening at zeta divides by the vanishing polynomial of the trace domain.
+    // Reject any zeta on the domain, where that polynomial is zero and the inverse panics.
+    // Honest Fiat-Shamir sampling reaches this only with probability |H| / |EF|.
+    if shape.init_trace_domain.vanishing_poly_at_point(zeta).is_zero() {
+        return Err(VerificationError::OodPointInDomain);
+    }
+    Ok((challenger, alpha, zeta))
+}
+
+/// [staged-patch] The opening claims (`coms_to_verify`) for a given `zeta`:
+/// upstream code, unchanged. A staged verifier rebuilds these in every query
+/// transaction from the persisted `zeta` and the (sealed, immutable) proof.
+pub fn opening_claims<SC>(
+    proof: &Proof<SC>,
+    shape: &VerifierShape<SC>,
+    zeta: SC::Challenge,
+) -> Result<OpeningClaims<SC>, VerificationError<PcsError<SC>>>
+where
+    SC: StarkGenericConfig,
+{
+    let commitments = &proof.commitments;
+    let opened_values = &proof.opened_values;
+    let trace_domain = shape.trace_domain;
+
+    let zeta_next = shape
+        .init_trace_domain
+        .next_point(zeta)
+        .ok_or(VerificationError::NextPointUnavailable)?;
+
+    // We've already checked that commitments.random and opened_values.random are present if and only if ZK is enabled.
+    let mut coms_to_verify = if let Some(random_commit) = &commitments.random {
+        let random_values = opened_values
+            .random
+            .as_ref()
+            .ok_or(VerificationError::RandomizationError)?;
+        vec![(
+            random_commit.clone(),
+            vec![(trace_domain, vec![(zeta, random_values.clone())])],
+        )]
+    } else {
+        vec![]
+    };
+    let trace_round = {
+        let mut trace_points = vec![(zeta, opened_values.trace_local.clone())];
+        if shape.main_next {
+            trace_points.push((
+                zeta_next,
+                opened_values
+                    .trace_next
+                    .clone()
+                    .expect("checked in shape validation"),
+            ));
+        }
+        (
+            commitments.trace.clone(),
+            vec![(trace_domain, trace_points)],
+        )
+    };
+    coms_to_verify.extend(vec![
+        trace_round,
+        (
+            commitments.quotient_chunks.clone(),
+            // Check the commitment on the randomized domains.
+            zip_eq(
+                shape.randomized_quotient_chunks_domains.iter(),
+                &opened_values.quotient_chunks,
+                VerificationError::from(InvalidProofShapeError::QuotientDomainsCountMismatch {
+                    air: 0,
+                }),
+            )?
+            .map(|(domain, values)| (*domain, vec![(zeta, values.clone())]))
+            .collect_vec(),
+        ),
+    ]);
+
+    // Add preprocessed commitment verification if present
+    if shape.preprocessed_width > 0 {
+        let mut pre_points = vec![(zeta, opened_values.preprocessed_local.clone().unwrap())];
+        if shape.pre_next {
+            pre_points.push((zeta_next, opened_values.preprocessed_next.clone().unwrap()));
+        }
+        coms_to_verify.push((
+            shape.preprocessed_commit.clone().unwrap(),
+            vec![(trace_domain, pre_points)],
+        ));
+    }
+    Ok(coms_to_verify)
+}
+
+/// [staged-patch] The out-of-domain check: periodic columns, quotient
+/// recomposition at `zeta`, and `constraints(zeta) / Z_H(zeta) == quotient(zeta)`.
+/// Touches no transcript state, so it runs equally well before or after the
+/// PCS check, and in its own transaction given the persisted `alpha`, `zeta`.
+/// It is [`ood_quotient`] followed by [`verify_ood_against`]; a staged
+/// verifier runs the two in separate transactions (on Solana the
+/// recomposition and the constraint evaluation do not fit one together),
+/// persisting the recomposed quotient between them.
+pub fn verify_ood<SC, A>(
+    air: &A,
+    proof: &Proof<SC>,
+    shape: &VerifierShape<SC>,
+    public_values: &[Val<SC>],
+    alpha: SC::Challenge,
+    zeta: SC::Challenge,
+) -> Result<(), VerificationError<PcsError<SC>>>
+where
+    SC: StarkGenericConfig,
+    A: for<'a> Air<VerifierConstraintFolder<'a, SC>>,
+{
+    let quotient = ood_quotient(proof, shape, zeta);
+    verify_ood_against(air, proof, shape, public_values, alpha, zeta, quotient)
+}
+
+/// [staged-patch] `quotient(zeta)`, recomposed from the opened chunks.
+pub fn ood_quotient<SC: StarkGenericConfig>(
+    proof: &Proof<SC>,
+    shape: &VerifierShape<SC>,
+    zeta: SC::Challenge,
+) -> SC::Challenge {
+    recompose_quotient_from_chunks::<SC>(
+        &shape.quotient_chunks_domains,
+        &proof.opened_values.quotient_chunks,
+        zeta,
+    )
+}
+
+/// [staged-patch] The out-of-domain check against an already recomposed
+/// `quotient` (from [`ood_quotient`] on the same proof and `zeta`).
+pub fn verify_ood_against<SC, A>(
+    air: &A,
+    proof: &Proof<SC>,
+    shape: &VerifierShape<SC>,
+    public_values: &[Val<SC>],
+    alpha: SC::Challenge,
+    zeta: SC::Challenge,
+    quotient: SC::Challenge,
+) -> Result<(), VerificationError<PcsError<SC>>>
+where
+    SC: StarkGenericConfig,
+    A: for<'a> Air<VerifierConstraintFolder<'a, SC>>,
+{
+    let opened_values = &proof.opened_values;
+    let init_trace_domain = shape.init_trace_domain;
+
+    // Periodic columns are AIR logic; a malformed one must error, not panic.
+    let periodic_columns = air.periodic_columns();
+    check_periodic_column_lengths(&periodic_columns, init_trace_domain.size())?;
+
+    let periodic_values: Vec<SC::Challenge> = periodic_columns
+        .iter()
+        .map(|periodic_col| init_trace_domain.evaluate_periodic_column_at(periodic_col, zeta))
+        .collect();
+
+    let zeros;
+    let trace_next_slice = match &opened_values.trace_next {
+        Some(v) => v.as_slice(),
+        None => {
+            zeros = SC::Challenge::zero_vec(shape.air_width);
+            &zeros
+        }
+    };
+    let pre_next_zeros;
+    let preprocessed_next_for_verify = match &opened_values.preprocessed_next {
+        Some(v) => Some(v.as_slice()),
+        None if shape.preprocessed_width > 0 => {
+            pre_next_zeros = SC::Challenge::zero_vec(shape.preprocessed_width);
+            Some(pre_next_zeros.as_slice())
+        }
+        None => None,
+    };
+    #[cfg(all(target_os = "solana", feature = "cu-trace"))]
+    solana_program::log::sol_log_compute_units(); // [cu-trace] before verify_constraints
+    verify_constraints::<SC, A, PcsError<SC>>(
+        air,
+        &opened_values.trace_local,
+        trace_next_slice,
+        opened_values.preprocessed_local.as_deref(),
+        preprocessed_next_for_verify,
+        &periodic_values,
+        public_values,
+        init_trace_domain,
+        zeta,
+        alpha,
+        quotient,
+    )
+}
+
 /// [heap-patch] `verify_with_preprocessed` minus the symbolic-builder pass:
 /// `log_num_quotient_chunks` (the only thing that pass produced) arrives as a
 /// parameter. A wrong value does not weaken soundness: it changes the expected
 /// proof shape and domain split, so an honest proof simply fails to verify.
+///
+/// [staged-patch] The body is now the composition of four public pieces:
+/// [`verifier_shape`], [`verifier_transcript`], [`opening_claims`] +
+/// `pcs.verify`, and [`verify_ood`]. A staged (multi-transaction) verifier
+/// calls the same pieces, with `pcs.verify` itself split into a transcript
+/// setup and per-query checks by the PCS, so both paths run the same code.
+/// The out-of-domain check moved after the PCS check from upstream's order
+/// interleaving: neither touches the other's state, so the set of accepted
+/// proofs is unchanged; only which error a doubly-bad proof reports first can
+/// differ.
 #[instrument(skip_all)]
 pub fn verify_with_known_quotient_chunks<SC, A>(
+    config: &SC,
+    air: &A,
+    proof: &Proof<SC>,
+    public_values: &[Val<SC>],
+    preprocessed_vk: Option<&PreprocessedVerifierKey<SC>>,
+    log_num_quotient_chunks: usize,
+) -> Result<(), VerificationError<PcsError<SC>>>
+where
+    SC: StarkGenericConfig,
+    A: for<'a> Air<VerifierConstraintFolder<'a, SC>>,
+{
+    let shape = verifier_shape(
+        config,
+        air,
+        proof,
+        public_values,
+        preprocessed_vk,
+        log_num_quotient_chunks,
+    )?;
+    let (mut challenger, alpha, zeta) = verifier_transcript(config, proof, &shape, public_values)?;
+    let coms_to_verify = opening_claims(proof, &shape, zeta)?;
+
+    #[cfg(all(target_os = "solana", feature = "cu-trace"))]
+    solana_program::log::sol_log_compute_units(); // [cu-trace] before pcs.verify
+    config
+        .pcs()
+        .verify(coms_to_verify, &proof.opening_proof, &mut challenger)
+        .map_err(VerificationError::InvalidOpeningArgument)?;
+    #[cfg(all(target_os = "solana", feature = "cu-trace"))]
+    solana_program::log::sol_log_compute_units(); // [cu-trace] after pcs.verify
+
+    verify_ood(air, proof, &shape, public_values, alpha, zeta)
+}
+
+#[doc(hidden)]
+#[instrument(skip_all)]
+pub fn verify_with_known_quotient_chunks_upstream_reference<SC, A>(
     config: &SC,
     air: &A,
     proof: &Proof<SC>,
@@ -552,7 +1058,7 @@ where
     #[cfg(all(target_os = "solana", feature = "cu-trace"))]
     solana_program::log::sol_log_compute_units(); // [cu-trace] after pcs.verify
 
-    let quotient = recompose_quotient_from_chunks::<SC>(
+    let quotient = recompose_quotient_from_chunks_upstream_reference::<SC>(
         &quotient_chunks_domains,
         &opened_values.quotient_chunks,
         zeta,

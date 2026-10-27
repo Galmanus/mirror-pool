@@ -12,7 +12,194 @@ use p3_matrix::Dimensions;
 use crate::folding::{fold_row_with_inv_twiddle, query_x_twiddles_inv};
 use crate::{CircleCommitPhaseProofStep, CircleFriProof};
 
-pub fn verify<Folding, Val, Challenge, M, Challenger>(
+/// [staged-patch] Everything the Circle-FRI verifier derives from the
+/// transcript, i.e. all of its Fiat-Shamir state, computed before a single
+/// query is opened.
+///
+/// The upstream `verify` interleaves `challenger.sample_bits` with the
+/// per-query work, but `open_input` and `verify_query` never touch the
+/// challenger, so sampling every index first is the identical transcript.
+/// That is what makes the query phase resumable: once this struct exists,
+/// each query is a pure function of `(this, the proof's header, one query
+/// proof)`, and can run in a different Solana transaction.
+#[derive(Clone, Debug)]
+pub struct FriSetup<Challenge> {
+    /// One folding challenge per commit-phase round.
+    pub betas: Vec<Challenge>,
+    /// `log2` of the initial (pre-fold) evaluation domain.
+    pub log_max_height: usize,
+    /// One sampled query index per query proof, in transcript order.
+    pub indices: Vec<usize>,
+}
+
+/// [staged-patch] The transcript half of [`verify`]: commit-phase betas,
+/// commit PoW witnesses, the final polynomial, the query-count and
+/// query-PoW checks, the index-width bound, then every query index.
+///
+/// `num_query_proofs` is the length of the proof's `query_proofs`; it is a
+/// parameter (not read from `proof.query_proofs`) so a staged caller can pass
+/// a proof header whose query proofs were split off and are verified later.
+///
+/// The per-query shape checks upstream runs here (opening count and arity
+/// schedule) moved to [`verify_one_query`], which checks each query proof it
+/// receives. Acceptance is unchanged: upstream requires every query's
+/// schedule to equal query 0's AND every round's arity to be 1 (Circle PCS
+/// folds only by 2, asserted in `verify_query`), which is the same as
+/// requiring every query's schedule to be all ones of length `rounds`.
+pub fn verify_setup<Folding, Val, Challenge, M, Challenger>(
+    folding: &Folding,
+    params: &FriParameters<M>,
+    proof: &CircleFriProof<Challenge, M, Challenger::Witness, Folding::InputProof>,
+    num_query_proofs: usize,
+    challenger: &mut Challenger,
+) -> Result<FriSetup<Challenge>, FriError<M::Error, Folding::InputError>>
+where
+    Val: ComplexExtendable,
+    Challenge: ExtensionField<Val>,
+    M: Mmcs<Challenge>,
+    Challenger: FieldChallenger<Val> + GrindingChallenger + CanObserve<M::Commitment>,
+    Folding: FriFoldingStrategy<Val, Challenge>,
+{
+    if params.num_queries == 0 {
+        return Err(FriError::ZeroQueries);
+    }
+    if proof.commit_pow_witnesses.len() != proof.commit_phase_commits.len() {
+        return Err(FriError::CommitPowWitnessCountMismatch {
+            expected: proof.commit_phase_commits.len(),
+            got: proof.commit_pow_witnesses.len(),
+        });
+    }
+    let betas: Vec<Challenge> = proof
+        .commit_phase_commits
+        .iter()
+        .zip(&proof.commit_pow_witnesses)
+        .map(|(comm, witness)| {
+            challenger.observe(comm.clone());
+            if !challenger.check_witness(params.commit_proof_of_work_bits, *witness) {
+                return Err(FriError::InvalidPowWitness);
+            }
+            Ok(challenger.sample_algebra_element())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    challenger.observe_algebra_element(proof.final_poly);
+    if num_query_proofs != params.num_queries {
+        return Err(FriError::QueryProofCountMismatch {
+            expected: params.num_queries,
+            got: num_query_proofs,
+        });
+    }
+    if !challenger.check_witness(params.query_proof_of_work_bits, proof.pow_witness) {
+        return Err(FriError::InvalidPowWitness);
+    }
+    // Every accepted schedule is all ones (see the doc comment), so the
+    // reduction is one bit per commit-phase round.
+    let log_max_height = proof.commit_phase_commits.len() + params.log_blowup;
+    let num_index_bits = log_max_height + folding.extra_query_index_bits();
+    if num_index_bits >= Val::CIRCLE_TWO_ADICITY {
+        return Err(FriError::GlobalMaxHeightTooLarge {
+            log_global_max_height: num_index_bits,
+            two_adicity: Val::CIRCLE_TWO_ADICITY,
+        });
+    }
+    let indices = (0..num_query_proofs)
+        .map(|_| challenger.sample_bits(num_index_bits))
+        .collect();
+    Ok(FriSetup {
+        betas,
+        log_max_height,
+        indices,
+    })
+}
+
+/// [staged-patch] The per-query half of [`verify`]: the query proof's shape
+/// (one opening per commit-phase round, every arity 1), its input opening,
+/// the fold chain, and the final-polynomial check, for ONE query.
+/// `index` must be `setup.indices[query]` for the same query position.
+#[allow(clippy::too_many_arguments)]
+pub fn verify_one_query<Folding, Val, Challenge, M>(
+    folding: &Folding,
+    params: &FriParameters<M>,
+    commit_phase_commits: &[M::Commitment],
+    final_poly: Challenge,
+    setup: &FriSetup<Challenge>,
+    query: usize,
+    index: usize,
+    qp: &crate::CircleQueryProof<Challenge, M, Folding::InputProof>,
+    open_input: impl Fn(
+        usize,
+        &Folding::InputProof,
+    ) -> Result<Vec<(usize, Challenge)>, Folding::InputError>,
+) -> Result<(), FriError<M::Error, Folding::InputError>>
+where
+    Val: ComplexExtendable,
+    Challenge: ExtensionField<Val>,
+    M: Mmcs<Challenge>,
+    Folding: FriFoldingStrategy<Val, Challenge>,
+{
+    let expected_rounds = commit_phase_commits.len();
+    let got_rounds = qp.commit_phase_openings.len();
+    if got_rounds != expected_rounds {
+        return Err(FriError::QueryCommitPhaseOpeningsCountMismatch {
+            query,
+            expected: expected_rounds,
+            got: got_rounds,
+        });
+    }
+    for (round, opening) in qp.commit_phase_openings.iter().enumerate() {
+        match opening.checked_log_arity(params.max_log_arity) {
+            Some(1) => {}
+            _ => {
+                return Err(FriError::InvalidLogArity {
+                    round,
+                    log_arity: opening.log_arity as usize,
+                    max: core::cmp::min(params.max_log_arity, 1),
+                });
+            }
+        }
+    }
+
+    #[cfg(all(target_os = "solana", feature = "cu-trace"))]
+    solana_program::log::sol_log_compute_units(); // [cu-trace] query: before open_input
+    let ro = open_input(index, &qp.input_proof).map_err(FriError::InputError)?;
+    #[cfg(all(target_os = "solana", feature = "cu-trace"))]
+    solana_program::log::sol_log_compute_units(); // [cu-trace] query: after open_input
+
+    debug_assert!(
+        ro.iter().tuple_windows().all(|((l, _), (r, _))| l > r),
+        "reduced openings sorted by height descending"
+    );
+
+    let fold_data_iter = setup
+        .betas
+        .iter()
+        .zip(commit_phase_commits.iter())
+        .zip(qp.commit_phase_openings.iter());
+    let top_level_index = index >> folding.extra_query_index_bits();
+    let x_twiddle_inv =
+        query_x_twiddles_inv::<Val>(top_level_index, setup.log_max_height, expected_rounds);
+    let folded_eval = verify_query(
+        params,
+        top_level_index,
+        fold_data_iter,
+        ro,
+        setup.log_max_height,
+        &x_twiddle_inv,
+    )?;
+    if folded_eval != final_poly {
+        return Err(FriError::FinalPolyMismatch);
+    }
+    #[cfg(all(target_os = "solana", feature = "cu-trace"))]
+    solana_program::log::sol_log_compute_units(); // [cu-trace] query: after verify_query
+    Ok(())
+}
+
+/// [staged-patch] The upstream body of `verify`, kept verbatim (renamed) as the
+/// reference the split is regression-tested against: `CirclePcs::verify` now
+/// composes `verify_setup` and `verify_one_query` itself (in pcs.rs), and
+/// `CirclePcs::verify_upstream_reference` drives this function, so a
+/// riverrun-m31 test can run both on honest and tampered proofs.
+#[doc(hidden)]
+pub fn verify_upstream_reference<Folding, Val, Challenge, M, Challenger>(
     folding: &Folding,
     params: &FriParameters<M>,
     proof: &CircleFriProof<Challenge, M, Challenger::Witness, Folding::InputProof>,
