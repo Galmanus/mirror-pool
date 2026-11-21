@@ -1,6 +1,8 @@
 //! The staged verifier must accept exactly what the monolithic one accepts.
-//! Every test here runs at the production crowd parameters (12 queries,
-//! blowup 128, 128 rows); nothing is measured at a reduced-security point.
+//! Tests run at the production crowd parameters (12 queries, blowup 128,
+//! 128 rows). `production_depth_passes_and_other_depths_fail_on_both_paths`
+//! is the exception: it proves other trace heights, at those same FRI
+//! parameters, and requires both verifiers to reject them.
 
 use std::sync::OnceLock;
 use std::format;
@@ -8,8 +10,10 @@ use std::vec::Vec;
 
 use super::*;
 use crate::crowd::{
-    prove_binding_crowd, prove_membership_crowd, verify_binding_crowd, verify_membership_crowd,
-    CrowdBindingProof, CrowdMembershipProof, BLINDER_LEN, CROWD_DEPTH,
+    binding_stark_accepts, membership_stark_accepts, prove_binding_crowd, prove_membership_crowd,
+    prove_membership_crowd_at_depth, verify_binding_crowd, verify_membership_crowd,
+    CrowdBindingProof, CrowdMembershipProof, BINDING_DEGREE_BITS, BLINDER_LEN, CROWD_DEPTH, LOG_ROWS,
+    MEMBERSHIP_DEGREE_BITS,
 };
 use crate::membership::{compress, PathStep};
 use crate::binding::SECRET_LEN;
@@ -17,8 +21,17 @@ use crate::zk::Seed;
 
 const Q: usize = 12;
 const LOG_B: usize = 7;
-const LOG_ROWS: usize = 7;
-const P: Params = Params { num_queries: Q, log_blowup: LOG_B, recipient: None };
+const P: Params = Params {
+    num_queries: Q,
+    log_blowup: LOG_B,
+    // Equal to MEMBERSHIP_DEGREE_BITS by the const assert on the two derivations.
+    degree_bits: BINDING_DEGREE_BITS,
+    recipient: None,
+};
+
+fn params_for(rel: Relation) -> Params {
+    Params { degree_bits: rel.degree_bits(), ..P }
+}
 
 struct Fixture {
     binding: Vec<u8>,
@@ -443,4 +456,111 @@ fn a_recipient_bound_proof_verifies_only_for_its_recipient() {
     assert!(!staged(Relation::Membership, &mb, &mpis, Some(mallory)));
     // And an unbound proof is not accepted as bound to anyone.
     assert!(!staged(Relation::Binding, &f.binding, &bpis, Some(alice)));
+}
+
+/// C-01: the opening depth is part of the statement. An honest proof at the
+/// production tree (`CROWD_DEPTH` folds, binding trace `2^LOG_ROWS`) passes
+/// both verifiers. A proof with fewer folds and a proof with more folds are
+/// valid STARKs of a different statement, and both verifiers reject them.
+#[test]
+fn production_depth_passes_and_other_depths_fail_on_both_paths() {
+    use crate::zk::{make_zk_config_bound, ZK_DEGREE_PAD};
+    use p3_uni_stark::StarkGenericConfig;
+
+    let cfg = make_zk_config_bound(Q, LOG_B, Seed::reproducible(0), None);
+    assert_eq!(cfg.is_zk(), ZK_DEGREE_PAD, "degree pad must be the hiding PCS ZK bit");
+    assert_eq!(CROWD_DEPTH + 1, 1 << LOG_ROWS);
+    assert_eq!(
+        MEMBERSHIP_DEGREE_BITS,
+        (CROWD_DEPTH + 1).trailing_zeros() as usize + ZK_DEGREE_PAD,
+        "membership degree comes from the tree depth plus the commitment row"
+    );
+    assert_eq!(BINDING_DEGREE_BITS, LOG_ROWS + ZK_DEGREE_PAD, "binding degree comes from LOG_ROWS");
+    assert_eq!(params_for(Relation::Membership).degree_bits, MEMBERSHIP_DEGREE_BITS);
+    assert_eq!(params_for(Relation::Binding).degree_bits, BINDING_DEGREE_BITS);
+
+    let f = fixture();
+    let honest_b = CrowdBindingProof::from_bytes(&f.binding).expect("honest binding decodes");
+    let honest_m = CrowdMembershipProof::from_bytes(&f.membership).expect("honest membership decodes");
+    assert_eq!(honest_b.degree_bits(), BINDING_DEGREE_BITS);
+    assert_eq!(honest_m.degree_bits(), MEMBERSHIP_DEGREE_BITS);
+    assert!(mono_binding(&f.binding, f, f.nullifier), "honest binding, monolithic");
+    assert!(mono_membership(&f.membership, f), "honest membership, monolithic");
+    assert!(
+        verify_staged_bytes(
+            Relation::Binding,
+            params_for(Relation::Binding),
+            &f.binding,
+            &binding_publics(f, f.nullifier),
+            Q,
+        ),
+        "honest binding, staged"
+    );
+    assert!(
+        verify_staged_bytes(
+            Relation::Membership,
+            params_for(Relation::Membership),
+            &f.membership,
+            &membership_publics(f),
+            Q,
+        ),
+        "honest membership, staged"
+    );
+
+    // 2^6 - 1 and 2^8 - 1 fold levels: one power of two under and over the
+    // production depth 2^LOG_ROWS - 1. Same FRI parameters, so the only
+    // difference the pin looks at is the trace height.
+    let leaf = [3u64; DIGEST_LEN];
+    let blinder: [u64; BLINDER_LEN] = core::array::from_fn(|i| 11 + i as u64);
+    for depth in [63usize, 255] {
+        let path: Vec<PathStep> = (0..depth)
+            .map(|i| PathStep {
+                sibling: core::array::from_fn(|j| (i as u64 + 3) * 50 + j as u64),
+                node_on_right: i % 2 == 0,
+            })
+            .collect();
+        let (proof, c, root) = prove_membership_crowd_at_depth(
+            leaf, blinder, &path, Q, LOG_B, Seed::reproducible(70 + depth as u64),
+        );
+        assert_ne!(proof.degree_bits(), MEMBERSHIP_DEGREE_BITS, "depth {depth}");
+        assert!(
+            membership_stark_accepts(&proof, c, root, Q, LOG_B),
+            "depth {depth} is a real opening, just not the production tree"
+        );
+        assert!(!verify_membership_crowd(&proof, c, root, Q, LOG_B), "monolithic verifier rejects depth {depth}");
+        let bytes = proof.to_bytes();
+        let mut limbs_v = limbs(c);
+        limbs_v.extend(limbs(root));
+        let pis = publics_from_limbs(&limbs_v).unwrap();
+        assert!(
+            !verify_staged_bytes(Relation::Membership, params_for(Relation::Membership), &bytes, &pis, Q),
+            "staged verifier rejects depth {depth}"
+        );
+    }
+
+    let secret: [u64; SECRET_LEN] = core::array::from_fn(|i| 8 + i as u64);
+    for log_rows in [LOG_ROWS - 1, LOG_ROWS + 1] {
+        let (proof, c, _leaf, nullifier) = prove_binding_crowd(
+            secret, f.action, f.round, blinder, Q, LOG_B, log_rows, Seed::reproducible(80 + log_rows as u64),
+        );
+        assert_ne!(proof.degree_bits(), BINDING_DEGREE_BITS, "log_rows {log_rows}");
+        assert!(
+            binding_stark_accepts(&proof, f.action, f.round, c, nullifier, Q, LOG_B),
+            "log_rows {log_rows} is a real binding proof, just not the production height"
+        );
+        assert!(
+            !verify_binding_crowd(&proof, f.action, f.round, c, nullifier, Q, LOG_B),
+            "monolithic verifier rejects log_rows {log_rows}"
+        );
+        let bytes = proof.to_bytes();
+        let mut l = limbs(f.action);
+        l.extend(limbs(f.round));
+        l.extend(limbs(c));
+        l.extend(limbs(nullifier));
+        let pis = publics_from_limbs(&l).unwrap();
+        assert!(
+            !verify_staged_bytes(Relation::Binding, params_for(Relation::Binding), &bytes, &pis, Q),
+            "staged verifier rejects log_rows {log_rows}"
+        );
+    }
 }

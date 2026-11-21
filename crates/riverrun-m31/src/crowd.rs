@@ -77,7 +77,7 @@ use p3_uni_stark::{prove, verify_with_known_quotient_chunks, Proof, SubAirBuilde
 use crate::binding::{CONTEXT_LEN, SECRET_LEN};
 use crate::membership::{compress, PathStep, DIGEST_LEN};
 use crate::permutation::{permute, WIDTH};
-use crate::zk::{Seed, make_zk_config_bound, ZkConfig};
+use crate::zk::{Seed, make_zk_config_bound, ZkConfig, ZK_DEGREE_PAD};
 #[cfg(test)]
 use crate::zk::make_zk_config_tuned;
 
@@ -94,8 +94,28 @@ type Cols<T> =
 /// Blinder width: 8 M31 limbs, 248 bits of commitment randomness.
 pub const BLINDER_LEN: usize = DIGEST_LEN;
 
-/// Tree depth of the crowd membership proof: 127 fold levels, because row 0 of
-/// the 128-row trace is the commitment row. A 2^127-leaf tree.
+/// Production binding-trace height: the witness is repeated on `2^LOG_ROWS`
+/// rows. The Solana client passes this same value (`vineland-sol`
+/// `client::LOG_ROWS`). Membership uses the same height, so the production
+/// tree depth below is `2^LOG_ROWS - 1`.
+pub const LOG_ROWS: usize = 7;
+
+/// `log2` of a power of two. Panics in const-eval if `n` is not one.
+const fn log2_pow2(n: usize) -> usize {
+    assert!(n.is_power_of_two());
+    n.trailing_zeros() as usize
+}
+
+/// Extended degree (`Proof::degree_bits`) of a trace with `2^log_rows` rows
+/// under the hiding PCS. See [`ZK_DEGREE_PAD`].
+pub const fn degree_bits_from_log_rows(log_rows: usize) -> usize {
+    log_rows + ZK_DEGREE_PAD
+}
+
+/// Tree depth of the crowd membership proof, in fold levels. Row 0 of the
+/// trace is the commitment row, so the trace height is `CROWD_DEPTH + 1`
+/// and that height is `2^LOG_ROWS`. The Solana pool folds each deposit
+/// through this many levels (`vineland-pool::DEPTH`). A 2^127-leaf tree.
 ///
 /// The height is set by TWO arguments, not by ambition about tree sizes, and
 /// the second of them is why this is 128 rather than 64.
@@ -116,7 +136,23 @@ pub const BLINDER_LEN: usize = DIGEST_LEN;
 /// scalars means a functional of the witness survives into the transcript.
 ///
 /// The 2^127-leaf anonymity set is a consequence of that count, not a target.
-pub const CROWD_DEPTH: usize = 127;
+pub const CROWD_DEPTH: usize = (1 << LOG_ROWS) - 1;
+
+/// Pinned `degree_bits` for a production membership proof.
+///
+/// Derived from the tree, not written as a literal: one commitment row plus
+/// [`CROWD_DEPTH`] fold rows, then the hiding PCS pad. A different value is a
+/// different opening depth. The staged verifier and [`verify_membership_crowd`]
+/// both require it.
+pub const MEMBERSHIP_DEGREE_BITS: usize = degree_bits_from_log_rows(log2_pow2(CROWD_DEPTH + 1));
+
+/// Pinned `degree_bits` for a production binding proof: [`LOG_ROWS`] plus the
+/// same hiding pad. [`MEMBERSHIP_DEGREE_BITS`] is required to equal this, so
+/// the pool's tree and the binding trace cannot drift apart.
+pub const BINDING_DEGREE_BITS: usize = degree_bits_from_log_rows(LOG_ROWS);
+
+const _: () = assert!(CROWD_DEPTH + 1 == 1 << LOG_ROWS);
+const _: () = assert!(MEMBERSHIP_DEGREE_BITS == BINDING_DEGREE_BITS);
 
 fn constants() -> RoundConstants<Val, WIDTH, HALF_FULL_ROUNDS, PARTIAL_ROUNDS> {
     RoundConstants::new(
@@ -411,6 +447,23 @@ fn verify_binding_crowd_inner(
     log_blowup: usize,
     recipient: Option<&[u8; 32]>,
 ) -> bool {
+    if proof.inner.degree_bits != BINDING_DEGREE_BITS {
+        return false;
+    }
+    verify_binding_stark(proof, action, round, c, nullifier, num_queries, log_blowup, recipient)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn verify_binding_stark(
+    proof: &CrowdBindingProof,
+    action: [u64; CONTEXT_LEN],
+    round: [u64; CONTEXT_LEN],
+    c: [u64; DIGEST_LEN],
+    nullifier: [u64; DIGEST_LEN],
+    num_queries: usize,
+    log_blowup: usize,
+    recipient: Option<&[u8; 32]>,
+) -> bool {
     let air = CrowdBindingAir::new();
     let config = make_zk_config_bound(num_queries, log_blowup, Seed::reproducible(0), recipient);
     let pis = binding_public_values(action, round, c, nullifier);
@@ -630,17 +683,33 @@ pub fn prove_membership_crowd_for(
     prove_membership_crowd_inner(leaf, blinder, path, num_queries, log_blowup, seed, Some(recipient))
 }
 
+/// Membership at `path.len()` fold steps. Production proofs go through
+/// [`prove_membership_crowd`], which fixes the length at [`CROWD_DEPTH`].
+/// The verifier rejects every other length; this exists so the regression
+/// test can build those proofs.
+#[cfg(test)]
+pub(crate) fn prove_membership_crowd_at_depth(
+    leaf: [u64; DIGEST_LEN],
+    blinder: [u64; BLINDER_LEN],
+    path: &[PathStep],
+    num_queries: usize,
+    log_blowup: usize,
+    seed: Seed,
+) -> (CrowdMembershipProof, [u64; DIGEST_LEN], [u64; DIGEST_LEN]) {
+    prove_membership_crowd_inner(leaf, blinder, path, num_queries, log_blowup, seed, None)
+}
+
 fn prove_membership_crowd_inner(
     leaf: [u64; DIGEST_LEN],
     blinder: [u64; BLINDER_LEN],
-    path: &[PathStep; CROWD_DEPTH],
+    path: &[PathStep],
     num_queries: usize,
     log_blowup: usize,
     seed: Seed,
     recipient: Option<&[u8; 32]>,
 ) -> (CrowdMembershipProof, [u64; DIGEST_LEN], [u64; DIGEST_LEN]) {
-    let rows = CROWD_DEPTH + 1;
-    assert!(rows.is_power_of_two(), "commit row + CROWD_DEPTH fold rows must fill a power of two");
+    let rows = path.len() + 1;
+    assert!(rows.is_power_of_two(), "commit row + fold rows must fill a power of two");
     assert!(
         rows >= 2 * (num_queries + 2),
         "hiding is unconditional only below half the blinder's dimension: this \
@@ -709,6 +778,44 @@ pub fn verify_membership_crowd_for(
 }
 
 fn verify_membership_crowd_inner(
+    proof: &CrowdMembershipProof,
+    c: [u64; DIGEST_LEN],
+    root: [u64; DIGEST_LEN],
+    num_queries: usize,
+    log_blowup: usize,
+    recipient: Option<&[u8; 32]>,
+) -> bool {
+    if proof.inner.degree_bits != MEMBERSHIP_DEGREE_BITS {
+        return false;
+    }
+    verify_membership_stark(proof, c, root, num_queries, log_blowup, recipient)
+}
+
+#[cfg(test)]
+pub(crate) fn binding_stark_accepts(
+    proof: &CrowdBindingProof,
+    action: [u64; CONTEXT_LEN],
+    round: [u64; CONTEXT_LEN],
+    c: [u64; DIGEST_LEN],
+    nullifier: [u64; DIGEST_LEN],
+    num_queries: usize,
+    log_blowup: usize,
+) -> bool {
+    verify_binding_stark(proof, action, round, c, nullifier, num_queries, log_blowup, None)
+}
+
+#[cfg(test)]
+pub(crate) fn membership_stark_accepts(
+    proof: &CrowdMembershipProof,
+    c: [u64; DIGEST_LEN],
+    root: [u64; DIGEST_LEN],
+    num_queries: usize,
+    log_blowup: usize,
+) -> bool {
+    verify_membership_stark(proof, c, root, num_queries, log_blowup, None)
+}
+
+fn verify_membership_stark(
     proof: &CrowdMembershipProof,
     c: [u64; DIGEST_LEN],
     root: [u64; DIGEST_LEN],
@@ -809,7 +916,7 @@ mod tests {
     /// BOTH budgets at once. Theorem B wants `N >= 2k`; the FRI dimension
     /// count wants `3N >= Q * (log2(2N) + log_blowup)`. See
     /// `examples/hiding_theory.rs` and `examples/fri_zk_budget.rs`.
-    const LOG_ROWS: usize = 7;
+    /// [`LOG_ROWS`] is the production constant, not a second copy.
 
     fn secret(byte: u64) -> [u64; SECRET_LEN] {
         core::array::from_fn(|i| byte * 1000 + i as u64)

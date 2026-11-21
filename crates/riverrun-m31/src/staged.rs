@@ -73,8 +73,8 @@ use p3_uni_stark::{
 
 use crate::binding::CONTEXT_LEN;
 use crate::crowd::{
-    CrowdBindingAir, CrowdMembershipAir, CROWD_BINDING_LOG_NUM_QUOTIENT_CHUNKS,
-    CROWD_MEMBERSHIP_LOG_NUM_QUOTIENT_CHUNKS,
+    CrowdBindingAir, CrowdMembershipAir, BINDING_DEGREE_BITS, CROWD_BINDING_LOG_NUM_QUOTIENT_CHUNKS,
+    CROWD_MEMBERSHIP_LOG_NUM_QUOTIENT_CHUNKS, MEMBERSHIP_DEGREE_BITS,
 };
 use crate::membership::DIGEST_LEN;
 use crate::zk::{
@@ -109,6 +109,18 @@ impl Relation {
             Relation::Membership => 2 * DIGEST_LEN,
         }
     }
+
+    /// Extended degree a production proof of this relation must carry.
+    ///
+    /// Membership is `log2(CROWD_DEPTH + 1) + ZK_DEGREE_PAD`: the pool tree
+    /// plus the commitment row, under the hiding PCS. Binding is
+    /// `LOG_ROWS + ZK_DEGREE_PAD`. The two constants are asserted equal.
+    pub const fn degree_bits(self) -> usize {
+        match self {
+            Relation::Binding => BINDING_DEGREE_BITS,
+            Relation::Membership => MEMBERSHIP_DEGREE_BITS,
+        }
+    }
 }
 
 /// What a verifier runs with: the FRI parameters (program constants
@@ -120,6 +132,11 @@ impl Relation {
 pub struct Params {
     pub num_queries: usize,
     pub log_blowup: usize,
+    /// `Proof::degree_bits` this relation accepts. Production callers set it
+    /// from [`Relation::degree_bits`]: membership from the tree depth, binding
+    /// from `LOG_ROWS`, both plus the hiding pad. A proof with any other value
+    /// is a different trace height and is rejected before FRI.
+    pub degree_bits: usize,
     pub recipient: Option<[u8; 32]>,
 }
 
@@ -502,6 +519,9 @@ fn transcript_air<A>(
 where
     A: for<'a> Air<VerifierConstraintFolder<'a, ZkConfig>>,
 {
+    if header.degree_bits != p.degree_bits {
+        return None;
+    }
     let config = config(p);
     let shape = verifier_shape(&config, air, header, publics, None, lnqc).ok()?;
     cu!("transcript: shape done");
@@ -540,6 +560,9 @@ pub fn stage_quotient(
     t: &Transcript,
 ) -> Option<Challenge> {
     with_air!(rel, |air, lnqc| {
+        if header.degree_bits != p.degree_bits {
+            return None;
+        }
         let config = config(p);
         let shape = verifier_shape(&config, &air, header, publics, None, lnqc).ok()?;
         cu!("quotient: shape done");
@@ -560,6 +583,9 @@ pub fn stage_ood(
     quotient: Challenge,
 ) -> bool {
     with_air!(rel, |air, lnqc| {
+        if header.degree_bits != p.degree_bits {
+            return false;
+        }
         let config = config(p);
         match verifier_shape(&config, &air, header, publics, None, lnqc) {
             Ok(shape) => {
@@ -600,6 +626,9 @@ fn queries_air<A>(
 where
     A: for<'a> Air<VerifierConstraintFolder<'a, ZkConfig>>,
 {
+    if header.degree_bits != p.degree_bits {
+        return false;
+    }
     let config = config(p);
     let Ok(shape) = verifier_shape(&config, air, header, publics, None, lnqc) else {
         return false;

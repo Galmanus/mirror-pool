@@ -807,6 +807,16 @@ pub const RECIPIENT_DOMAIN: &[u8] = b"riverrun-m31/recipient-bound/v1";
 /// path stops a watcher from copying an uploaded proof and racing it to a
 /// payout address of their own. It changes no AIR, no public-value layout and
 /// no proof size; only who the proof is for.
+/// Added to `log2(trace_rows)` to get `Proof::degree_bits`.
+///
+/// `p3_uni_stark` stores `degree_bits = log2(trace_height) + is_zk()`, and
+/// `is_zk()` is `Pcs::ZK` of the PCS. `HidingCirclePcs` sets that flag, so
+/// the pad is 1. `production_depth_passes_and_other_depths_fail_on_both_paths`
+/// fails if the flag and this constant diverge. The pinned degree is
+/// `LOG_ROWS + ZK_DEGREE_PAD` for binding and
+/// `log2(CROWD_DEPTH + 1) + ZK_DEGREE_PAD` for membership.
+pub const ZK_DEGREE_PAD: usize = 1;
+
 pub(crate) fn make_zk_config_bound(
     num_queries: usize,
     log_blowup: usize,
