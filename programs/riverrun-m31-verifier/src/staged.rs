@@ -71,6 +71,7 @@ use riverrun_m31::staged::{
     decode_ext, decode_header, decode_query, encode_ext, index_proof, publics_from_limbs, stage_ood,
     stage_queries, stage_quotient, stage_transcript, Params, ProofIndex, Relation, Transcript,
 };
+use riverrun_m31::{BINDING_DEGREE_BITS, MEMBERSHIP_DEGREE_BITS};
 
 // --- Program constants: the verifier parameters are NOT client input. -------
 
@@ -80,10 +81,15 @@ pub const NUM_QUERIES: usize = 12;
 pub const LOG_BLOWUP: usize = 7;
 /// The verifier's parameters for this buffer: the program constants, plus
 /// the buffer's own recipient when its kind is `KIND_BOUND`.
-fn params(d: &[u8]) -> Params {
+fn params(d: &[u8], rel: Relation) -> Params {
     let recipient = (d[B_KIND] & KIND_BOUND != 0)
         .then(|| d[B_RECIPIENT..B_RECIPIENT + 32].try_into().unwrap());
-    Params { num_queries: NUM_QUERIES, log_blowup: LOG_BLOWUP, recipient }
+    Params {
+        num_queries: NUM_QUERIES,
+        log_blowup: LOG_BLOWUP,
+        degree_bits: rel.degree_bits(),
+        recipient,
+    }
 }
 
 // --- The pool-facing prefix (docs/M31_CIRCLE_STARK.md §2; mirrors
@@ -187,6 +193,8 @@ pub enum StagedError {
     Malformed = 122,
     QuotientAlreadyDone = 123,
     QuotientMissing = 124,
+    /// Proof `degree_bits` is not the production trace height.
+    WrongDegree = 125,
 }
 
 impl From<StagedError> for ProgramError {
@@ -206,11 +214,17 @@ fn kind_slots(kind: u8) -> Option<&'static [Relation]> {
 
 /// The verifier-key tag at `B_VK`: which relation(s), at which parameters.
 pub fn vk_tag(kind: u8) -> [u8; 32] {
+    // Degree is part of the key. BINDING_DEGREE_BITS is LOG_ROWS plus the
+    // hiding PCS pad. MEMBERSHIP_DEGREE_BITS is log2(CROWD_DEPTH + 1) plus
+    // the same pad: the pool tree (vineland-pool DEPTH / CROWD_DEPTH) plus
+    // the commitment row. The crate asserts the two are equal.
     keccak::hashv(&[
         b"riverrun-m31-verifier/crowd-staged/v1",
         &[kind],
         &(NUM_QUERIES as u32).to_le_bytes(),
         &(LOG_BLOWUP as u32).to_le_bytes(),
+        &(BINDING_DEGREE_BITS as u32).to_le_bytes(),
+        &(MEMBERSHIP_DEGREE_BITS as u32).to_le_bytes(),
     ])
     .to_bytes()
 }
@@ -429,12 +443,16 @@ fn seal(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
     if d[B_SEALED] != 0 {
         return Err(StagedError::Sealed.into());
     }
-    let n_slots = kind_slots(d[B_KIND]).ok_or(StagedError::BadKind)?.len();
-    for i in 0..n_slots {
+    let slots = kind_slots(d[B_KIND]).ok_or(StagedError::BadKind)?;
+    for i in 0..slots.len() {
         let r = slot_range(&d, i);
         let idx = index_proof(&d[r.clone()]).ok_or(StagedError::Unindexable)?;
         if idx.num_query_proofs() != NUM_QUERIES {
             return Err(StagedError::WrongQueryCount.into());
+        }
+        let degree = degree_bits_of(&d[r.clone()], &idx).ok_or(StagedError::Unindexable)?;
+        if degree != slots[i].degree_bits() {
+            return Err(StagedError::WrongDegree.into());
         }
         let hash = keccak::hashv(&[&d[r]]).to_bytes();
         let b = slot_base(i);
@@ -452,6 +470,13 @@ fn seal(program_id: &Pubkey, accounts: &[AccountInfo]) -> ProgramResult {
 
 fn r_len(d: &[u8], i: usize) -> usize {
     rd_u32(d, slot_base(i) + S_LEN) as usize
+}
+
+/// `degree_bits` is the last 8 bytes of a bincode proof (fixint `usize`).
+fn degree_bits_of(proof: &[u8], idx: &ProofIndex) -> Option<usize> {
+    let start = idx.end.checked_sub(8)?;
+    let word = u64::from_le_bytes(proof.get(start..idx.end)?.try_into().ok()?);
+    usize::try_from(word).ok()
 }
 
 /// Common prologue of the three verification stages: initialized, sealed,
@@ -489,7 +514,7 @@ fn transcript(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8]) -> Pro
         let header = decode_header(bytes, &idx).ok_or(StagedError::Malformed)?;
         #[cfg(feature = "cu-trace")]
         solana_program::log::sol_log_compute_units(); // [cu-trace] after decode_header
-        let t = stage_transcript(rel, params(&d), &header, &publics, idx.num_query_proofs())
+        let t = stage_transcript(rel, params(&d, rel), &header, &publics, idx.num_query_proofs())
             .ok_or(StagedError::TranscriptRejected)?;
         t.encode()
     };
@@ -521,7 +546,7 @@ fn quotient(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8]) -> Progr
         let publics = publics_from_limbs(&limbs[..rel.num_public_values()]).ok_or(StagedError::Malformed)?;
         let t = stored_transcript(&d, slot).ok_or(StagedError::Malformed)?;
         let header = decode_header(bytes, &idx).ok_or(StagedError::Malformed)?;
-        stage_quotient(rel, params(&d), &header, &publics, &t).ok_or(StagedError::Malformed)?
+        stage_quotient(rel, params(&d, rel), &header, &publics, &t).ok_or(StagedError::Malformed)?
     };
     d[b + S_QUOTIENT..b + S_QUOTIENT + 16].copy_from_slice(&encode_ext(q));
     d[b + S_FLAGS] |= FLAG_QUOTIENT;
@@ -557,7 +582,7 @@ fn ood(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8]) -> ProgramRes
         solana_program::log::sol_log_compute_units(); // [cu-trace] after decode_header
         let q: [u8; 16] = d[b + S_QUOTIENT..b + S_QUOTIENT + 16].try_into().unwrap();
         let q = decode_ext(&q).ok_or(StagedError::Malformed)?;
-        stage_ood(rel, params(&d), &header, &publics, &t, q)
+        stage_ood(rel, params(&d, rel), &header, &publics, &t, q)
     };
     if !ok {
         return Err(StagedError::OodRejected.into());
@@ -611,7 +636,7 @@ fn queries(program_id: &Pubkey, accounts: &[AccountInfo], data: &[u8]) -> Progra
         }
         #[cfg(feature = "cu-trace")]
         solana_program::log::sol_log_compute_units(); // [cu-trace] after decode_query
-        stage_queries(rel, params(&d), &header, &publics, &t, &batch)
+        stage_queries(rel, params(&d, rel), &header, &publics, &t, &batch)
     };
     if !ok {
         return Err(StagedError::QueryRejected.into());
